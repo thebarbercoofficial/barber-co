@@ -9,7 +9,8 @@ const BarberCo = (() => {
       username: "",
       phone: "",
       location: "",
-      bio: ""
+      bio: "",
+      photo: ""
     },
     admin: {
       name: "The Barber Co Admin",
@@ -17,7 +18,10 @@ const BarberCo = (() => {
       address: "Carmona, Cavite",
       contact: "+63 900 111 2222",
       location: "Carmona",
-      postal: "4116"
+      postal: "4116",
+      gcashName: "The Barber Co",
+      gcashNumber: "+63 900 000 0000",
+      gcashQr: ""
     },
     booking: null,
     reportDate: new Date().toISOString().slice(0, 10),
@@ -121,6 +125,12 @@ const BarberCo = (() => {
     return String(name || "?").split(" ").map((part) => part[0]).join("").slice(0, 3).toUpperCase();
   }
 
+  function avatar(name, photo = "", className = "profile-photo") {
+    return photo
+      ? `<span class="${className} has-photo"><img src="${photo}" alt="${name || "Profile"} photo"></span>`
+      : `<span class="${className}">${initials(name)}</span>`;
+  }
+
   function toast(message) {
     const el = document.querySelector("[data-toast]");
     if (!el) return alert(message);
@@ -171,6 +181,9 @@ const BarberCo = (() => {
   }
 
   function nav(active = "") {
+    const role = currentRole();
+    const accountHref = role === "admin" ? "admin-dashboard.html" : role === "moderator" ? "admin-logbook.html" : state.user?.email ? "user-profile.html" : "login.html";
+    const accountLabel = role === "admin" ? "Admin" : role === "moderator" ? "Logbook" : state.user?.email ? "Profile" : "Login";
     const links = [
       ["index.html", "home", "Home"],
       ["about.html", "about", "About"],
@@ -178,7 +191,7 @@ const BarberCo = (() => {
       ["barbers.html", "barbers", "Barbers"],
       ["queue.html", "queue", "Queue"],
       ["contact.html", "contact", "Contact"],
-      ["login.html", "login", "Login"]
+      [accountHref, "login", accountLabel]
     ];
     return `
       <header class="site-header" data-header>
@@ -226,5 +239,5 @@ const BarberCo = (() => {
     return available.map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""}>${barber.name}</option>`).join("");
   }
 
-  return { state, barbers, save, peso, byId, initials, toast, initHeader, nav, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, setSession, clearSession, authToken, currentRole, canAccess };
+  return { state, barbers, save, peso, byId, initials, avatar, toast, initHeader, nav, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, setSession, clearSession, authToken, currentRole, canAccess };
 })();

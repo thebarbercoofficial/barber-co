@@ -5,9 +5,32 @@ async function getAnalytics() {
     return await api("/admin/analytics");
   } catch (error) {
     if (error.message.includes("Admin") && !BarberCo.canAccess("admin")) location.href = "login.html";
-    const totalRevenue = state.appointments.filter((item) => item.paid).reduce((sum, item) => sum + BarberCo.byId(state.services, item.serviceId).price, 0);
-    return { totals: { customers: 0, bookings: state.appointments.length, walkins: 0, revenue: totalRevenue, waiting: 0 }, barbers, services: state.services };
+    const appointmentRevenue = state.appointments.filter((item) => item.paid).reduce((sum, item) => sum + BarberCo.byId(state.services, item.serviceId).price, 0);
+    const walkInRevenue = state.queue.filter((item) => item.paid).reduce((sum, item) => sum + Number(item.price || 0), 0);
+    return {
+      totals: {
+        customers: state.accounts.length,
+        bookings: state.appointments.length,
+        walkins: state.queue.length,
+        revenue: appointmentRevenue + walkInRevenue,
+        waiting: state.queue.filter((item) => item.status === "waiting").length
+      },
+      barbers,
+      services: state.services
+    };
   }
+}
+
+function callNextLocal() {
+  const current = state.queue.find((item) => item.status === "serving");
+  if (current) return toast(`Finish or cancel queue #${String(current.queueNumber).padStart(2, "0")} before calling the next walk-in.`);
+  const next = state.queue.filter((item) => item.status === "waiting").sort((a, b) => a.queueNumber - b.queueNumber)[0];
+  if (!next) return toast("No waiting walk-ins.");
+  next.status = "serving";
+  next.calledAt = new Date().toISOString();
+  save();
+  toast(`Now serving queue #${String(next.queueNumber).padStart(2, "0")}.`);
+  render();
 }
 
 async function render() {
@@ -33,7 +56,7 @@ async function render() {
       toast(payload.ticket ? `Now serving queue #${payload.ticket.queueNumber}.` : "No waiting walk-ins.");
       render();
     } catch (error) {
-      toast(error.message || "Queue backend is not online.");
+      callNextLocal();
     }
   });
   document.querySelector("[data-quick-service]").addEventListener("submit", async (event) => {

@@ -8,7 +8,19 @@ function nextQueueNumber() {
 }
 
 function statusText(status) {
-  return status === "serving" ? "Now serving" : status === "done" ? "Done" : status === "cancelled" ? "Cancelled" : "Waiting";
+  return status === "serving" ? "Now serving" : status === "done" ? "Paid / done" : status === "cancelled" ? "Cancelled" : "Waiting";
+}
+
+function callNextCustomer() {
+  const current = state.queue.find((item) => item.status === "serving");
+  if (current) return toast(`Finish or cancel queue #${String(current.queueNumber).padStart(2, "0")} before calling the next customer.`);
+  const next = state.queue.filter((item) => item.status === "waiting").sort((a, b) => a.queueNumber - b.queueNumber)[0];
+  if (!next) return toast("No waiting customers.");
+  next.status = "serving";
+  next.calledAt = new Date().toISOString();
+  save();
+  toast(`Now serving queue #${String(next.queueNumber).padStart(2, "0")}.`);
+  render();
 }
 
 function queueRows() {
@@ -22,7 +34,7 @@ function queueRows() {
       <span class="status-pill ${item.status}">${statusText(item.status)}</span>
       <span class="button-row">
         <button class="button primary small" type="button" data-serve="${item.id}">Serve</button>
-        <button class="button secondary small" type="button" data-done="${item.id}">Done</button>
+        <button class="button secondary small" type="button" data-paid="${item.id}">Paid / done</button>
         <button class="button danger small" type="button" data-cancel="${item.id}">Cancel</button>
       </span>
     </div>
@@ -79,20 +91,25 @@ function render() {
   });
 
   document.querySelector("[data-next]").addEventListener("click", () => {
-    state.queue.filter((item) => item.status === "serving").forEach((item) => { item.status = "done"; });
-    const next = state.queue.filter((item) => item.status === "waiting").sort((a, b) => a.queueNumber - b.queueNumber)[0];
-    if (!next) return toast("No waiting customers.");
-    next.status = "serving";
-    save();
-    toast(`Now serving queue #${String(next.queueNumber).padStart(2, "0")}.`);
-    render();
+    callNextCustomer();
   });
 
-  document.querySelectorAll("[data-serve], [data-done], [data-cancel]").forEach((button) => button.addEventListener("click", () => {
-    const id = button.dataset.serve || button.dataset.done || button.dataset.cancel;
+  document.querySelectorAll("[data-serve], [data-paid], [data-cancel]").forEach((button) => button.addEventListener("click", () => {
+    const id = button.dataset.serve || button.dataset.paid || button.dataset.cancel;
     const item = state.queue.find((entry) => entry.id === id);
     if (!item) return;
-    item.status = button.dataset.serve ? "serving" : button.dataset.done ? "done" : "cancelled";
+    if (button.dataset.serve) {
+      const current = state.queue.find((entry) => entry.status === "serving" && entry.id !== id);
+      if (current) return toast(`Finish queue #${String(current.queueNumber).padStart(2, "0")} first.`);
+      item.status = "serving";
+      item.calledAt = new Date().toISOString();
+    } else if (button.dataset.paid) {
+      item.status = "done";
+      item.paid = true;
+      item.paidAt = new Date().toISOString();
+    } else {
+      item.status = "cancelled";
+    }
     save();
     render();
   }));

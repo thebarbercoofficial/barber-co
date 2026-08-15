@@ -301,9 +301,17 @@ async function handler(req, res) {
 
   if (req.method === "POST" && path === "/admin/queue/next") {
     await requireRole(req, database, ["admin", "moderator"]);
-    await database.collection("queue").updateMany({ status: "serving" }, { $set: { status: "done", updatedAt: new Date() } });
-    const next = await database.collection("queue").findOneAndUpdate({ status: "waiting" }, { $set: { status: "serving", updatedAt: new Date() } }, { sort: { queueNumber: 1 }, returnDocument: "after" });
+    const current = await database.collection("queue").findOne({ status: "serving" });
+    if (current) return send(res, 409, { error: "Finish the current customer before calling next.", ticket: normalizeDoc(current) });
+    const next = await database.collection("queue").findOneAndUpdate({ status: "waiting" }, { $set: { status: "serving", calledAt: new Date(), updatedAt: new Date() } }, { sort: { queueNumber: 1 }, returnDocument: "after" });
     return send(res, 200, { ticket: normalizeDoc(next) });
+  }
+
+  if (req.method === "POST" && path.startsWith("/admin/queue/") && path.endsWith("/paid")) {
+    await requireRole(req, database, ["admin", "moderator"]);
+    const id = path.split("/")[3];
+    await database.collection("queue").updateOne({ _id: new ObjectId(id) }, { $set: { status: "done", paid: true, paidAt: new Date(), updatedAt: new Date() } });
+    return send(res, 200, { ok: true });
   }
 
   if (req.method === "GET" && path === "/admin/analytics") {

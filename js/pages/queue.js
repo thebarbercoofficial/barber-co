@@ -26,11 +26,12 @@ function ringDevice() {
 }
 
 function fallbackQueueRows() {
-  const current = state.appointments.find((item) => item.status === "Ongoing") || state.appointments[0];
-  const next = state.appointments.find((item) => item.status === "Next") || state.appointments[1] || current;
+  const source = state.queue.length ? state.queue : state.appointments;
+  const current = source.find((item) => item.status === "serving" || item.status === "Ongoing") || source[0];
+  const next = source.find((item) => item.status === "waiting" || item.status === "Next") || source[1] || current;
   return {
     top: [current, next],
-    rows: state.appointments.map((item) => ({ ...item, queueNumber: item.id, status: item.status.toLowerCase() }))
+    rows: source.map((item) => ({ ...item, queueNumber: item.queueNumber || item.id, status: String(item.status).toLowerCase() }))
   };
 }
 
@@ -68,10 +69,10 @@ async function render() {
         </div>
       </div>
       <div class="now-next">
-        ${[["Now serving", current], ["Next serving", next]].map(([label, item]) => `<article><span>${label}</span><strong>Queue #${String(item?.queueNumber || item?.id || 0).padStart(2, "0")}</strong><p>${item?.customer || "Waiting"} - ${byId(state.services, item?.serviceId).name}</p></article>`).join("")}
+        ${current ? [["Now serving", current], ["Next serving", next]].map(([label, item]) => `<article><span>${label}</span><strong>Queue #${String(item?.queueNumber || item?.id || 0).padStart(2, "0")}</strong><p>${item?.customer || "Waiting"} - ${item?.cutName || byId(state.services, item?.serviceId).name}</p></article>`).join("") : `<article><span>Now serving</span><strong>No active queue</strong><p>Walk-ins will appear here after scanning the QR or staff logbook entry.</p></article>`}
       </div>
       <div class="panel">
-        ${liveQueue.map((item) => `<div class="queue-row"><span>Queue #${String(item.queueNumber || item.id).padStart(2, "0")} - ${byId(barbers, item.barberId).name}</span><strong>${item.customer} - ${byId(state.services, item.serviceId).name}</strong><span class="status-pill ${String(item.status).toLowerCase()}">${item.status}</span></div>`).join("")}
+        ${liveQueue.map((item) => `<div class="queue-row"><span>Queue #${String(item.queueNumber || item.id).padStart(2, "0")} - ${byId(barbers, item.barberId).name}</span><strong>${item.customer} - ${item.cutName || byId(state.services, item.serviceId).name}</strong><span class="status-pill ${String(item.status).toLowerCase()}">${item.status}</span></div>`).join("") || `<div class="empty-state">No customers are in the queue yet.</div>`}
       </div>
     </section>
   `;
@@ -87,7 +88,21 @@ async function render() {
       localStorage.setItem("barberCoQueueTicketId", payload.ticket.id);
       location.href = `queue.html?ticket=${payload.ticket.id}`;
     } catch (error) {
-      toast(error.message || "Queue backend is not online yet.");
+      const ticket = {
+        id: String(Date.now()),
+        queueNumber: Math.max(0, ...state.queue.map((item) => Number(item.queueNumber || 0))) + 1,
+        customer: data.get("customer"),
+        phone: data.get("phone"),
+        serviceId: data.get("serviceId"),
+        barberId: data.get("barberId"),
+        status: "waiting",
+        createdAt: new Date().toISOString()
+      };
+      state.queue.push(ticket);
+      BarberCo.save();
+      localStorage.setItem("barberCoQueueTicketId", ticket.id);
+      toast("Queue ticket saved on this device.");
+      location.href = `queue.html?ticket=${ticket.id}`;
     }
   });
 
@@ -110,7 +125,16 @@ async function updateTicket(ticketId) {
     panel.innerHTML = `<p class="eyebrow">Your Status</p><h2>Queue #${String(data.ticket.queueNumber).padStart(2, "0")}</h2><div class="summary-list"><div><span>Status</span><strong>${data.ticket.status}</strong></div><div><span>Position</span><strong>${data.position === 0 ? "Now serving" : `#${data.position} in line`}</strong></div><div><span>People ahead</span><strong>${data.waitingAhead}</strong></div></div><button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>`;
     if (lastTicketStatus && lastTicketStatus !== "serving" && data.ticket.status === "serving") ringDevice();
     lastTicketStatus = data.ticket.status;
-  } catch {}
+  } catch {
+    const ticket = state.queue.find((item) => item.id === ticketId);
+    const panel = document.querySelector("[data-ticket-panel]");
+    if (ticket && panel) {
+      const waitingAhead = state.queue.filter((item) => item.status === "waiting" && item.queueNumber < ticket.queueNumber).length;
+      panel.innerHTML = `<p class="eyebrow">Your Status</p><h2>Queue #${String(ticket.queueNumber).padStart(2, "0")}</h2><div class="summary-list"><div><span>Status</span><strong>${ticket.status}</strong></div><div><span>Position</span><strong>${ticket.status === "serving" ? "Now serving" : `#${waitingAhead + 1} in line`}</strong></div><div><span>People ahead</span><strong>${waitingAhead}</strong></div></div><button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>`;
+      if (lastTicketStatus && lastTicketStatus !== "serving" && ticket.status === "serving") ringDevice();
+      lastTicketStatus = ticket.status;
+    }
+  }
   window.setTimeout(() => updateTicket(ticketId), 7000);
 }
 

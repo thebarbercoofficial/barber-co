@@ -5,6 +5,7 @@ function statusLabel(status) {
 }
 
 function rows() {
+  if (!barbers.length) return `<div class="empty-state">No barbers yet. Add the first real barber above.</div>`;
   return barbers.map((barber) => `
     <div class="appointment-row">
       <span class="avatar small-avatar">${initials(barber.name)}</span>
@@ -25,7 +26,7 @@ async function loadBarbers() {
     state.barbers.splice(0, state.barbers.length, ...(data.barbers || state.barbers));
     save();
   } catch (error) {
-    if (error.message.includes("Admin")) location.href = "login.html";
+    if (error.message.includes("Admin") && !BarberCo.canAccess("admin")) location.href = "login.html";
     else toast("Using saved barbers until backend is online.");
   }
 }

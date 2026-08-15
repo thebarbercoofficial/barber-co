@@ -22,6 +22,10 @@ document.querySelector("[data-register]").addEventListener("submit", async (even
   } catch (error) {
     state.user.name = data.get("name");
     state.user.email = data.get("email");
+    const email = String(data.get("email")).trim().toLowerCase();
+    if (!state.accounts.some((account) => account.email.toLowerCase() === email)) {
+      state.accounts.push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), name: data.get("name"), email, password: data.get("password"), role: "customer", phone: "" });
+    }
     save();
     toast(error.message || "Account saved locally until backend is online.");
   }

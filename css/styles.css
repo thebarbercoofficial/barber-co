@@ -546,6 +546,14 @@ p {
   box-shadow: 0 16px 36px rgba(17, 17, 17, 0.16);
 }
 
+.empty-state {
+  padding: 26px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
 .service-icon {
   width: 48px;
   height: 48px;
@@ -763,14 +771,14 @@ textarea:focus,
   display: grid;
   grid-template-columns: 250px minmax(0, 1fr);
   min-height: 100vh;
-  padding-top: 78px;
+  padding-top: 102px;
   background: #f2eadf;
 }
 
 .sidebar {
   position: sticky;
-  top: 78px;
-  height: calc(100vh - 78px);
+  top: 102px;
+  height: calc(100vh - 102px);
   padding: 24px 16px;
   background: #111;
   color: var(--white);
@@ -800,7 +808,10 @@ textarea:focus,
 }
 
 .workspace {
-  padding: clamp(22px, 4vw, 42px);
+  width: 100%;
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: clamp(34px, 5vw, 64px);
 }
 
 .workspace h1 {

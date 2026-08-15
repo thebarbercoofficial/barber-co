@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Barber Co Walk-in QR</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #f6f1e8;
+        color: #111;
+        font-family: Arial, sans-serif;
+      }
+      main {
+        width: min(760px, calc(100vw - 40px));
+        padding: 48px;
+        border: 8px solid #111;
+        text-align: center;
+        background: #fffaf1;
+      }
+      h1 {
+        margin: 0 0 10px;
+        font-family: Georgia, serif;
+        font-size: 54px;
+        line-height: 1;
+      }
+      p {
+        margin: 0 auto 24px;
+        max-width: 520px;
+        font-size: 20px;
+        line-height: 1.5;
+      }
+      img {
+        width: 420px;
+        max-width: 100%;
+        height: auto;
+        border: 14px solid #fff;
+      }
+      strong {
+        display: block;
+        margin-top: 22px;
+        color: #a7562f;
+        font-size: 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>The Barber Co</h1>
+      <p>Walk-ins: scan this QR code to join the queue and see your place in line.</p>
+      <img src="walk-in-qr.png" alt="Walk-in queue QR code" />
+      <strong>Keep the queue page open for alerts.</strong>
+    </main>
+  </body>
+</html>

@@ -7,7 +7,7 @@ async function render() {
     <section class="section top">
       <div class="section-heading"><p class="eyebrow">Meet The Team</p><h2>Select a barber for your appointment.</h2></div>
       <div class="grid-3">
-        ${barbers.filter((barber) => barber.status !== "fired").map((barber) => `<article class="barber-card"><span class="avatar">${initials(barber.name)}</span><h3>${barber.name}</h3><p><strong>${barber.role}</strong></p><p class="muted">${barber.bio}</p><p><span class="status-pill">${barber.status}</span></p><button class="button primary small" data-barber="${barber.id}" type="button" ${barber.status === "on-leave" ? "disabled" : ""}>${barber.status === "on-leave" ? "On leave" : "Choose barber"}</button></article>`).join("")}
+        ${barbers.filter((barber) => barber.status !== "fired").map((barber) => `<article class="barber-card"><span class="avatar">${initials(barber.name)}</span><h3>${barber.name}</h3><p><strong>${barber.role}</strong></p><p class="muted">${barber.bio}</p><p><span class="status-pill">${barber.status}</span></p><button class="button primary small" data-barber="${barber.id}" type="button" ${barber.status === "on-leave" ? "disabled" : ""}>${barber.status === "on-leave" ? "On leave" : "Choose barber"}</button></article>`).join("") || `<div class="empty-state">No barbers are listed yet. Please check again after staff updates the roster.</div>`}
       </div>
     </section>
   `;

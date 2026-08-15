@@ -15,11 +15,7 @@ const seedServices = [
   { slug: "groom", name: "Premium Groom", price: 350, duration: "60 min", detail: "Haircut, beard shave, and hot towel service.", icon: "VIP", active: true }
 ];
 
-const seedBarbers = [
-  { slug: "michael", name: "Michael Angelo", role: "Fade specialist", status: "active", rate: 150, bio: "Precise fades, clean tapers, and polished everyday cuts." },
-  { slug: "james", name: "James Cortez", role: "Classic barber", status: "active", rate: 200, bio: "Reliable classic cuts, beard work, and neat styling." },
-  { slug: "daniel", name: "Daniel Reyes", role: "Premium grooming", status: "active", rate: 250, bio: "Detailed finishing, hot towel service, and premium grooming." }
-];
+const seedBarbers = [];
 
 function send(res, status, data) {
   res.statusCode = status;
@@ -76,6 +72,16 @@ async function ensureSeed(database) {
           { upsert: true }
         );
       }
+      const moderatorEmail = String(process.env.MODERATOR_EMAIL || "staff@thebarberco.local").toLowerCase();
+      const moderatorPassword = process.env.MODERATOR_PASSWORD;
+      if (moderatorPassword) {
+        const hash = await bcrypt.hash(moderatorPassword, 10);
+        await database.collection("users").updateOne(
+          { email: moderatorEmail },
+          { $setOnInsert: { name: "Front Desk Staff", email: moderatorEmail, passwordHash: hash, role: "moderator", phone: "", createdAt: new Date() } },
+          { upsert: true }
+        );
+      }
     })();
   }
   return ensureSeed.promise;
@@ -108,6 +114,16 @@ async function requireUser(req, database, adminOnly = false) {
   if (!user || (adminOnly && user.role !== "admin")) {
     const error = new Error("Admin access required");
     error.status = adminOnly ? 403 : 401;
+    throw error;
+  }
+  return user;
+}
+
+async function requireRole(req, database, roles) {
+  const user = await requireUser(req, database);
+  if (!roles.includes(user.role)) {
+    const error = new Error("Permission denied");
+    error.status = 403;
     throw error;
   }
   return user;
@@ -169,6 +185,25 @@ async function handler(req, res) {
     return send(res, 200, { user: publicUser({ ...user, ...update }) });
   }
 
+  if (path === "/admin/users") {
+    await requireRole(req, database, ["admin"]);
+    if (req.method === "GET") return send(res, 200, { users: (await database.collection("users").find({}, { projection: { passwordHash: 0 } }).sort({ createdAt: -1 }).toArray()).map(normalizeDoc) });
+    if (req.method === "POST") {
+      const email = String(body.email || "").trim().toLowerCase();
+      const password = String(body.password || "");
+      if (!email || password.length < 6) return send(res, 400, { error: "Email and password are required." });
+      const user = { _id: new ObjectId(), name: body.name || "Staff", email, passwordHash: await bcrypt.hash(password, 10), role: body.role || "customer", phone: body.phone || "", createdAt: new Date() };
+      await database.collection("users").insertOne(user);
+      return send(res, 201, { user: publicUser(user) });
+    }
+  }
+
+  if (path.startsWith("/admin/users/") && req.method === "PATCH") {
+    await requireRole(req, database, ["admin"]);
+    await database.collection("users").updateOne({ _id: new ObjectId(path.split("/").pop()) }, { $set: { role: body.role, updatedAt: new Date() } });
+    return send(res, 200, { ok: true });
+  }
+
   if (req.method === "GET" && path === "/catalog") {
     const [services, barbers] = await Promise.all([
       database.collection("services").find({ active: { $ne: false } }).sort({ createdAt: 1 }).toArray(),
@@ -178,7 +213,7 @@ async function handler(req, res) {
   }
 
   if (path === "/admin/services") {
-    await requireUser(req, database, true);
+    await requireRole(req, database, ["admin"]);
     if (req.method === "GET") return send(res, 200, { services: (await database.collection("services").find().sort({ createdAt: 1 }).toArray()).map(normalizeDoc) });
     if (req.method === "POST") {
       const service = { _id: new ObjectId(), slug: slugify(body.name), name: body.name, price: Number(body.price), duration: body.duration || "30 min", detail: body.detail || "", icon: body.icon || "NEW", active: body.active !== false, createdAt: new Date() };
@@ -188,7 +223,7 @@ async function handler(req, res) {
   }
 
   if (path.startsWith("/admin/services/")) {
-    await requireUser(req, database, true);
+    await requireRole(req, database, ["admin"]);
     const id = path.split("/").pop();
     if (req.method === "PATCH") {
       const update = { ...body, updatedAt: new Date() };
@@ -203,7 +238,7 @@ async function handler(req, res) {
   }
 
   if (path === "/admin/barbers") {
-    await requireUser(req, database, true);
+    await requireRole(req, database, ["admin"]);
     if (req.method === "GET") return send(res, 200, { barbers: (await database.collection("barbers").find().sort({ createdAt: 1 }).toArray()).map(normalizeDoc) });
     if (req.method === "POST") {
       const barber = { _id: new ObjectId(), slug: slugify(body.name), name: body.name, role: body.role || "Barber", status: body.status || "active", rate: Number(body.rate || 0), bio: body.bio || "", createdAt: new Date() };
@@ -213,7 +248,7 @@ async function handler(req, res) {
   }
 
   if (path.startsWith("/admin/barbers/")) {
-    await requireUser(req, database, true);
+    await requireRole(req, database, ["admin"]);
     const id = path.split("/").pop();
     if (req.method === "PATCH") {
       const update = { ...body, updatedAt: new Date() };
@@ -236,12 +271,12 @@ async function handler(req, res) {
   }
 
   if (path === "/admin/appointments") {
-    await requireUser(req, database, true);
+    await requireRole(req, database, ["admin", "moderator"]);
     if (req.method === "GET") return send(res, 200, { appointments: (await database.collection("appointments").find().sort({ createdAt: -1 }).toArray()).map(normalizeDoc) });
   }
 
   if (path.startsWith("/admin/appointments/") && req.method === "PATCH") {
-    await requireUser(req, database, true);
+    await requireRole(req, database, ["admin", "moderator"]);
     await database.collection("appointments").updateOne({ _id: new ObjectId(path.split("/").pop()) }, { $set: { status: body.status, updatedAt: new Date() } });
     return send(res, 200, { ok: true });
   }
@@ -266,14 +301,14 @@ async function handler(req, res) {
   }
 
   if (req.method === "POST" && path === "/admin/queue/next") {
-    await requireUser(req, database, true);
+    await requireRole(req, database, ["admin", "moderator"]);
     await database.collection("queue").updateMany({ status: "serving" }, { $set: { status: "done", updatedAt: new Date() } });
     const next = await database.collection("queue").findOneAndUpdate({ status: "waiting" }, { $set: { status: "serving", updatedAt: new Date() } }, { sort: { queueNumber: 1 }, returnDocument: "after" });
     return send(res, 200, { ticket: normalizeDoc(next) });
   }
 
   if (req.method === "GET" && path === "/admin/analytics") {
-    await requireUser(req, database, true);
+    await requireRole(req, database, ["admin"]);
     const [appointments, queue, users, services, barbers] = await Promise.all([
       database.collection("appointments").find().toArray(),
       database.collection("queue").find().toArray(),

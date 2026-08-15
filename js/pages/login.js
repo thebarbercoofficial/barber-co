@@ -65,16 +65,18 @@ document.querySelector("[data-login]").addEventListener("submit", async (event) 
     setSession(payload);
     location.href = payload.user.role === "admin" ? "admin-dashboard.html" : "user-profile.html";
   } catch (error) {
-    if (email === "thebarberco.official@gmail.com" && password === "BarberAdmin_2026_x7Qm92") {
+    const demoAccount = state.accounts.find((account) => account.email.toLowerCase() === email && account.password === password);
+    if (demoAccount) {
       setSession({
-        token: "demo-admin",
+        token: `demo-${demoAccount.role}`,
         user: {
-          name: "The Barber Co Admin",
+          name: demoAccount.name,
           email,
-          role: "admin"
+          role: demoAccount.role,
+          phone: demoAccount.phone || ""
         }
       });
-      location.href = "admin-dashboard.html";
+      location.href = demoAccount.role === "moderator" ? "admin-logbook.html" : demoAccount.role === "admin" ? "admin-dashboard.html" : "user-profile.html";
       return;
     }
 

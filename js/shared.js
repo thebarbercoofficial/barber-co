@@ -1,15 +1,15 @@
 const BarberCo = (() => {
   const defaults = {
     selectedServiceId: "basic",
-    selectedBarberId: "michael",
+    selectedBarberId: "",
     paymentMethod: "GCash",
     user: {
-      name: "Juan Dela Cruz",
-      email: "customer@email.com",
-      username: "juandelacruz",
-      phone: "+63 900 000 0000",
-      location: "Carmona, Cavite",
-      bio: "Prefers clean fades and afternoon appointments."
+      name: "",
+      email: "",
+      username: "",
+      phone: "",
+      location: "",
+      bio: ""
     },
     admin: {
       name: "The Barber Co Admin",
@@ -21,6 +21,11 @@ const BarberCo = (() => {
     },
     booking: null,
     reportDate: new Date().toISOString().slice(0, 10),
+    queue: [],
+    accounts: [
+      { id: "admin", name: "The Barber Co Admin", email: "thebarberco.official@gmail.com", password: "BarberAdmin_2026_x7Qm92", role: "admin", phone: "" },
+      { id: "moderator", name: "Front Desk Staff", email: "staff@thebarberco.local", password: "Staff_2026_x7Qm92", role: "moderator", phone: "" }
+    ],
     services: [
       { id: "basic", name: "Basic Haircut", price: 150, duration: "30 min", detail: "Clean haircut finished with pomade.", icon: "CUT" },
       { id: "shave", name: "Haircut + Shave", price: 200, duration: "45 min", detail: "Haircut paired with a sharp beard shave.", icon: "SHV" },
@@ -28,17 +33,8 @@ const BarberCo = (() => {
       { id: "kids", name: "Kids Cut", price: 200, duration: "30 min", detail: "Simple grooming package for younger clients.", icon: "KID" },
       { id: "groom", name: "Premium Groom", price: 350, duration: "60 min", detail: "Haircut, beard shave, and hot towel service.", icon: "VIP" }
     ],
-    appointments: [
-      { id: 8, customer: "James Cortez", barberId: "james", serviceId: "basic", time: "10:30", status: "Ongoing", paid: true },
-      { id: 9, customer: "Daniel Reyes", barberId: "daniel", serviceId: "groom", time: "11:00", status: "Next", paid: true },
-      { id: 10, customer: "Maria Santos", barberId: "michael", serviceId: "basic", time: "11:30", status: "Pending", paid: false },
-      { id: 11, customer: "Paolo Garcia", barberId: "james", serviceId: "shave", time: "12:00", status: "Pending", paid: false }
-    ],
-    barbers: [
-      { id: "michael", name: "Michael Angelo", role: "Fade specialist", status: "active", rate: 150, bio: "Precise fades, clean tapers, and polished everyday cuts." },
-      { id: "james", name: "James Cortez", role: "Classic barber", status: "active", rate: 200, bio: "Reliable classic cuts, beard work, and neat styling." },
-      { id: "daniel", name: "Daniel Reyes", role: "Premium grooming", status: "active", rate: 250, bio: "Detailed finishing, hot towel service, and premium grooming." }
-    ]
+    appointments: [],
+    barbers: []
   };
 
   function loadState() {
@@ -50,7 +46,12 @@ const BarberCo = (() => {
   }
 
   const state = loadState();
-  if (!Array.isArray(state.barbers)) state.barbers = structuredClone(defaults.barbers);
+  if (!Array.isArray(state.barbers)) state.barbers = [];
+  if (!Array.isArray(state.queue)) state.queue = [];
+  if (!Array.isArray(state.accounts)) state.accounts = structuredClone(defaults.accounts);
+  state.barbers = state.barbers.filter((barber) => !["michael", "james", "daniel"].includes(barber.id));
+  state.appointments = (state.appointments || []).filter((item) => ![8, 9, 10, 11].includes(Number(item.id)));
+  if (["michael", "james", "daniel"].includes(state.selectedBarberId)) state.selectedBarberId = "";
   const barbers = state.barbers;
   const apiBase = localStorage.getItem("barberCoApiBase") || (location.protocol.startsWith("http") ? location.origin : "");
 
@@ -62,6 +63,17 @@ const BarberCo = (() => {
     if (payload?.token) localStorage.setItem("barberCoToken", payload.token);
     if (payload?.user) state.user = { ...state.user, ...payload.user };
     save();
+  }
+
+  function currentRole() {
+    return state.user?.role || "customer";
+  }
+
+  function canAccess(level = "moderator") {
+    const role = currentRole();
+    if (level === "admin") return role === "admin";
+    if (level === "moderator") return role === "admin" || role === "moderator";
+    return true;
   }
 
   function clearSession() {
@@ -100,11 +112,11 @@ const BarberCo = (() => {
   }
 
   function byId(list, id) {
-    return list.find((item) => item.id === id) || list[0];
+    return list.find((item) => item.id === id || item.mongoId === id) || list[0] || { id: "", name: "Unassigned", price: 0, duration: "", role: "", status: "" };
   }
 
   function initials(name) {
-    return name.split(" ").map((part) => part[0]).join("").slice(0, 3).toUpperCase();
+    return String(name || "?").split(" ").map((part) => part[0]).join("").slice(0, 3).toUpperCase();
   }
 
   function toast(message) {
@@ -182,8 +194,10 @@ const BarberCo = (() => {
   }
 
   function adminSidebar(active) {
-    const links = [
+    const adminLinks = [
       ["admin-dashboard.html", "dashboard", "Dashboard"],
+      ["admin-logbook.html", "logbook", "Staff Logbook"],
+      ["admin-users.html", "users", "Users & Permissions"],
       ["admin-profile.html", "profile", "Admin Profile"],
       ["admin-services.html", "services", "Services"],
       ["admin-barbers.html", "barbers", "Barbers"],
@@ -191,6 +205,12 @@ const BarberCo = (() => {
       ["admin-schedule.html", "schedule", "Appointments"],
       ["index.html", "public", "Public Site"]
     ];
+    const moderatorLinks = [
+      ["admin-logbook.html", "logbook", "Staff Logbook"],
+      ["admin-schedule.html", "schedule", "Appointments"],
+      ["index.html", "public", "Public Site"]
+    ];
+    const links = currentRole() === "moderator" ? moderatorLinks : adminLinks;
     return `<aside class="sidebar">${links.map(([href, key, label]) => `<a class="${active === key ? "active" : ""}" href="${href}">${label}</a>`).join("")}</aside>`;
   }
 
@@ -199,8 +219,10 @@ const BarberCo = (() => {
   }
 
   function barberOptions(selectedId = state.selectedBarberId) {
-    return barbers.filter((barber) => barber.status !== "fired").map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""}>${barber.name}</option>`).join("");
+    const available = barbers.filter((barber) => barber.status !== "fired");
+    if (!available.length) return `<option value="">Assign later</option>`;
+    return available.map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""}>${barber.name}</option>`).join("");
   }
 
-  return { state, barbers, save, peso, byId, initials, toast, initHeader, nav, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, setSession, clearSession, authToken };
+  return { state, barbers, save, peso, byId, initials, toast, initHeader, nav, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, setSession, clearSession, authToken, currentRole, canAccess };
 })();

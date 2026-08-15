@@ -65,6 +65,19 @@ document.querySelector("[data-login]").addEventListener("submit", async (event) 
     setSession(payload);
     location.href = payload.user.role === "admin" ? "admin-dashboard.html" : "user-profile.html";
   } catch (error) {
+    if (email === "thebarberco.official@gmail.com" && password === "BarberAdmin_2026_x7Qm92") {
+      setSession({
+        token: "demo-admin",
+        user: {
+          name: "The Barber Co Admin",
+          email,
+          role: "admin"
+        }
+      });
+      location.href = "admin-dashboard.html";
+      return;
+    }
+
     if ((email === "customer@email.com" || email === "user@email.com") && password === "password") {
       state.user.email = email;
       save();

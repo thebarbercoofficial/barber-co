@@ -48,6 +48,8 @@ const BarberCo = (() => {
   const state = loadState();
   if (!Array.isArray(state.barbers)) state.barbers = [];
   if (!Array.isArray(state.queue)) state.queue = [];
+  if (!Array.isArray(state.services)) state.services = structuredClone(defaults.services);
+  if (!Array.isArray(state.appointments)) state.appointments = [];
   if (!Array.isArray(state.accounts)) state.accounts = structuredClone(defaults.accounts);
   state.barbers = state.barbers.filter((barber) => !["michael", "james", "daniel"].includes(barber.id));
   state.appointments = (state.appointments || []).filter((item) => ![8, 9, 10, 11].includes(Number(item.id)));

@@ -1,0 +1,20 @@
+const { state, nav, initHeader, toast, save } = BarberCo;
+document.querySelector("#app").innerHTML = `
+  ${nav("login")}
+  <section class="section top">
+    <div class="auth-layout">
+      <div class="auth-art"><div><p class="eyebrow">Account Registration</p><h2>Create your customer account.</h2><p>Registration fields match the manuscript wireframe and are ready for backend validation later.</p></div></div>
+      <form class="form-card" data-register><p class="eyebrow">Registration Page</p><h2>Register</h2><label>Full name<input name="name" required placeholder="Juan Dela Cruz"></label><label>Email<input type="email" name="email" required placeholder="customer@email.com"></label><label>Password<input type="password" name="password" required placeholder="Create password"></label><label><span><input type="checkbox" required> I agree to the terms and conditions</span></label><button class="button primary full" type="submit">Create account</button><p class="muted">Already registered? <a class="inline" href="login.html">Login here</a></p></form>
+    </div>
+  </section>
+`;
+document.querySelector("[data-register]").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const data = new FormData(event.target);
+  state.user.name = data.get("name");
+  state.user.email = data.get("email");
+  save();
+  toast("Account registration mocked.");
+  location.href = "user-profile.html";
+});
+initHeader("login");

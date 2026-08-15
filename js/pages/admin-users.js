@@ -2,15 +2,17 @@ const { state, nav, initHeader, adminSidebar, save, toast, canAccess } = BarberC
 
 if (!canAccess("admin")) location.href = "login.html";
 
+const protectedAdminEmail = "thebarberco.official@gmail.com";
+
 function rows() {
   return state.accounts.map((account) => `
     <div class="appointment-row">
       <span>${account.name}<br><small class="muted">${account.email}</small></span>
-      <strong>${account.role}</strong>
+      <strong>${account.role}${account.email === protectedAdminEmail ? " - protected" : ""}</strong>
       <span class="button-row">
-        <button class="button secondary small" type="button" data-role="${account.id}:customer">Customer</button>
-        <button class="button secondary small" type="button" data-role="${account.id}:moderator">Moderator</button>
-        <button class="button primary small" type="button" data-role="${account.id}:admin">Admin</button>
+        <button class="button secondary small" type="button" data-role="${account.id}:customer" ${account.email === protectedAdminEmail ? "disabled" : ""}>Customer</button>
+        <button class="button secondary small" type="button" data-role="${account.id}:moderator" ${account.email === protectedAdminEmail ? "disabled" : ""}>Moderator</button>
+        <button class="button primary small" type="button" data-role="${account.id}:admin" ${account.email === protectedAdminEmail ? "disabled" : ""}>Admin</button>
       </span>
     </div>
   `).join("");
@@ -22,7 +24,8 @@ function render() {
     <section class="app-shell">
       ${adminSidebar("users")}
       <div class="workspace">
-        <p class="eyebrow">Users and Permissions</p><h1>Staff access</h1>
+        <p class="eyebrow">Users and Permissions</p><h1>Registered users</h1>
+        <p class="muted">Admin can see accounts created on this website and assign roles. The official owner admin account is protected.</p>
         <form class="panel" data-account-form>
           <div class="form-row"><label>Name<input name="name" required placeholder="Staff name"></label><label>Email<input type="email" name="email" required placeholder="staff@email.com"></label></div>
           <div class="form-row"><label>Password<input name="password" required placeholder="Temporary password"></label><label>Permission<select name="role"><option value="customer">Customer</option><option value="moderator">Moderator</option><option value="admin">Admin</option></select></label></div>

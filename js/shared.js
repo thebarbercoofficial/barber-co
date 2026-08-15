@@ -55,6 +55,17 @@ const BarberCo = (() => {
   if (!Array.isArray(state.services)) state.services = structuredClone(defaults.services);
   if (!Array.isArray(state.appointments)) state.appointments = [];
   if (!Array.isArray(state.accounts)) state.accounts = structuredClone(defaults.accounts);
+  const protectedAdmin = defaults.accounts[0];
+  const savedAdmin = state.accounts.find((account) => String(account.email).toLowerCase() === protectedAdmin.email);
+  if (savedAdmin) {
+    Object.assign(savedAdmin, { id: protectedAdmin.id, name: savedAdmin.name || protectedAdmin.name, email: protectedAdmin.email, password: savedAdmin.password || protectedAdmin.password, role: "admin" });
+  } else {
+    state.accounts.unshift(structuredClone(protectedAdmin));
+  }
+  if (String(state.user?.email || "").toLowerCase() === protectedAdmin.email) {
+    state.user.role = "admin";
+    state.user.name = state.user.name || protectedAdmin.name;
+  }
   state.barbers = state.barbers.filter((barber) => !["michael", "james", "daniel"].includes(barber.id));
   state.appointments = (state.appointments || []).filter((item) => ![8, 9, 10, 11].includes(Number(item.id)));
   if (["michael", "james", "daniel"].includes(state.selectedBarberId)) state.selectedBarberId = "";

@@ -55,9 +55,7 @@ async function render() {
         <form class="form-card" data-walkin>
           <p class="eyebrow">Walk-in QR</p><h2>Join the line</h2>
           <label>Name<input name="customer" required placeholder="Your name"></label>
-          <label>Phone<input name="phone" placeholder="+63"></label>
-          <label>Service<select name="serviceId">${state.services.map((service) => `<option value="${service.id}">${service.name}</option>`).join("")}</select></label>
-          <label>Barber<select name="barberId">${barbers.filter((barber) => barber.status !== "fired").map((barber) => `<option value="${barber.id}">${barber.name}</option>`).join("")}</select></label>
+          <p class="muted">No account needed. Staff will call your name and assign the cut at the counter.</p>
           <button class="button primary full" type="submit">Get queue number</button>
           <button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>
         </form>
@@ -83,7 +81,7 @@ async function render() {
     try {
       const payload = await api("/queue/walkin", {
         method: "POST",
-        body: JSON.stringify({ customer: data.get("customer"), phone: data.get("phone"), serviceId: data.get("serviceId"), barberId: data.get("barberId") })
+        body: JSON.stringify({ customer: data.get("customer") })
       });
       localStorage.setItem("barberCoQueueTicketId", payload.ticket.id);
       location.href = `queue.html?ticket=${payload.ticket.id}`;
@@ -92,9 +90,10 @@ async function render() {
         id: String(Date.now()),
         queueNumber: Math.max(0, ...state.queue.map((item) => Number(item.queueNumber || 0))) + 1,
         customer: data.get("customer"),
-        phone: data.get("phone"),
-        serviceId: data.get("serviceId"),
-        barberId: data.get("barberId"),
+        phone: "",
+        serviceId: "",
+        barberId: "",
+        cutName: "To be assigned",
         status: "waiting",
         createdAt: new Date().toISOString()
       };

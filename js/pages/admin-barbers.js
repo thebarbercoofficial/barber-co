@@ -10,7 +10,7 @@ function rows() {
     <div class="appointment-row">
       <span class="avatar small-avatar">${initials(barber.name)}</span>
       <span>${barber.name}<br><small class="muted">${barber.role}</small></span>
-      <strong>${statusLabel(barber.status)} - PHP ${Number(barber.rate || 0).toLocaleString("en-PH")}</strong>
+      <strong>${statusLabel(barber.status)}</strong>
       <span class="button-row">
         <button class="button secondary small" type="button" data-status="${barber.mongoId || barber.id}:active">Active</button>
         <button class="button secondary small" type="button" data-status="${barber.mongoId || barber.id}:on-leave">On leave</button>
@@ -41,7 +41,7 @@ async function render() {
         <p class="eyebrow">Barber Management</p><h1>Team availability</h1>
         <form class="panel" data-barber-form>
           <div class="form-row"><label>Name<input name="name" required placeholder="New barber"></label><label>Specialty<input name="role" required placeholder="Fade specialist"></label></div>
-          <div class="form-row"><label>Rate<input type="number" name="rate" required placeholder="200"></label><label>Status<select name="status"><option value="active">Active</option><option value="on-leave">On leave</option></select></label></div>
+          <label>Status<select name="status"><option value="active">Active</option><option value="on-leave">On leave</option></select></label>
           <label>Bio<input name="bio" placeholder="Short public profile"></label>
           <button class="button primary" type="submit">Add barber</button>
         </form>
@@ -53,7 +53,7 @@ async function render() {
   document.querySelector("[data-barber-form]").addEventListener("submit", async (event) => {
     event.preventDefault();
     const data = new FormData(event.target);
-    const barber = { name: data.get("name"), role: data.get("role"), rate: data.get("rate"), status: data.get("status"), bio: data.get("bio") };
+    const barber = { name: data.get("name"), role: data.get("role"), status: data.get("status"), bio: data.get("bio") };
     try {
       await api("/admin/barbers", { method: "POST", body: JSON.stringify(barber) });
       toast("Barber added.");

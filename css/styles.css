@@ -423,6 +423,7 @@ p {
 
 .muted {
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .dark .muted {
@@ -771,14 +772,14 @@ textarea:focus,
   display: grid;
   grid-template-columns: 250px minmax(0, 1fr);
   min-height: 100vh;
-  padding-top: 102px;
+  padding-top: 84px;
   background: #f2eadf;
 }
 
 .sidebar {
   position: sticky;
-  top: 102px;
-  height: calc(100vh - 102px);
+  top: 84px;
+  height: calc(100vh - 84px);
   padding: 24px 16px;
   background: #111;
   color: var(--white);
@@ -1410,6 +1411,10 @@ body.is-loaded .login-note {
 }
 
 @media (max-width: 640px) {
+  .section {
+    padding-inline: 16px;
+  }
+
   .hero {
     min-height: 820px;
     align-items: start;
@@ -1420,6 +1425,22 @@ body.is-loaded .login-note {
     max-width: 100%;
     font-size: 2.7rem;
     line-height: 1.04;
+  }
+
+  h2 {
+    max-width: 100%;
+    font-size: 2rem;
+    line-height: 1.06;
+    overflow-wrap: anywhere;
+  }
+
+  .section-heading {
+    max-width: 100%;
+  }
+
+  .form-card,
+  .panel {
+    width: 100%;
   }
 
   .login-screen {

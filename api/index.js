@@ -241,7 +241,7 @@ async function handler(req, res) {
     await requireRole(req, database, ["admin"]);
     if (req.method === "GET") return send(res, 200, { barbers: (await database.collection("barbers").find().sort({ createdAt: 1 }).toArray()).map(normalizeDoc) });
     if (req.method === "POST") {
-      const barber = { _id: new ObjectId(), slug: slugify(body.name), name: body.name, role: body.role || "Barber", status: body.status || "active", rate: Number(body.rate || 0), bio: body.bio || "", createdAt: new Date() };
+      const barber = { _id: new ObjectId(), slug: slugify(body.name), name: body.name, role: body.role || "Barber", status: body.status || "active", bio: body.bio || "", createdAt: new Date() };
       await database.collection("barbers").insertOne(barber);
       return send(res, 201, { barber: normalizeDoc(barber) });
     }
@@ -252,7 +252,6 @@ async function handler(req, res) {
     const id = path.split("/").pop();
     if (req.method === "PATCH") {
       const update = { ...body, updatedAt: new Date() };
-      if (body.rate != null) update.rate = Number(body.rate);
       await database.collection("barbers").updateOne({ _id: new ObjectId(id) }, { $set: update });
       return send(res, 200, { ok: true });
     }
@@ -283,7 +282,7 @@ async function handler(req, res) {
 
   if (req.method === "POST" && path === "/queue/walkin") {
     const queueNumber = await nextQueueNumber(database);
-    const ticket = { _id: new ObjectId(), customer: body.customer || "Walk-in customer", phone: body.phone || "", serviceId: body.serviceId || "", barberId: body.barberId || "", queueNumber, status: "waiting", createdAt: new Date() };
+    const ticket = { _id: new ObjectId(), customer: body.customer || "Walk-in customer", phone: "", serviceId: body.serviceId || "", barberId: body.barberId || "", cutName: body.cutName || "To be assigned", queueNumber, status: "waiting", createdAt: new Date() };
     await database.collection("queue").insertOne(ticket);
     return send(res, 201, { ticket: normalizeDoc(ticket) });
   }

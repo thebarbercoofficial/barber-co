@@ -33,14 +33,13 @@ const BarberCo = (() => {
       { id: 9, customer: "Daniel Reyes", barberId: "daniel", serviceId: "groom", time: "11:00", status: "Next", paid: true },
       { id: 10, customer: "Maria Santos", barberId: "michael", serviceId: "basic", time: "11:30", status: "Pending", paid: false },
       { id: 11, customer: "Paolo Garcia", barberId: "james", serviceId: "shave", time: "12:00", status: "Pending", paid: false }
+    ],
+    barbers: [
+      { id: "michael", name: "Michael Angelo", role: "Fade specialist", status: "active", rate: 150, bio: "Precise fades, clean tapers, and polished everyday cuts." },
+      { id: "james", name: "James Cortez", role: "Classic barber", status: "active", rate: 200, bio: "Reliable classic cuts, beard work, and neat styling." },
+      { id: "daniel", name: "Daniel Reyes", role: "Premium grooming", status: "active", rate: 250, bio: "Detailed finishing, hot towel service, and premium grooming." }
     ]
   };
-
-  const barbers = [
-    { id: "michael", name: "Michael Angelo", role: "Fade specialist", status: "Available", rate: 150, bio: "Precise fades, clean tapers, and polished everyday cuts." },
-    { id: "james", name: "James Cortez", role: "Classic barber", status: "Serving", rate: 200, bio: "Reliable classic cuts, beard work, and neat styling." },
-    { id: "daniel", name: "Daniel Reyes", role: "Premium grooming", status: "Available", rate: 250, bio: "Detailed finishing, hot towel service, and premium grooming." }
-  ];
 
   function loadState() {
     try {
@@ -51,6 +50,46 @@ const BarberCo = (() => {
   }
 
   const state = loadState();
+  if (!Array.isArray(state.barbers)) state.barbers = structuredClone(defaults.barbers);
+  const barbers = state.barbers;
+  const apiBase = localStorage.getItem("barberCoApiBase") || (location.protocol.startsWith("http") ? location.origin : "");
+
+  function authToken() {
+    return localStorage.getItem("barberCoToken") || "";
+  }
+
+  function setSession(payload) {
+    if (payload?.token) localStorage.setItem("barberCoToken", payload.token);
+    if (payload?.user) state.user = { ...state.user, ...payload.user };
+    save();
+  }
+
+  function clearSession() {
+    localStorage.removeItem("barberCoToken");
+  }
+
+  async function api(path, options = {}) {
+    const token = authToken();
+    const response = await fetch(`${apiBase}/api${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {})
+      }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Request failed.");
+    return data;
+  }
+
+  async function loadCatalog() {
+    const data = await api("/catalog");
+    state.services = data.services || state.services;
+    state.barbers.splice(0, state.barbers.length, ...(data.barbers || state.barbers));
+    save();
+    return data;
+  }
 
   function save() {
     localStorage.setItem("barberCoState", JSON.stringify(state));
@@ -147,6 +186,7 @@ const BarberCo = (() => {
       ["admin-dashboard.html", "dashboard", "Dashboard"],
       ["admin-profile.html", "profile", "Admin Profile"],
       ["admin-services.html", "services", "Services"],
+      ["admin-barbers.html", "barbers", "Barbers"],
       ["admin-reports.html", "reports", "Reports"],
       ["admin-schedule.html", "schedule", "Appointments"],
       ["index.html", "public", "Public Site"]
@@ -159,8 +199,8 @@ const BarberCo = (() => {
   }
 
   function barberOptions(selectedId = state.selectedBarberId) {
-    return barbers.map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""}>${barber.name}</option>`).join("");
+    return barbers.filter((barber) => barber.status !== "fired").map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""}>${barber.name}</option>`).join("");
   }
 
-  return { state, barbers, save, peso, byId, initials, toast, initHeader, nav, adminSidebar, serviceOptions, barberOptions };
+  return { state, barbers, save, peso, byId, initials, toast, initHeader, nav, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, setSession, clearSession, authToken };
 })();

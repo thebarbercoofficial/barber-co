@@ -1,4 +1,4 @@
-const { state, nav, initHeader, save } = BarberCo;
+const { state, nav, initHeader, save, api, setSession } = BarberCo;
 
 document.querySelector("#app").innerHTML = `
   ${nav("login")}
@@ -54,25 +54,25 @@ function showLoginAlert(title, message, isSuccess = false) {
   showLoginAlert.timer = window.setTimeout(() => alert.classList.remove("show"), 3200);
 }
 
-document.querySelector("[data-login]").addEventListener("submit", (event) => {
+document.querySelector("[data-login]").addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = new FormData(event.target);
   const email = String(data.get("email")).trim().toLowerCase();
   const password = String(data.get("password"));
 
-  if (email === "admin@thebarberco.test" && password === "admin123") {
-    location.href = "admin-dashboard.html";
-    return;
+  try {
+    const payload = await api("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+    setSession(payload);
+    location.href = payload.user.role === "admin" ? "admin-dashboard.html" : "user-profile.html";
+  } catch (error) {
+    if ((email === "customer@email.com" || email === "user@email.com") && password === "password") {
+      state.user.email = email;
+      save();
+      location.href = "user-profile.html";
+      return;
+    }
+    showLoginAlert("Wrong password", error.message || "Try again!");
   }
-
-  if ((email === "customer@email.com" || email === "user@email.com") && password === "password") {
-    state.user.email = email;
-    save();
-    location.href = "user-profile.html";
-    return;
-  }
-
-  showLoginAlert("Wrong password", "Try again!");
 });
 
 document.querySelector("[data-open-forgot]").addEventListener("click", () => {

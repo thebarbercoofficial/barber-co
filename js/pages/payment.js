@@ -1,4 +1,4 @@
-const { state, barbers, nav, initHeader, byId, peso, save, toast } = BarberCo;
+const { state, barbers, nav, initHeader, byId, peso, save, toast, api } = BarberCo;
 const booking = state.booking || { serviceId: state.selectedServiceId, barberId: state.selectedBarberId, date: "Not selected", time: "Not selected" };
 const service = byId(state.services, booking.serviceId);
 document.querySelector("#app").innerHTML = `
@@ -15,11 +15,19 @@ document.querySelectorAll("[data-payment]").forEach((button) => button.addEventL
   save();
   location.reload();
 }));
-document.querySelector("[data-confirm-payment]").addEventListener("click", () => {
-  const nextId = Math.max(...state.appointments.map((item) => item.id)) + 1;
-  state.appointments.push({ id: nextId, customer: state.user.name, barberId: booking.barberId, serviceId: booking.serviceId, time: booking.time || "Next available", status: "Pending", paid: state.paymentMethod !== "Cash" });
-  save();
-  toast(`Payment submitted. Queue #${String(nextId).padStart(2, "0")} created.`);
+document.querySelector("[data-confirm-payment]").addEventListener("click", async () => {
+  try {
+    const payload = await api("/appointments", {
+      method: "POST",
+      body: JSON.stringify({ ...booking, paymentMethod: state.paymentMethod })
+    });
+    toast(`Booking created. Queue #${String(payload.appointment.queueNumber).padStart(2, "0")}.`);
+  } catch (error) {
+    const nextId = Math.max(...state.appointments.map((item) => item.id)) + 1;
+    state.appointments.push({ id: nextId, customer: state.user.name, barberId: booking.barberId, serviceId: booking.serviceId, time: booking.time || "Next available", status: "Pending", paid: state.paymentMethod !== "Cash" });
+    save();
+    toast(error.message === "Login required" ? "Please login first. Saved locally for now." : `Payment submitted. Queue #${String(nextId).padStart(2, "0")} created.`);
+  }
   location.href = "queue.html";
 });
 initHeader("booking");

@@ -1,4 +1,4 @@
-const { state, nav, initHeader, toast, save } = BarberCo;
+const { state, nav, initHeader, toast, save, api, setSession } = BarberCo;
 document.querySelector("#app").innerHTML = `
   ${nav("login")}
   <section class="section top">
@@ -8,13 +8,22 @@ document.querySelector("#app").innerHTML = `
     </div>
   </section>
 `;
-document.querySelector("[data-register]").addEventListener("submit", (event) => {
+document.querySelector("[data-register]").addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = new FormData(event.target);
-  state.user.name = data.get("name");
-  state.user.email = data.get("email");
-  save();
-  toast("Account registration mocked.");
-  location.href = "user-profile.html";
+  try {
+    const payload = await api("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ name: data.get("name"), email: data.get("email"), password: data.get("password") })
+    });
+    setSession(payload);
+    toast("Account created.");
+    location.href = "user-profile.html";
+  } catch (error) {
+    state.user.name = data.get("name");
+    state.user.email = data.get("email");
+    save();
+    toast(error.message || "Account saved locally until backend is online.");
+  }
 });
 initHeader("login");

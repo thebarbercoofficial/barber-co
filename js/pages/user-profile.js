@@ -1,4 +1,4 @@
-const { state, nav, initHeader, initials, save, toast } = BarberCo;
+const { state, nav, initHeader, initials, save, toast, api, setSession } = BarberCo;
 document.querySelector("#app").innerHTML = `
   ${nav("login")}
   <section class="section top">
@@ -8,7 +8,7 @@ document.querySelector("#app").innerHTML = `
     </div>
   </section>
 `;
-document.querySelector("[data-profile]").addEventListener("submit", (event) => {
+document.querySelector("[data-profile]").addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = new FormData(event.target);
   state.user.email = data.get("email");
@@ -17,7 +17,13 @@ document.querySelector("[data-profile]").addEventListener("submit", (event) => {
   state.user.location = data.get("location");
   state.user.bio = data.get("bio");
   save();
-  toast("User profile saved locally.");
+  try {
+    const payload = await api("/me", { method: "PATCH", body: JSON.stringify(state.user) });
+    setSession(payload);
+    toast("Profile saved.");
+  } catch {
+    toast("Profile saved locally until backend is online.");
+  }
 });
 document.querySelector("[data-photo]").addEventListener("click", () => toast("Photo picker placeholder. Backend storage can be connected later."));
 initHeader("login");

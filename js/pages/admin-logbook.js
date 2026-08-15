@@ -1,6 +1,9 @@
 const { state, barbers, nav, initHeader, adminSidebar, byId, peso, save, toast, canAccess } = BarberCo;
 
-if (!canAccess("moderator")) location.href = "login.html";
+if (!canAccess("moderator")) {
+  location.replace("login.html");
+  throw new Error("Staff access required.");
+}
 
 function nextQueueNumber() {
   const existing = [...state.queue, ...state.appointments].map((item) => Number(item.queueNumber || item.id || 0));

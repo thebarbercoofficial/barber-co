@@ -1,6 +1,9 @@
 const { state, nav, initHeader, adminSidebar, save, toast, canAccess } = BarberCo;
 
-if (!canAccess("admin")) location.href = "login.html";
+if (!canAccess("admin")) {
+  location.replace("login.html");
+  throw new Error("Admin access required.");
+}
 
 const protectedAdminEmail = "thebarberco.official@gmail.com";
 

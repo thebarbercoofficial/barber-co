@@ -1,4 +1,10 @@
 const { state, nav, initHeader, adminSidebar, peso, save, toast, api } = BarberCo;
+
+if (!BarberCo.canAccess("admin")) {
+  location.replace("login.html");
+  throw new Error("Admin access required.");
+}
+
 function renderRows() {
   return state.services.map((service) => `<div class="appointment-row"><span>${service.name}<br><small class="muted">${service.detail}</small></span><strong>${peso(service.price)} - ${service.duration}</strong><span class="button-row"><button class="button secondary small" type="button" data-edit="${service.mongoId || service.id}">Edit</button><button class="button danger small" type="button" data-delete="${service.mongoId || service.id}">Remove</button></span></div>`).join("");
 }

@@ -1,5 +1,10 @@
 const { state, nav, initHeader, adminSidebar, peso, save, toast, api } = BarberCo;
 
+if (!BarberCo.canAccess("admin")) {
+  location.replace("login.html");
+  throw new Error("Admin access required.");
+}
+
 async function render() {
   let analytics;
   try {

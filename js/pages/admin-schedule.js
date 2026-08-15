@@ -1,5 +1,10 @@
 const { state, barbers, nav, initHeader, adminSidebar, byId, peso, save, toast, api, loadCatalog } = BarberCo;
 
+if (!BarberCo.canAccess("moderator")) {
+  location.replace("login.html");
+  throw new Error("Staff access required.");
+}
+
 async function loadAppointments() {
   try {
     await loadCatalog();

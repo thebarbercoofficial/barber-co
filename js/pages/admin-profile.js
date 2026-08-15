@@ -1,4 +1,10 @@
 const { state, nav, initHeader, adminSidebar, avatar, save, toast } = BarberCo;
+
+if (!BarberCo.canAccess("admin")) {
+  location.replace("login.html");
+  throw new Error("Admin access required.");
+}
+
 document.querySelector("#app").innerHTML = `
   ${nav("admin")}
   <section class="app-shell">

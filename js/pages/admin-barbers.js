@@ -1,5 +1,10 @@
 const { state, barbers, nav, initHeader, adminSidebar, initials, save, toast, api } = BarberCo;
 
+if (!BarberCo.canAccess("admin")) {
+  location.replace("login.html");
+  throw new Error("Admin access required.");
+}
+
 function statusLabel(status) {
   return status === "on-leave" ? "On leave" : status === "fired" ? "Inactive" : "Active";
 }

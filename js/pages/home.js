@@ -1,7 +1,18 @@
 const { state, barbers, nav, initHeader, byId, peso } = BarberCo;
 const current = state.appointments.find((item) => item.status === "Ongoing") || state.appointments[0];
-const service = byId(state.services, current.serviceId);
-const barber = byId(barbers, current.barberId);
+const service = current ? byId(state.services, current.serviceId) : null;
+const barber = current ? byId(barbers, current.barberId) : null;
+const statusPanel = current
+  ? `
+    <p><span class="status-dot"></span>Now serving</p>
+    <h3>Queue #${String(current.id).padStart(2, "0")}</h3>
+    <p>${service.name} with ${barber.name}</p>
+  `
+  : `
+    <p><span class="status-dot"></span>Queue ready</p>
+    <h3>No active queue yet</h3>
+    <p>Walk-ins and bookings will appear once staff starts serving customers.</p>
+  `;
 
 document.querySelector("#app").innerHTML = `
   ${nav("home")}
@@ -16,9 +27,7 @@ document.querySelector("#app").innerHTML = `
       </div>
     </div>
     <aside class="status-panel">
-      <p><span class="status-dot"></span>Now serving</p>
-      <h3>Queue #${String(current.id).padStart(2, "0")}</h3>
-      <p>${service.name} with ${barber.name}</p>
+      ${statusPanel}
     </aside>
   </section>
   <section class="section alt">

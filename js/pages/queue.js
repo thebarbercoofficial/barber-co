@@ -55,7 +55,7 @@ async function render() {
         <form class="form-card" data-walkin>
           <p class="eyebrow">Walk-in QR</p><h2>Join the line</h2>
           <label>Name<input name="customer" required placeholder="Your name"></label>
-          <p class="muted">No account needed. Staff will call your name and assign the cut at the counter.</p>
+          <p class="muted">For customers already at the shop. No account needed. Staff will call your name and assign the cut at the counter.</p>
           <button class="button primary full" type="submit">Get queue number</button>
           <button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>
         </form>
@@ -94,6 +94,7 @@ async function render() {
         serviceId: "",
         barberId: "",
         cutName: "To be assigned",
+        source: "shop-qr",
         status: "waiting",
         createdAt: new Date().toISOString()
       };

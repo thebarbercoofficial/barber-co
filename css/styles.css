@@ -732,7 +732,8 @@ textarea:focus,
   font-weight: 900;
 }
 
-.status-pill.pending {
+.status-pill.pending,
+.status-pill.pending-verification {
   background: rgba(199, 144, 63, 0.16);
   color: #7a4d10;
 }

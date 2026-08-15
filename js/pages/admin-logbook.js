@@ -29,7 +29,7 @@ function queueRows() {
   return active.map((item) => `
     <div class="appointment-row">
       <span>Queue #${String(item.queueNumber).padStart(2, "0")}<br><small class="muted">${item.waitMinutes || 0} min estimate</small></span>
-      <strong>${item.customer}<br><small class="muted">${item.cutName} - ${peso(item.price)}</small></strong>
+      <strong>${item.customer}<br><small class="muted">${item.cutName} - ${peso(item.price)} - ${item.source === "online" ? "Online booking" : "In shop"}</small></strong>
       <span>${byId(barbers, item.barberId).name}</span>
       <span class="status-pill ${item.status}">${statusText(item.status)}</span>
       <span class="button-row">
@@ -52,6 +52,7 @@ function render() {
           <form class="panel" data-logbook-form>
             <h3>Manual entry</h3>
             <label>Customer name<input name="customer" required placeholder="Customer name"></label>
+            <label>Entry source<select name="source"><option value="shop">In shop walk-in</option><option value="online">Online booking / message</option></select></label>
             <div class="form-row"><label>Cut / service<input name="cutName" required placeholder="Skin fade, trim, shave"></label><label>Price<input type="number" name="price" required placeholder="150"></label></div>
             <div class="form-row"><label>Estimated wait minutes<input type="number" name="waitMinutes" required value="30"></label><label>Barber<select name="barberId">${barbers.filter((barber) => barber.status !== "fired").map((barber) => `<option value="${barber.id}">${barber.name}</option>`).join("") || `<option value="">Assign later</option>`}</select></label></div>
             <label>Notes<input name="notes" placeholder="No phone, prefers scissors, paid cash, etc."></label>
@@ -75,6 +76,7 @@ function render() {
       id: String(Date.now()),
       queueNumber: nextQueueNumber(),
       customer: data.get("customer"),
+      source: data.get("source"),
       cutName: data.get("cutName"),
       serviceId: "",
       price: Number(data.get("price")),

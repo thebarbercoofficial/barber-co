@@ -84,6 +84,8 @@ const BarberCo = (() => {
 
   function clearSession() {
     localStorage.removeItem("barberCoToken");
+    state.user = structuredClone(defaults.user);
+    save();
   }
 
   async function api(path, options = {}) {
@@ -153,6 +155,10 @@ const BarberCo = (() => {
         toggle.setAttribute("aria-expanded", String(isOpen));
       });
     }
+    document.querySelector("[data-logout]")?.addEventListener("click", () => {
+      clearSession();
+      location.href = "login.html";
+    });
     window.addEventListener("scroll", () => {
       header?.classList.toggle("scrolled", window.scrollY > 18);
     }, { passive: true });
@@ -182,6 +188,7 @@ const BarberCo = (() => {
 
   function nav(active = "") {
     const role = currentRole();
+    const signedIn = Boolean(state.user?.email || authToken());
     const accountHref = role === "admin" ? "admin-dashboard.html" : role === "moderator" ? "admin-logbook.html" : state.user?.email ? "user-profile.html" : "login.html";
     const accountLabel = role === "admin" ? "Admin" : role === "moderator" ? "Logbook" : state.user?.email ? "Profile" : "Login";
     const links = [
@@ -202,6 +209,7 @@ const BarberCo = (() => {
         <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" data-nav-toggle><span></span><span></span><span></span></button>
         <nav class="site-nav" data-nav>
           ${links.map(([href, key, label]) => `<a href="${href}" data-active="${key}" class="${active === key ? "active" : ""}">${label}</a>`).join("")}
+          ${signedIn ? `<button type="button" data-logout>Logout</button>` : ""}
           <a class="nav-cta ${active === "booking" ? "active" : ""}" href="booking.html" data-active="booking">Book now</a>
         </nav>
       </header>

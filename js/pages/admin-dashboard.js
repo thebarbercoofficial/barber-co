@@ -5,7 +5,7 @@ async function getAnalytics() {
     return await api("/admin/analytics");
   } catch (error) {
     if (error.message.includes("Admin") && !BarberCo.canAccess("admin")) location.href = "login.html";
-    const appointmentRevenue = state.appointments.filter((item) => item.paid).reduce((sum, item) => sum + BarberCo.byId(state.services, item.serviceId).price, 0);
+    const appointmentRevenue = state.appointments.filter((item) => item.paid).reduce((sum, item) => sum + Number(item.total || BarberCo.byId(state.services, item.serviceId).price), 0);
     const walkInRevenue = state.queue.filter((item) => item.paid).reduce((sum, item) => sum + Number(item.price || 0), 0);
     return {
       totals: {

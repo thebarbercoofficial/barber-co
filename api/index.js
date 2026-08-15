@@ -282,7 +282,7 @@ async function handler(req, res) {
 
   if (req.method === "POST" && path === "/queue/walkin") {
     const queueNumber = await nextQueueNumber(database);
-    const ticket = { _id: new ObjectId(), customer: body.customer || "Walk-in customer", phone: "", serviceId: body.serviceId || "", barberId: body.barberId || "", cutName: body.cutName || "To be assigned", queueNumber, status: "waiting", createdAt: new Date() };
+    const ticket = { _id: new ObjectId(), customer: body.customer || "Walk-in customer", phone: "", serviceId: body.serviceId || "", barberId: body.barberId || "", cutName: body.cutName || "To be assigned", source: body.source || "shop-qr", queueNumber, status: "waiting", createdAt: new Date() };
     await database.collection("queue").insertOne(ticket);
     return send(res, 201, { ticket: normalizeDoc(ticket) });
   }

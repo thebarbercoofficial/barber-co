@@ -1,4 +1,4 @@
-const { state, barbers, nav, initHeader, adminSidebar, byId, save, toast, api, loadCatalog } = BarberCo;
+const { state, barbers, nav, initHeader, adminSidebar, byId, peso, save, toast, api, loadCatalog } = BarberCo;
 
 async function loadAppointments() {
   try {
@@ -21,7 +21,7 @@ async function render() {
       <div class="workspace">
         <p class="eyebrow">Appointment and Schedule</p><h1>Incoming requests</h1>
         <div class="panel">
-          ${state.appointments.map((item) => `<div class="appointment-row"><span>Queue #${String(item.queueNumber || item.id).padStart(2, "0")}<br><small class="muted">${item.time} - ${byId(barbers, item.barberId).name}</small></span><strong>${item.customer} - ${byId(state.services, item.serviceId).name}</strong><span class="status-pill ${String(item.status).toLowerCase()}">${item.status}</span><span class="button-row"><button class="button primary small" type="button" data-status="${item.mongoId || item.id}:confirmed">Confirm</button><button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:completed">Complete</button><button class="button danger small" type="button" data-status="${item.mongoId || item.id}:cancelled">Cancel</button></span></div>`).join("") || "<p class=\"muted\">No appointments yet.</p>"}
+          ${state.appointments.map((item) => `<div class="appointment-row"><span>Queue #${String(item.queueNumber || item.id).padStart(2, "0")}<br><small class="muted">${item.date || ""} ${item.time} - ${byId(barbers, item.barberId).name}</small></span><strong>${item.customer} - ${byId(state.services, item.serviceId).name}<br><small class="muted">${item.source === "online" ? `Online booking paid ${peso(item.total || 0)} including PHP 100 fee` : "Shop entry"}</small></strong><span class="status-pill ${String(item.status).toLowerCase().replace(/\s+/g, "-")}">${item.status}</span><span class="button-row"><button class="button primary small" type="button" data-status="${item.mongoId || item.id}:confirmed">Verify paid</button><button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:completed">Complete</button><button class="button danger small" type="button" data-status="${item.mongoId || item.id}:cancelled">Cancel</button></span></div>`).join("") || "<p class=\"muted\">No appointments yet.</p>"}
         </div>
       </div>
     </section>
@@ -42,3 +42,4 @@ async function render() {
 }
 
 render();
+

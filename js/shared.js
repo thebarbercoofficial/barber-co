@@ -70,7 +70,8 @@ const BarberCo = (() => {
   state.appointments = (state.appointments || []).filter((item) => ![8, 9, 10, 11].includes(Number(item.id)));
   if (["michael", "james", "daniel"].includes(state.selectedBarberId)) state.selectedBarberId = "";
   const barbers = state.barbers;
-  const apiBase = localStorage.getItem("barberCoApiBase") || (location.protocol.startsWith("http") ? location.origin : "");
+  const configuredApiBase = localStorage.getItem("barberCoApiBase") || window.BARBER_CO_API_BASE || "";
+  const apiBase = configuredApiBase || (location.protocol.startsWith("http") && !location.hostname.endsWith(".github.io") ? location.origin : "");
 
   function authToken() {
     return localStorage.getItem("barberCoToken") || "";
@@ -100,6 +101,11 @@ const BarberCo = (() => {
   }
 
   async function api(path, options = {}) {
+    if (!apiBase) {
+      const error = new Error("Backend is not connected.");
+      error.code = "BACKEND_UNAVAILABLE";
+      throw error;
+    }
     const token = authToken();
     const response = await fetch(`${apiBase}/api${path}`, {
       ...options,
@@ -110,7 +116,11 @@ const BarberCo = (() => {
       }
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "Request failed.");
+    if (!response.ok) {
+      const error = new Error(data.error || "Request failed.");
+      error.status = response.status;
+      throw error;
+    }
     return data;
   }
 

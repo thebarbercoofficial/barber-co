@@ -151,11 +151,17 @@ async function handler(req, res) {
   if (req.method === "GET" && path === "/health") return send(res, 200, { ok: true });
 
   if (req.method === "POST" && path === "/auth/register") {
+    const name = String(body.name || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
-    if (!email || password.length < 6) return send(res, 400, { error: "Email and a 6-character password are required." });
-    const user = { _id: new ObjectId(), name: body.name || "Customer", email, passwordHash: await bcrypt.hash(password, 10), role: "customer", phone: body.phone || "", createdAt: new Date() };
-    await database.collection("users").insertOne(user);
+    if (name.length < 2 || !email || password.length < 6) return send(res, 400, { error: "Name, email, and a 6-character password are required." });
+    const user = { _id: new ObjectId(), name, email, passwordHash: await bcrypt.hash(password, 10), role: "customer", phone: body.phone || "", createdAt: new Date() };
+    try {
+      await database.collection("users").insertOne(user);
+    } catch (error) {
+      if (error?.code === 11000) return send(res, 409, { error: "An account with this email already exists. Try logging in." });
+      throw error;
+    }
     return send(res, 201, { user: publicUser(user), token: tokenFor(user) });
   }
 

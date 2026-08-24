@@ -20,7 +20,7 @@ document.querySelector("#app").innerHTML = `
     <div class="hero-content">
       <p class="eyebrow">Carmona, Cavite</p>
       <h1>Book sharp cuts without the long wait.</h1>
-      <p class="hero-copy">A mobile-responsive appointment system for The Barber Co with service selection, barber schedules, reservation payment proof, and live queue updates.</p>
+      <p class="hero-copy">Book a cut, choose a service, and follow your place in line from any phone, tablet, or desktop. The team can manage walk-ins, barber availability, payment proof, and live queue updates from the shop.</p>
       <div class="hero-actions">
         <a class="button primary" href="booking.html">Reserve a slot</a>
         <a class="button ghost" href="queue.html">Check queue</a>
@@ -51,7 +51,7 @@ document.querySelector("#app").innerHTML = `
   </section>
   <section class="section alt">
     <div class="feature-layout">
-      <div><p class="eyebrow">Who We Are</p><h2>Modern grooming, organized from booking to finish.</h2><p class="muted">The Barber Co system replaces manual logbooks and social media scheduling with a clear online flow for appointments, walk-ins, barber availability, and customer updates.</p></div>
+      <div><p class="eyebrow">Who We Are</p><h2>Modern grooming, organized from booking to finish.</h2><p class="muted">The Barber Co system replaces manual logbooks and social media scheduling with a clear online flow that works across phones, tablets, and desktops for appointments, walk-ins, barber availability, and customer updates.</p></div>
       <div class="grid-3">
         <article class="card"><p class="eyebrow">01</p><h3>Expert Barbers</h3><p class="muted">Customers choose a preferred barber and available time slot.</p></article>
         <article class="card"><p class="eyebrow">02</p><h3>Premium Experience</h3><p class="muted">Packages, prices, duration, and requests are visible before booking.</p></article>

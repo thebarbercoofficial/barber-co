@@ -3,7 +3,7 @@ document.querySelector("#app").innerHTML = `
   ${nav("contact")}
   <section class="section top">
     <div class="contact-layout">
-      <div><p class="eyebrow">Contact Us</p><h2>Questions before your cut?</h2><p class="muted">Reach the shop for service questions, booking concerns, or schedule assistance.</p><div class="panel"><div class="summary-list"><div><span>Email</span><strong>thebarberco@example.com</strong></div><div><span>Phone</span><strong>+63 900 000 0000</strong></div><div><span>Address</span><strong>Carmona, Cavite</strong></div></div></div></div>
+      <div><p class="eyebrow">Contact Us</p><h2>Questions before your cut?</h2><p class="muted">Reach the shop for service questions, booking concerns, or schedule assistance.</p><div class="panel"><div class="summary-list"><div><span>Phone</span><strong>0915 812 2246</strong></div><div><span>Address</span><strong>1197 JM Loyola St, Carmona, Cavite 4116</strong></div><div><span>Hours</span><strong>Mon-Fri 10:00-20:00<br>Sat-Sun 09:00-20:00</strong></div></div><a class="button ghost small" href="https://www.facebook.com/TheBarberCo.Carmona/" target="_blank" rel="noreferrer">Message the shop on Facebook</a></div></div>
       <form class="form-card" data-contact><label>Full name<input name="name" required placeholder="Your name"></label><label>Email<input type="email" name="email" required placeholder="you@email.com"></label><label>Message<textarea name="message" required rows="5" placeholder="How can we help?"></textarea></label><button class="button primary full" type="submit">Send message</button></form>
     </div>
   </section>

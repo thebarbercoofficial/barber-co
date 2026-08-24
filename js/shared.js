@@ -189,7 +189,7 @@ const BarberCo = (() => {
 
   function initMotion() {
     const revealTargets = document.querySelectorAll(
-      ".section-heading, .feature-layout, .card, .service-card, .barber-card, .form-card, .panel, .metric, .queue-row, .appointment-row, .now-next article"
+      ".section-heading, .feature-layout, .shop-showcase, .card, .service-card, .barber-card, .form-card, .panel, .metric, .queue-row, .appointment-row, .now-next article"
     );
     revealTargets.forEach((node) => node.classList.add("reveal"));
     if (!("IntersectionObserver" in window)) {
@@ -224,8 +224,8 @@ const BarberCo = (() => {
     return `
       <header class="site-header" data-header>
         <a class="brand" href="index.html" aria-label="Go to The Barber Co home">
-          <span class="brand-mark">BC</span>
-          <span>The Barber Co</span>
+          <img class="brand-logo" src="images/logo.png" alt="The Barber Co Barbershop logo">
+          <span class="brand-name">The Barber Co</span>
         </a>
         <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" data-nav-toggle><span></span><span></span><span></span></button>
         <nav class="site-nav" data-nav>

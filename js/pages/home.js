@@ -16,7 +16,7 @@ const statusPanel = current
 
 document.querySelector("#app").innerHTML = `
   ${nav("home")}
-  <section class="hero">
+  <section class="hero hero-store">
     <div class="hero-content">
       <p class="eyebrow">Carmona, Cavite</p>
       <h1>Book sharp cuts without the long wait.</h1>
@@ -29,6 +29,25 @@ document.querySelector("#app").innerHTML = `
     <aside class="status-panel">
       ${statusPanel}
     </aside>
+  </section>
+  <section class="section shop-section">
+    <div class="shop-showcase">
+      <figure class="shop-photo">
+        <img src="images/shop-interior.png" alt="The Barber Co barbershop interior with black barber chairs and oak flooring">
+        <figcaption>Inside The Barber Co, Carmona</figcaption>
+      </figure>
+      <div class="shop-copy">
+        <p class="eyebrow">The shop</p>
+        <h2>Warm oak. Sharp lines. A proper barbershop.</h2>
+        <p>Come into a space built for good conversations, clean fades, and a comfortable wait. The digital queue keeps the front desk moving while the shop stays focused on the craft.</p>
+        <div class="shop-specs">
+          <div><strong>Since 2022</strong><span>Local barbershop</span></div>
+          <div><strong>Carmona</strong><span>Cavite, Philippines</span></div>
+          <div><strong>Walk-ins</strong><span>Scan, join, relax</span></div>
+        </div>
+        <a class="button primary" href="about.html">Get to know the shop</a>
+      </div>
+    </div>
   </section>
   <section class="section alt">
     <div class="feature-layout">

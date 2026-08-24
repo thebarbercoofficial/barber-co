@@ -1,4 +1,4 @@
-const { barbers, state, nav, initHeader, initials, save, loadCatalog, toast } = BarberCo;
+const { barbers, state, nav, shopEndcap, initHeader, initials, save, loadCatalog, toast } = BarberCo;
 
 async function render() {
   try { await loadCatalog(); } catch { toast("Using saved barbers until backend is online."); }
@@ -9,6 +9,7 @@ async function render() {
       <div class="grid-3">
         ${barbers.filter((barber) => barber.status !== "fired").map((barber) => `<article class="barber-card"><span class="avatar">${initials(barber.name)}</span><h3>${barber.name}</h3><p><strong>${barber.role}</strong></p><p class="muted">${barber.bio}</p><p><span class="status-pill">${barber.status}</span></p><button class="button primary small" data-barber="${barber.id}" type="button" ${barber.status === "on-leave" ? "disabled" : ""}>${barber.status === "on-leave" ? "On leave" : "Choose barber"}</button></article>`).join("") || `<div class="empty-state">No barbers are listed yet. Please check again after staff updates the roster.</div>`}
       </div>
+      ${shopEndcap({ eyebrow: "The chair is waiting", title: "Good cuts start with the right atmosphere.", copy: "When you are ready, choose a service and let the shop take it from there. Our front desk can also help with a walk-in at the counter.", href: "booking.html", label: "Book a cut" })}
     </section>
   `;
   document.querySelectorAll("[data-barber]").forEach((button) => {

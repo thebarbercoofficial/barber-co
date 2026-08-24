@@ -82,6 +82,19 @@ strong {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
 }
 
+.scroll-progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--gold);
+  box-shadow: 0 0 14px rgba(199, 144, 63, 0.62);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 120ms linear;
+}
+
 .brand,
 .site-nav button,
 .site-nav a {
@@ -493,6 +506,61 @@ p {
   color: rgba(255, 255, 255, 0.56);
   font-size: 0.74rem;
   line-height: 1.4;
+}
+
+.page-endcap {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(320px, 1.08fr);
+  gap: clamp(28px, 6vw, 90px);
+  align-items: center;
+  background: var(--paper);
+  background-image: repeating-linear-gradient(101deg, rgba(105, 63, 31, 0.035) 0, rgba(105, 63, 31, 0.035) 1px, transparent 1px, transparent 12px);
+}
+
+.endcap-image {
+  position: relative;
+  min-height: 370px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--oak-deep);
+  box-shadow: 0 24px 70px rgba(46, 27, 16, 0.2);
+}
+
+.endcap-image::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.endcap-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 370px;
+  object-fit: cover;
+  transition: transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1), filter 700ms ease;
+}
+
+.endcap-image:hover img {
+  filter: saturate(1.08);
+  transform: scale(1.04);
+}
+
+.endcap-copy {
+  max-width: 600px;
+}
+
+.endcap-copy h2 {
+  max-width: 560px;
+}
+
+.endcap-copy > p:not(.eyebrow) {
+  max-width: 560px;
+  color: var(--muted);
+  font-size: 1.02rem;
 }
 
 .status-dot {
@@ -1055,6 +1123,16 @@ body.is-loaded .site-header {
   animation: fadeDown 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+body.is-loaded #app {
+  animation: pageEnter 680ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+body.is-leaving #app {
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
 body.is-loaded .hero-content .eyebrow,
 body.is-loaded .section-heading .eyebrow,
 body.is-loaded .workspace > .eyebrow {
@@ -1123,6 +1201,17 @@ body.is-loaded .grid-5 > *:nth-child(5) {
   from {
     opacity: 0;
     transform: translateY(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -1491,6 +1580,7 @@ body.is-loaded .login-note {
   .payment-layout,
   .contact-layout,
   .shop-showcase,
+  .page-endcap,
   .grid-2,
   .grid-3 {
     grid-template-columns: 1fr;
@@ -1606,6 +1696,11 @@ body.is-loaded .login-note {
     min-height: 360px;
   }
 
+  .endcap-image,
+  .endcap-image img {
+    min-height: 280px;
+  }
+
   .shop-specs {
     grid-template-columns: 1fr;
   }
@@ -1627,5 +1722,21 @@ body.is-loaded .login-note {
   .appointment-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
   }
 }

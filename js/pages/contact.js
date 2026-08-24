@@ -1,4 +1,4 @@
-const { nav, initHeader, toast } = BarberCo;
+const { nav, shopEndcap, initHeader, toast } = BarberCo;
 document.querySelector("#app").innerHTML = `
   ${nav("contact")}
   <section class="section top">
@@ -7,6 +7,7 @@ document.querySelector("#app").innerHTML = `
       <form class="form-card" data-contact><label>Full name<input name="name" required placeholder="Your name"></label><label>Email<input type="email" name="email" required placeholder="you@email.com"></label><label>Message<textarea name="message" required rows="5" placeholder="How can we help?"></textarea></label><button class="button primary full" type="submit">Send message</button></form>
     </div>
   </section>
+  ${shopEndcap({ eyebrow: "Find us in Carmona", title: "Come see the space in person.", copy: "Questions about a cut, a booking, or the live queue? Send us a message, then stop by when it is time for your chair.", href: "queue.html", label: "See the walk-in queue" })}
 `;
 document.querySelector("[data-contact]").addEventListener("submit", (event) => {
   event.preventDefault();

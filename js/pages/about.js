@@ -1,4 +1,4 @@
-const { nav, initHeader } = BarberCo;
+const { nav, shopEndcap, initHeader } = BarberCo;
 document.querySelector("#app").innerHTML = `
   ${nav("about")}
   <section class="section top alt">
@@ -11,5 +11,6 @@ document.querySelector("#app").innerHTML = `
       </div>
     </div>
   </section>
+  ${shopEndcap({ eyebrow: "Our space", title: "A comfortable place to take your turn.", copy: "The shop is warm, practical, and built around the craft. Come in for the cut, stay for the conversation, and let the queue handle the timing.", href: "queue.html", label: "Check the queue" })}
 `;
 initHeader("about");

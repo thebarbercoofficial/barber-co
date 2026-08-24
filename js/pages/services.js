@@ -1,4 +1,4 @@
-const { state, nav, initHeader, peso, save, loadCatalog, toast } = BarberCo;
+const { state, nav, shopEndcap, initHeader, peso, save, loadCatalog, toast } = BarberCo;
 const params = new URLSearchParams(location.search);
 if (params.get("service")) state.selectedServiceId = params.get("service");
 
@@ -11,6 +11,7 @@ async function render() {
       <div class="grid-5">
         ${state.services.map((service) => `<article class="service-card ${state.selectedServiceId === service.id ? "selected" : ""}"><span class="service-icon">${service.icon}</span><h3>${service.name}</h3><p class="muted">${service.detail}</p><small class="muted">${service.duration}</small><strong class="price">${peso(service.price)}</strong><button class="button primary small" type="button" data-service="${service.id}">Book this</button></article>`).join("")}
       </div>
+      ${shopEndcap({ eyebrow: "Inside the shop", title: "Pick your cut. We handle the rest.", copy: "Choose your service, reserve a slot, and arrive ready. Walk-ins can scan the shop QR and watch their place in line while the team keeps the chairs moving.", href: "booking.html", label: "Reserve a slot" })}
     </section>
   `;
 

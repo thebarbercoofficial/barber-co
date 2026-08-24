@@ -183,13 +183,30 @@ const BarberCo = (() => {
     window.addEventListener("scroll", () => {
       header?.classList.toggle("scrolled", window.scrollY > 18);
     }, { passive: true });
+    const progress = document.querySelector("[data-scroll-progress]");
+    const updateScrollProgress = () => {
+      const distance = document.documentElement.scrollHeight - window.innerHeight;
+      const value = distance > 0 ? Math.min(1, window.scrollY / distance) : 0;
+      progress?.style.setProperty("transform", `scaleX(${value})`);
+    };
+    window.addEventListener("scroll", updateScrollProgress, { passive: true });
+    updateScrollProgress();
+    document.addEventListener("click", (event) => {
+      const link = event.target.closest?.("a[href]");
+      if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const href = link.getAttribute("href") || "";
+      if (!href || href.startsWith("#") || href.startsWith("http") || href.startsWith("mailto:") || link.target === "_blank" || link.hasAttribute("download")) return;
+      event.preventDefault();
+      document.body.classList.add("is-leaving");
+      window.setTimeout(() => { window.location.href = href; }, 180);
+    });
     initMotion();
     requestAnimationFrame(() => document.body.classList.add("is-loaded"));
   }
 
   function initMotion() {
     const revealTargets = document.querySelectorAll(
-      ".section-heading, .feature-layout, .shop-showcase, .card, .service-card, .barber-card, .form-card, .panel, .metric, .queue-row, .appointment-row, .now-next article"
+      ".section-heading, .feature-layout, .shop-showcase, .page-endcap, .endcap-image, .endcap-copy, .card, .service-card, .barber-card, .form-card, .panel, .metric, .queue-row, .appointment-row, .now-next article"
     );
     revealTargets.forEach((node) => node.classList.add("reveal"));
     if (!("IntersectionObserver" in window)) {
@@ -233,7 +250,22 @@ const BarberCo = (() => {
           ${signedIn ? `<button type="button" data-logout>Logout</button>` : ""}
           <a class="nav-cta ${active === "booking" ? "active" : ""}" href="booking.html" data-active="booking">Book now</a>
         </nav>
+        <span class="scroll-progress" data-scroll-progress aria-hidden="true"></span>
       </header>
+    `;
+  }
+
+  function shopEndcap({ eyebrow, title, copy, href = "booking.html", label = "Book a slot" }) {
+    return `
+      <section class="section page-endcap">
+        <div class="endcap-image"><img src="images/shop-interior.png" alt="Inside The Barber Co barbershop"></div>
+        <div class="endcap-copy">
+          <p class="eyebrow">${eyebrow}</p>
+          <h2>${title}</h2>
+          <p>${copy}</p>
+          <a class="button primary" href="${href}">${label}</a>
+        </div>
+      </section>
     `;
   }
 
@@ -268,5 +300,5 @@ const BarberCo = (() => {
     return available.map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""}>${barber.name}</option>`).join("");
   }
 
-  return { state, barbers, save, peso, byId, initials, avatar, toast, initHeader, nav, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, setSession, clearSession, authToken, currentRole, canAccess };
+  return { state, barbers, save, peso, byId, initials, avatar, toast, initHeader, nav, shopEndcap, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, setSession, clearSession, authToken, currentRole, canAccess };
 })();

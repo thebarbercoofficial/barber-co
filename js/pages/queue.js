@@ -1,4 +1,4 @@
-const { state, barbers, nav, initHeader, byId, api, loadCatalog, toast } = BarberCo;
+const { state, barbers, nav, initHeader, byId, api, loadCatalog, serviceOptions, toast } = BarberCo;
 const params = new URLSearchParams(location.search);
 const savedTicketId = localStorage.getItem("barberCoQueueTicketId");
 let alertsEnabled = false;
@@ -55,7 +55,8 @@ async function render() {
         <form class="form-card" data-walkin>
           <p class="eyebrow">Walk-in QR</p><h2>Join the line</h2>
           <label>Name<input name="customer" required placeholder="Your name"></label>
-          <p class="muted">For customers already at the shop. No account needed. Staff will call your name and assign the cut at the counter.</p>
+          <label>Service<select name="serviceId" required>${serviceOptions()}</select></label>
+          <p class="muted">For customers already at the shop. No account needed. Choose a cut, get a number, and wait for your name to be called.</p>
           <button class="button primary full" type="submit">Get queue number</button>
           <button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>
         </form>
@@ -81,28 +82,12 @@ async function render() {
     try {
       const payload = await api("/queue/walkin", {
         method: "POST",
-        body: JSON.stringify({ customer: data.get("customer") })
+        body: JSON.stringify({ customer: data.get("customer"), serviceId: data.get("serviceId") })
       });
       localStorage.setItem("barberCoQueueTicketId", payload.ticket.id);
       location.href = `queue.html?ticket=${payload.ticket.id}`;
     } catch (error) {
-      const ticket = {
-        id: String(Date.now()),
-        queueNumber: Math.max(0, ...state.queue.map((item) => Number(item.queueNumber || 0))) + 1,
-        customer: data.get("customer"),
-        phone: "",
-        serviceId: "",
-        barberId: "",
-        cutName: "To be assigned",
-        source: "shop-qr",
-        status: "waiting",
-        createdAt: new Date().toISOString()
-      };
-      state.queue.push(ticket);
-      BarberCo.save();
-      localStorage.setItem("barberCoQueueTicketId", ticket.id);
-      toast("Queue ticket saved on this device.");
-      location.href = `queue.html?ticket=${ticket.id}`;
+      toast(error.message || "The queue could not be reached. Please ask the front desk for help.");
     }
   });
 

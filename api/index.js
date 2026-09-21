@@ -17,6 +17,13 @@ const seedServices = [
 
 const seedBarbers = [];
 
+const defaultSettings = {
+  _id: "shop",
+  gcash: { enabled: true, accountName: "The Barber Co", accountNumber: "", qrImage: "" },
+  maya: { enabled: false, accountName: "The Barber Co", accountNumber: "", qrImage: "" },
+  bookingFee: 100
+};
+
 function send(res, status, data) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
@@ -62,6 +69,11 @@ async function ensureSeed(database) {
       for (const barber of seedBarbers) {
         await database.collection("barbers").updateOne({ slug: barber.slug }, { $setOnInsert: { ...barber, createdAt: new Date() } }, { upsert: true });
       }
+      await database.collection("settings").updateOne(
+        { _id: "shop" },
+        { $setOnInsert: { ...defaultSettings, createdAt: new Date() } },
+        { upsert: true }
+      );
       const adminEmail = String(process.env.ADMIN_EMAIL || "thebarberco.official@gmail.com").toLowerCase();
       const adminPassword = process.env.ADMIN_PASSWORD;
       if (adminPassword) {
@@ -156,6 +168,11 @@ async function handler(req, res) {
 
   if (req.method === "GET" && path === "/health") return send(res, 200, { ok: true });
 
+  if (req.method === "GET" && path === "/settings") {
+    const settings = await database.collection("settings").findOne({ _id: "shop" });
+    return send(res, 200, { settings: settings || defaultSettings });
+  }
+
   if (req.method === "POST" && path === "/auth/register") {
     const name = String(body.name || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
@@ -214,6 +231,37 @@ async function handler(req, res) {
     await requireRole(req, database, ["admin"]);
     await database.collection("users").updateOne({ _id: new ObjectId(path.split("/").pop()) }, { $set: { role: body.role, updatedAt: new Date() } });
     return send(res, 200, { ok: true });
+  }
+
+  if (path === "/admin/settings" && req.method === "PATCH") {
+    await requireRole(req, database, ["admin"]);
+    const sanitizeMethod = (method = {}) => {
+      const qrImage = String(method.qrImage || "");
+      if (qrImage && !/^data:image\/(jpeg|png|webp);base64,/.test(qrImage)) {
+        const error = new Error("Payment QR must be a JPG, PNG, or WebP image.");
+        error.status = 400;
+        throw error;
+      }
+      if (qrImage.length > 2.8 * 1024 * 1024) {
+        const error = new Error("Payment QR image must be 2 MB or smaller.");
+        error.status = 413;
+        throw error;
+      }
+      return {
+        enabled: method.enabled !== false,
+        accountName: String(method.accountName || "").trim().slice(0, 120),
+        accountNumber: String(method.accountNumber || "").trim().slice(0, 60),
+        qrImage
+      };
+    };
+    const update = {
+      gcash: sanitizeMethod(body.gcash),
+      maya: sanitizeMethod(body.maya),
+      bookingFee: Math.max(0, Number(body.bookingFee) || 0),
+      updatedAt: new Date()
+    };
+    await database.collection("settings").updateOne({ _id: "shop" }, { $set: update }, { upsert: true });
+    return send(res, 200, { settings: { _id: "shop", ...update } });
   }
 
   if (req.method === "GET" && path === "/catalog") {
@@ -290,7 +338,8 @@ async function handler(req, res) {
       const barber = await database.collection("barbers").findOne({ $or: [{ slug: body.barberId }, ...(ObjectId.isValid(body.barberId) ? [{ _id: new ObjectId(body.barberId) }] : [])], status: { $nin: ["fired", "on-leave"] } });
       if (!barber) return send(res, 400, { error: "The selected barber is not available." });
     }
-    const paymentMethod = ["GCash", "Maya"].includes(body.paymentMethod) ? body.paymentMethod : "";
+    const settings = await database.collection("settings").findOne({ _id: "shop" }) || defaultSettings;
+    const paymentMethod = ["GCash", "Maya"].find((name) => name === body.paymentMethod && settings[name.toLowerCase()]?.enabled) || "";
     const paymentProof = String(body.paymentProof || "");
     if (!paymentMethod || !/^data:image\/(jpeg|png|webp);base64,/.test(paymentProof)) {
       return send(res, 400, { error: "Upload a valid payment proof." });
@@ -299,7 +348,8 @@ async function handler(req, res) {
       return send(res, 413, { error: "Payment proof must be 2 MB or smaller." });
     }
     const queueNumber = await nextQueueNumber(database);
-    const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId: body.barberId || "", date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee: 100, total: Number(service.price) + 100, paymentMethod, paymentProof, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
+    const bookingFee = Math.max(0, Number(settings.bookingFee) || 0);
+    const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId: body.barberId || "", date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
     await database.collection("appointments").insertOne(appointment);
     return send(res, 201, { appointment: normalizeDoc(appointment) });
   }
@@ -316,14 +366,20 @@ async function handler(req, res) {
   }
 
   if (req.method === "POST" && path === "/queue/walkin") {
+    const customer = String(body.customer || "").trim().slice(0, 120);
+    if (customer.length < 2) return send(res, 400, { error: "Enter the customer's name." });
+    const service = body.serviceId ? await database.collection("services").findOne({ $or: [{ slug: body.serviceId }, ...(ObjectId.isValid(body.serviceId) ? [{ _id: new ObjectId(body.serviceId) }] : [])], active: { $ne: false } }) : null;
+    if (body.serviceId && !service) return send(res, 400, { error: "Choose an available service." });
+    const waiting = await database.collection("queue").countDocuments({ status: { $in: ["waiting", "serving"] } });
     const queueNumber = await nextQueueNumber(database);
-    const ticket = { _id: new ObjectId(), customer: body.customer || "Walk-in customer", phone: "", serviceId: body.serviceId || "", barberId: body.barberId || "", cutName: body.cutName || "To be assigned", source: body.source || "shop-qr", queueNumber, status: "waiting", createdAt: new Date() };
+    const ticket = { _id: new ObjectId(), customer, phone: "", serviceId: service?.slug || "", barberId: "", cutName: service?.name || "To be assigned", price: Number(service?.price || 0), waitMinutes: waiting * 30, source: "shop-qr", queueNumber, status: "waiting", paid: false, createdAt: new Date() };
     await database.collection("queue").insertOne(ticket);
     return send(res, 201, { ticket: normalizeDoc(ticket) });
   }
 
   if (req.method === "GET" && path.startsWith("/queue/ticket/")) {
     const id = path.split("/").pop();
+    if (!ObjectId.isValid(id)) return send(res, 404, { error: "Ticket not found." });
     const ticket = await database.collection("queue").findOne({ _id: new ObjectId(id) });
     if (!ticket) return send(res, 404, { error: "Ticket not found." });
     const waitingAhead = await database.collection("queue").countDocuments({ status: "waiting", queueNumber: { $lt: ticket.queueNumber } });
@@ -340,6 +396,43 @@ async function handler(req, res) {
     if (current) return send(res, 409, { error: "Finish the current customer before calling next.", ticket: normalizeDoc(current) });
     const next = await database.collection("queue").findOneAndUpdate({ status: "waiting" }, { $set: { status: "serving", calledAt: new Date(), updatedAt: new Date() } }, { sort: { queueNumber: 1 }, returnDocument: "after" });
     return send(res, 200, { ticket: normalizeDoc(next) });
+  }
+
+  if (path === "/admin/queue") {
+    await requireRole(req, database, ["admin", "moderator"]);
+    if (req.method === "GET") {
+      return send(res, 200, { queue: (await database.collection("queue").find().sort({ createdAt: -1 }).limit(250).toArray()).map(normalizeDoc) });
+    }
+    if (req.method === "POST") {
+      const customer = String(body.customer || "").trim().slice(0, 120);
+      if (customer.length < 2) return send(res, 400, { error: "Enter the customer's name." });
+      const queueNumber = await nextQueueNumber(database);
+      const ticket = {
+        _id: new ObjectId(), customer, phone: "", serviceId: String(body.serviceId || ""),
+        barberId: String(body.barberId || ""), cutName: String(body.cutName || "To be assigned").slice(0, 120),
+        price: Math.max(0, Number(body.price) || 0), waitMinutes: Math.max(0, Number(body.waitMinutes) || 0),
+        notes: String(body.notes || "").slice(0, 500), source: "staff", queueNumber, status: "waiting", paid: false, createdAt: new Date()
+      };
+      await database.collection("queue").insertOne(ticket);
+      return send(res, 201, { ticket: normalizeDoc(ticket) });
+    }
+  }
+
+  if (path.startsWith("/admin/queue/") && req.method === "PATCH") {
+    await requireRole(req, database, ["admin", "moderator"]);
+    const id = path.split("/").pop();
+    if (!ObjectId.isValid(id)) return send(res, 404, { error: "Queue ticket not found." });
+    const allowed = ["waiting", "serving", "done", "cancelled"];
+    if (!allowed.includes(body.status)) return send(res, 400, { error: "Choose a valid queue status." });
+    if (body.status === "serving") {
+      const current = await database.collection("queue").findOne({ status: "serving", _id: { $ne: new ObjectId(id) } });
+      if (current) return send(res, 409, { error: "Finish the current customer before serving another." });
+    }
+    const update = { status: body.status, updatedAt: new Date() };
+    if (body.status === "serving") update.calledAt = new Date();
+    if (body.status === "done") Object.assign(update, { paid: true, paidAt: new Date() });
+    await database.collection("queue").updateOne({ _id: new ObjectId(id) }, { $set: update });
+    return send(res, 200, { ok: true });
   }
 
   if (req.method === "POST" && path.startsWith("/admin/queue/") && path.endsWith("/paid")) {

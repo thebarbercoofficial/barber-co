@@ -139,6 +139,19 @@ const BarberCo = (() => {
     return data;
   }
 
+  async function loadSettings() {
+    const data = await api("/settings");
+    const settings = data.settings || {};
+    state.shopSettings = settings;
+    if (settings.gcash) {
+      state.admin.gcashName = settings.gcash.accountName || "";
+      state.admin.gcashNumber = settings.gcash.accountNumber || "";
+      state.admin.gcashQr = settings.gcash.qrImage || "";
+    }
+    save();
+    return settings;
+  }
+
   function save() {
     localStorage.setItem("barberCoState", JSON.stringify(state));
   }
@@ -307,5 +320,5 @@ const BarberCo = (() => {
     return available.map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""}>${barber.name}</option>`).join("");
   }
 
-  return { state, barbers, save, peso, byId, initials, avatar, toast, initHeader, nav, shopEndcap, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, setSession, clearSession, authToken, isAuthenticated, currentRole, canAccess };
+  return { state, barbers, save, peso, byId, initials, avatar, toast, initHeader, nav, shopEndcap, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, loadSettings, setSession, clearSession, authToken, isAuthenticated, currentRole, canAccess };
 })();

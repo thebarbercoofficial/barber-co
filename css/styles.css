@@ -896,6 +896,29 @@ textarea:focus,
   box-shadow: 0 16px 36px rgba(17, 17, 17, 0.16);
 }
 
+.settings-group {
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.settings-group legend {
+  padding: 0 8px;
+  font-weight: 800;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.check-row input {
+  width: 18px;
+  height: 18px;
+}
+
 .live-pill,
 .status-pill {
   display: inline-flex;

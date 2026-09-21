@@ -1,4 +1,4 @@
-const { state, barbers, nav, initHeader, byId, peso, serviceOptions, barberOptions, save, loadCatalog, toast } = BarberCo;
+const { state, barbers, nav, initHeader, byId, peso, serviceOptions, barberOptions, save, loadCatalog, loadSettings, toast } = BarberCo;
 const params = new URLSearchParams(location.search);
 if (params.get("service")) state.selectedServiceId = params.get("service");
 
@@ -13,10 +13,14 @@ function localDateValue(date = new Date()) {
 }
 
 async function render() {
-  try { await loadCatalog(); } catch { toast("Using saved booking options until backend is online."); }
+  let settings = state.shopSettings || {};
+  try {
+    const results = await Promise.all([loadCatalog(), loadSettings()]);
+    settings = results[1];
+  } catch { toast("Using saved booking options until backend is online."); }
   const selected = byId(state.services, state.selectedServiceId);
   const hasBarbers = barbers.filter((barber) => barber.status !== "fired" && barber.status !== "on-leave").length > 0;
-  const onlineFee = 100;
+  const onlineFee = Math.max(0, Number(settings.bookingFee ?? 100));
   const minimumDate = localDateValue();
   document.querySelector("#app").innerHTML = `
     ${nav("booking")}
@@ -27,6 +31,19 @@ async function render() {
       </div>
     </section>
   `;
+  const dateInput = document.querySelector('[name="date"]');
+  const timeInput = document.querySelector('[name="time"]');
+  const updateMinimumTime = () => {
+    const today = localDateValue();
+    if (dateInput.value === today) {
+      const now = new Date(Date.now() + 5 * 60 * 1000);
+      timeInput.min = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    } else {
+      timeInput.removeAttribute("min");
+    }
+  };
+  dateInput.addEventListener("change", updateMinimumTime);
+  updateMinimumTime();
   document.querySelector("[data-booking]").addEventListener("submit", (event) => {
     event.preventDefault();
     const data = new FormData(event.target);

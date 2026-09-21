@@ -70,8 +70,10 @@ const BarberCo = (() => {
   state.appointments = (state.appointments || []).filter((item) => ![8, 9, 10, 11].includes(Number(item.id)));
   if (["michael", "james", "daniel"].includes(state.selectedBarberId)) state.selectedBarberId = "";
   const barbers = state.barbers;
+  const productionApiBase = "https://barber-co-seven.vercel.app";
   const configuredApiBase = localStorage.getItem("barberCoApiBase") || window.BARBER_CO_API_BASE || "";
   const apiBase = configuredApiBase || (location.protocol.startsWith("http") && !location.hostname.endsWith(".github.io") ? location.origin : "");
+  const resolvedApiBase = apiBase || (location.hostname.endsWith(".github.io") ? productionApiBase : "");
 
   function authToken() {
     return localStorage.getItem("barberCoToken") || "";
@@ -106,13 +108,13 @@ const BarberCo = (() => {
   }
 
   async function api(path, options = {}) {
-    if (!apiBase) {
+    if (!resolvedApiBase) {
       const error = new Error("Backend is not connected.");
       error.code = "BACKEND_UNAVAILABLE";
       throw error;
     }
     const token = authToken();
-    const response = await fetch(`${apiBase}/api${path}`, {
+    const response = await fetch(`${resolvedApiBase}/api${path}`, {
       ...options,
       headers: {
         "Content-Type": "application/json",

@@ -68,7 +68,10 @@ async function ensureSeed(database) {
         const hash = await bcrypt.hash(adminPassword, 10);
         await database.collection("users").updateOne(
           { email: adminEmail },
-          { $setOnInsert: { name: "The Barber Co Admin", email: adminEmail, passwordHash: hash, role: "admin", phone: "", createdAt: new Date() } },
+          {
+            $set: { passwordHash: hash, role: "admin" },
+            $setOnInsert: { name: "The Barber Co Admin", email: adminEmail, phone: "", createdAt: new Date() }
+          },
           { upsert: true }
         );
       }
@@ -78,7 +81,10 @@ async function ensureSeed(database) {
         const hash = await bcrypt.hash(moderatorPassword, 10);
         await database.collection("users").updateOne(
           { email: moderatorEmail },
-          { $setOnInsert: { name: "Front Desk Staff", email: moderatorEmail, passwordHash: hash, role: "moderator", phone: "", createdAt: new Date() } },
+          {
+            $set: { passwordHash: hash, role: "moderator" },
+            $setOnInsert: { name: "Front Desk Staff", email: moderatorEmail, phone: "", createdAt: new Date() }
+          },
           { upsert: true }
         );
       }

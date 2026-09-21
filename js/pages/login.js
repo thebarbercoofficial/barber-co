@@ -63,30 +63,12 @@ document.querySelector("[data-login]").addEventListener("submit", async (event) 
   try {
     const payload = await api("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
     setSession(payload);
-    location.href = payload.user.role === "admin" ? "admin-dashboard.html" : "user-profile.html";
+    const next = new URLSearchParams(location.search).get("next");
+    const safeNext = next && !next.includes(":") && !next.startsWith("//") ? next : "";
+    location.href = payload.user.role === "admin" ? "admin-dashboard.html" : payload.user.role === "moderator" ? "admin-logbook.html" : safeNext || "user-profile.html";
   } catch (error) {
-    const demoAccount = state.accounts.find((account) => account.email.toLowerCase() === email && account.password === password);
-    if (demoAccount) {
-      setSession({
-        token: `demo-${demoAccount.role}`,
-        user: {
-          name: demoAccount.name,
-          email,
-          role: demoAccount.role,
-          phone: demoAccount.phone || ""
-        }
-      });
-      location.href = demoAccount.role === "moderator" ? "admin-logbook.html" : demoAccount.role === "admin" ? "admin-dashboard.html" : "user-profile.html";
-      return;
-    }
-
-    if ((email === "customer@email.com" || email === "user@email.com") && password === "password") {
-      state.user.email = email;
-      save();
-      location.href = "user-profile.html";
-      return;
-    }
-    showLoginAlert("Wrong password", error.message || "Try again!");
+    const offline = error.code === "BACKEND_UNAVAILABLE" || /fetch|network/i.test(error.message || "");
+    showLoginAlert(offline ? "Service unavailable" : "Sign in failed", offline ? "The account service is not connected. Please try again shortly." : error.message || "Check your email and password.");
   }
 });
 

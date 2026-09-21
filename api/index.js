@@ -269,8 +269,31 @@ async function handler(req, res) {
 
   if (req.method === "POST" && path === "/appointments") {
     const user = await requireUser(req, database);
+    const date = String(body.date || "");
+    const time = String(body.time || "");
+    const appointmentAt = new Date(`${date}T${time}:00+08:00`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time) || !Number.isFinite(appointmentAt.getTime())) {
+      return send(res, 400, { error: "Choose a valid appointment date and time." });
+    }
+    if (appointmentAt.getTime() <= Date.now()) {
+      return send(res, 400, { error: "Past dates and times cannot be booked." });
+    }
+    const service = await database.collection("services").findOne({ $or: [{ slug: body.serviceId }, ...(ObjectId.isValid(body.serviceId) ? [{ _id: new ObjectId(body.serviceId) }] : [])], active: { $ne: false } });
+    if (!service) return send(res, 400, { error: "Choose an available service." });
+    if (body.barberId) {
+      const barber = await database.collection("barbers").findOne({ $or: [{ slug: body.barberId }, ...(ObjectId.isValid(body.barberId) ? [{ _id: new ObjectId(body.barberId) }] : [])], status: { $nin: ["fired", "on-leave"] } });
+      if (!barber) return send(res, 400, { error: "The selected barber is not available." });
+    }
+    const paymentMethod = ["GCash", "Maya"].includes(body.paymentMethod) ? body.paymentMethod : "";
+    const paymentProof = String(body.paymentProof || "");
+    if (!paymentMethod || !/^data:image\/(jpeg|png|webp);base64,/.test(paymentProof)) {
+      return send(res, 400, { error: "Upload a valid payment proof." });
+    }
+    if (paymentProof.length > 2.8 * 1024 * 1024) {
+      return send(res, 413, { error: "Payment proof must be 2 MB or smaller." });
+    }
     const queueNumber = await nextQueueNumber(database);
-    const appointment = { _id: new ObjectId(), ...body, userId: user._id, customer: user.name, queueNumber, status: "pending", paid: body.paymentMethod !== "Cash", createdAt: new Date() };
+    const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId: body.barberId || "", date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee: 100, total: Number(service.price) + 100, paymentMethod, paymentProof, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
     await database.collection("appointments").insertOne(appointment);
     return send(res, 201, { appointment: normalizeDoc(appointment) });
   }

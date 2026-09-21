@@ -983,10 +983,45 @@ textarea:focus,
 .sidebar {
   position: sticky;
   top: 84px;
+  align-self: start;
   height: calc(100vh - 84px);
+  overflow-y: auto;
   padding: 24px 16px;
   background: #111;
   color: var(--white);
+}
+
+.account-booking-note,
+.connection-error {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 20px;
+  border-left: 4px solid var(--gold);
+  border-radius: 4px;
+  padding: 14px 16px;
+  background: rgba(199, 144, 63, 0.11);
+}
+
+.account-booking-note span,
+.account-booking-note small,
+.field-help,
+.connection-error span {
+  color: var(--muted);
+}
+
+.field-help {
+  margin: -6px 0 18px;
+  font-size: 0.82rem;
+}
+
+.connection-error {
+  border-left-color: var(--red);
+  background: rgba(163, 59, 51, 0.08);
+}
+
+.connection-error .button {
+  width: fit-content;
+  margin-top: 8px;
 }
 
 .sidebar button,

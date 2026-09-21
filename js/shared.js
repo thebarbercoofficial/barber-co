@@ -77,6 +77,11 @@ const BarberCo = (() => {
     return localStorage.getItem("barberCoToken") || "";
   }
 
+  function isAuthenticated() {
+    const token = authToken();
+    return Boolean(token && state.user?.id && state.user?.email && !token.startsWith("demo-") && !token.startsWith("local-"));
+  }
+
   function setSession(payload) {
     if (payload?.token) localStorage.setItem("barberCoToken", payload.token);
     if (payload?.user) state.user = { ...state.user, ...payload.user };
@@ -226,7 +231,7 @@ const BarberCo = (() => {
 
   function nav(active = "") {
     const role = currentRole();
-    const signedIn = Boolean(state.user?.email || authToken());
+    const signedIn = isAuthenticated();
     const accountHref = role === "admin" ? "admin-dashboard.html" : role === "moderator" ? "admin-logbook.html" : state.user?.email ? "user-profile.html" : "login.html";
     const accountLabel = role === "admin" ? "Admin" : role === "moderator" ? "Logbook" : state.user?.email ? "Profile" : "Login";
     const links = [
@@ -300,5 +305,5 @@ const BarberCo = (() => {
     return available.map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""}>${barber.name}</option>`).join("");
   }
 
-  return { state, barbers, save, peso, byId, initials, avatar, toast, initHeader, nav, shopEndcap, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, setSession, clearSession, authToken, currentRole, canAccess };
+  return { state, barbers, save, peso, byId, initials, avatar, toast, initHeader, nav, shopEndcap, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, setSession, clearSession, authToken, isAuthenticated, currentRole, canAccess };
 })();

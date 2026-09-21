@@ -3,7 +3,7 @@ const params = new URLSearchParams(location.search);
 if (params.get("service")) state.selectedServiceId = params.get("service");
 
 if (!BarberCo.isAuthenticated()) {
-  location.replace(`login.html?next=${encodeURIComponent(`booking.html${location.search}`)}`);
+  location.replace(`register.html?next=${encodeURIComponent(`booking.html${location.search}`)}`);
   throw new Error("A customer account is required to book.");
 }
 

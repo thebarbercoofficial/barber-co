@@ -107,7 +107,7 @@ async function ensureSeed(database) {
 
 function publicUser(user) {
   if (!user) return null;
-  return { id: String(user._id), name: user.name, email: user.email, role: user.role || "customer", phone: user.phone || "", location: user.location || "", bio: user.bio || "" };
+  return { id: String(user._id), name: user.name, email: user.email, role: user.role || "customer", username: user.username || "", phone: user.phone || "", location: user.location || "", bio: user.bio || "", photo: user.photo || "" };
 }
 
 function normalizeDoc(doc) {
@@ -202,12 +202,16 @@ async function handler(req, res) {
 
   if (req.method === "PATCH" && path === "/me") {
     const user = await requireUser(req, database);
+    const photo = body.photo == null ? (user.photo || "") : String(body.photo);
+    if (photo && !/^data:image\/(jpeg|png|webp);base64,/.test(photo)) return send(res, 400, { error: "Profile photo must be a JPG, PNG, or WebP image." });
+    if (photo.length > 2.8 * 1024 * 1024) return send(res, 413, { error: "Profile photo must be 2 MB or smaller." });
     const update = {
-      name: body.name || user.name,
-      username: body.username || "",
-      phone: body.phone || "",
-      location: body.location || "",
-      bio: body.bio || "",
+      name: String(body.name || user.name).trim().slice(0, 120),
+      username: String(body.username || "").trim().slice(0, 60),
+      phone: String(body.phone || "").trim().slice(0, 40),
+      location: String(body.location || "").trim().slice(0, 160),
+      bio: String(body.bio || "").trim().slice(0, 1000),
+      photo,
       updatedAt: new Date()
     };
     await database.collection("users").updateOne({ _id: user._id }, { $set: update });
@@ -220,17 +224,30 @@ async function handler(req, res) {
     if (req.method === "POST") {
       const email = String(body.email || "").trim().toLowerCase();
       const password = String(body.password || "");
-      if (!email || password.length < 6) return send(res, 400, { error: "Email and password are required." });
-      const user = { _id: new ObjectId(), name: body.name || "Staff", email, passwordHash: await bcrypt.hash(password, 10), role: body.role || "customer", phone: body.phone || "", createdAt: new Date() };
-      await database.collection("users").insertOne(user);
+      const role = ["customer", "moderator", "admin"].includes(body.role) ? body.role : "customer";
+      if (!email || password.length < 6) return send(res, 400, { error: "Email and a 6-character password are required." });
+      const user = { _id: new ObjectId(), name: String(body.name || "Staff").trim(), email, passwordHash: await bcrypt.hash(password, 10), role, phone: body.phone || "", createdAt: new Date() };
+      try {
+        await database.collection("users").insertOne(user);
+      } catch (error) {
+        if (error?.code === 11000) return send(res, 409, { error: "An account with this email already exists." });
+        throw error;
+      }
       return send(res, 201, { user: publicUser(user) });
     }
   }
 
   if (path.startsWith("/admin/users/") && req.method === "PATCH") {
     await requireRole(req, database, ["admin"]);
-    await database.collection("users").updateOne({ _id: new ObjectId(path.split("/").pop()) }, { $set: { role: body.role, updatedAt: new Date() } });
-    return send(res, 200, { ok: true });
+    const id = path.split("/").pop();
+    const role = String(body.role || "");
+    if (!ObjectId.isValid(id) || !["customer", "moderator", "admin"].includes(role)) return send(res, 400, { error: "Choose a valid account and role." });
+    const target = await database.collection("users").findOne({ _id: new ObjectId(id) });
+    if (!target) return send(res, 404, { error: "Account not found." });
+    const protectedEmail = String(process.env.ADMIN_EMAIL || "thebarberco.official@gmail.com").toLowerCase();
+    if (target.email === protectedEmail && role !== "admin") return send(res, 403, { error: "The official owner account cannot be demoted." });
+    await database.collection("users").updateOne({ _id: target._id }, { $set: { role, updatedAt: new Date() } });
+    return send(res, 200, { user: publicUser({ ...target, role }) });
   }
 
   if (path === "/admin/settings" && req.method === "PATCH") {

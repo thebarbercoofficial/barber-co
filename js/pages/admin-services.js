@@ -16,7 +16,7 @@ async function loadServices() {
     save();
   } catch (error) {
     if (error.message.includes("Admin")) location.href = "login.html";
-    else toast("Using saved services until backend is online.");
+    else toast(error.message || "Services could not be loaded.");
   }
 }
 
@@ -43,10 +43,7 @@ async function render() {
     toast("Service added.");
     render();
   } catch (error) {
-    state.services.push(service);
-    save();
-    toast(error.message || "Saved locally until backend is online.");
-    render();
+    toast(error.message || "Service could not be added.");
   }
   });
   document.querySelector("[data-service-rows]").addEventListener("click", async (event) => {
@@ -56,18 +53,20 @@ async function render() {
     const service = state.services.find((item) => item.mongoId === edit.dataset.edit || item.id === edit.dataset.edit) || state.services[0];
     const price = prompt(`Update price for ${service.name}`, service.price);
     if (price) {
-      try { await api(`/admin/services/${edit.dataset.edit}`, { method: "PATCH", body: JSON.stringify({ price: Number(price) }) }); } catch {}
-      service.price = Number(price);
-      save();
-      render();
+      try {
+        await api(`/admin/services/${edit.dataset.edit}`, { method: "PATCH", body: JSON.stringify({ price: Number(price) }) });
+        toast("Service updated.");
+        render();
+      } catch (error) { toast(error.message || "Service could not be updated."); }
     }
   }
   if (del) {
     if (state.services.length <= 1) return toast("At least one service must remain.");
-    try { await api(`/admin/services/${del.dataset.delete}`, { method: "DELETE" }); } catch {}
-    state.services = state.services.filter((service) => service.id !== del.dataset.delete && service.mongoId !== del.dataset.delete);
-    save();
-    render();
+    try {
+      await api(`/admin/services/${del.dataset.delete}`, { method: "DELETE" });
+      toast("Service removed.");
+      render();
+    } catch (error) { toast(error.message || "Service could not be removed."); }
   }
   });
   initHeader("admin");

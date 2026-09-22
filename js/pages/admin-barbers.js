@@ -32,7 +32,7 @@ async function loadBarbers() {
     save();
   } catch (error) {
     if (error.message.includes("Admin") && !BarberCo.canAccess("admin")) location.href = "login.html";
-    else toast("Using saved barbers until backend is online.");
+    else toast(error.message || "Barbers could not be loaded.");
   }
 }
 
@@ -64,11 +64,7 @@ async function render() {
       toast("Barber added.");
       render();
     } catch (error) {
-      barber.id = String(data.get("name")).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      state.barbers.push(barber);
-      save();
-      toast(error.message || "Saved locally until backend is online.");
-      render();
+      toast(error.message || "Barber could not be added.");
     }
   });
 

@@ -60,9 +60,7 @@ async function render() {
       const payload = await api("/admin/queue/next", { method: "POST", body: "{}" });
       toast(payload.ticket ? `Now serving queue #${payload.ticket.queueNumber}.` : "No waiting walk-ins.");
       render();
-    } catch (error) {
-      callNextLocal();
-    }
+    } catch (error) { toast(error.message || "The next walk-in could not be called."); }
   });
   document.querySelector("[data-quick-service]").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -74,11 +72,7 @@ async function render() {
     toast("Service added.");
     render();
   } catch (error) {
-    state.services.push(service);
-    state.selectedServiceId = id;
-    save();
-    toast(error.message || "Service added locally.");
-    event.target.reset();
+    toast(error.message || "Service could not be added.");
   }
   });
   initHeader("admin");

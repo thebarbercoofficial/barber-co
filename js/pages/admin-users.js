@@ -1,4 +1,4 @@
-const { state, nav, initHeader, adminSidebar, save, toast, canAccess } = BarberCo;
+const { nav, initHeader, adminSidebar, toast, canAccess, api } = BarberCo;
 
 if (!canAccess("admin")) {
   location.replace("login.html");
@@ -6,60 +6,47 @@ if (!canAccess("admin")) {
 }
 
 const protectedAdminEmail = "thebarberco.official@gmail.com";
+let accounts = [];
 
 function rows() {
-  return state.accounts.map((account) => `
-    <div class="appointment-row">
-      <span>${account.name}<br><small class="muted">${account.email}</small></span>
-      <strong>${account.role}${account.email === protectedAdminEmail ? " - protected" : ""}</strong>
-      <span class="button-row">
-        <button class="button secondary small" type="button" data-role="${account.id}:customer" ${account.email === protectedAdminEmail ? "disabled" : ""}>Customer</button>
-        <button class="button secondary small" type="button" data-role="${account.id}:moderator" ${account.email === protectedAdminEmail ? "disabled" : ""}>Moderator</button>
-        <button class="button primary small" type="button" data-role="${account.id}:admin" ${account.email === protectedAdminEmail ? "disabled" : ""}>Admin</button>
-      </span>
-    </div>
-  `).join("");
+  if (!accounts.length) return `<div class="empty-state">No registered accounts yet.</div>`;
+  return accounts.map((account) => {
+    const protectedAccount = account.email === protectedAdminEmail;
+    return `<div class="appointment-row"><span>${account.name}<br><small class="muted">${account.email}</small></span><strong>${account.role}${protectedAccount ? " - protected" : ""}</strong><span class="button-row"><button class="button secondary small" type="button" data-role="${account.id}:customer" ${protectedAccount || account.role === "customer" ? "disabled" : ""}>Customer</button><button class="button secondary small" type="button" data-role="${account.id}:moderator" ${protectedAccount || account.role === "moderator" ? "disabled" : ""}>Moderator</button><button class="button primary small" type="button" data-role="${account.id}:admin" ${protectedAccount || account.role === "admin" ? "disabled" : ""}>Admin</button></span></div>`;
+  }).join("");
 }
 
-function render() {
-  document.querySelector("#app").innerHTML = `
-    ${nav("admin")}
-    <section class="app-shell">
-      ${adminSidebar("users")}
-      <div class="workspace">
-        <p class="eyebrow">Users and Permissions</p><h1>Registered users</h1>
-        <p class="muted">Admin can see accounts created on this website and assign roles. The official owner admin account is protected.</p>
-        <form class="panel" data-account-form>
-          <div class="form-row"><label>Name<input name="name" required placeholder="Staff name"></label><label>Email<input type="email" name="email" required placeholder="staff@email.com"></label></div>
-          <div class="form-row"><label>Password<input name="password" required placeholder="Temporary password"></label><label>Permission<select name="role"><option value="customer">Customer</option><option value="moderator">Moderator</option><option value="admin">Admin</option></select></label></div>
-          <button class="button primary" type="submit">Create account</button>
-        </form>
-        <div class="panel">${rows()}</div>
-      </div>
-    </section>
-  `;
+async function render() {
+  document.querySelector("#app").innerHTML = `${nav("admin")}<section class="app-shell">${adminSidebar("users")}<div class="workspace"><p class="eyebrow">Users and Permissions</p><h1>Registered users</h1><p class="muted">Roles are saved to the shared database and apply on every device. The official owner account is protected.</p><form class="panel" data-account-form><div class="form-row"><label>Name<input name="name" required placeholder="Staff name"></label><label>Email<input type="email" name="email" required placeholder="staff@email.com"></label></div><div class="form-row"><label>Temporary password<input type="password" name="password" minlength="6" required></label><label>Permission<select name="role"><option value="customer">Customer</option><option value="moderator">Moderator</option><option value="admin">Admin</option></select></label></div><button class="button primary" type="submit">Create account</button></form><div class="panel" data-user-rows><div class="empty-state">Loading accounts...</div></div></div></section>`;
+  initHeader("admin");
+  try {
+    const payload = await api("/admin/users");
+    accounts = payload.users || [];
+    document.querySelector("[data-user-rows]").innerHTML = rows();
+  } catch (error) { toast(error.message || "Accounts could not be loaded."); }
 
-  document.querySelector("[data-account-form]").addEventListener("submit", (event) => {
+  document.querySelector("[data-account-form]").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const data = new FormData(event.target);
-    const email = String(data.get("email")).trim().toLowerCase();
-    if (state.accounts.some((account) => account.email.toLowerCase() === email)) return toast("Account already exists.");
-    state.accounts.push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), name: data.get("name"), email, password: data.get("password"), role: data.get("role"), phone: "" });
-    save();
-    toast("Account created.");
-    render();
+    const button = event.submitter;
+    button.disabled = true;
+    try {
+      await api("/admin/users", { method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.target))) });
+      toast("Account created.");
+      render();
+    } catch (error) { toast(error.message || "Account could not be created."); button.disabled = false; }
   });
 
-  document.querySelectorAll("[data-role]").forEach((button) => button.addEventListener("click", () => {
+  document.querySelector("[data-user-rows]").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-role]");
+    if (!button) return;
     const [id, role] = button.dataset.role.split(":");
-    const account = state.accounts.find((item) => item.id === id);
-    if (!account) return;
-    account.role = role;
-    save();
-    toast(`${account.name} is now ${role}.`);
-    render();
-  }));
-  initHeader("admin");
+    button.disabled = true;
+    try {
+      const payload = await api(`/admin/users/${id}`, { method: "PATCH", body: JSON.stringify({ role }) });
+      toast(`${payload.user.name} is now ${role}.`);
+      render();
+    } catch (error) { toast(error.message || "Role could not be updated."); button.disabled = false; }
+  });
 }
 
 render();

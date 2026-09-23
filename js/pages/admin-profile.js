@@ -36,12 +36,13 @@ async function render() {
     <section class="app-shell">
       ${adminSidebar("profile")}
       <div class="workspace">
-        <p class="eyebrow">Admin Settings</p><h1>Shop payments</h1>
+        <p class="eyebrow">Admin only</p><h1>Payments & QR</h1>
+        <p class="muted workspace-intro">Add the payment accounts customers will see during online booking. Upload the official QR image, enter the matching account details, enable the method, then save.</p>
         <div class="grid-2">
           <div class="panel profile-head">
             ${avatar(state.user.name || "The Barber Co Admin", state.user.photo || "")}
             <h2>${state.user.name || "The Barber Co Admin"}</h2>
-            <p class="muted">Only administrators can change the payment accounts customers see.</p>
+            <p class="muted">Moderators cannot view or change these payment settings.</p>
             <a class="button secondary" href="printables/walk-in-qr.html" target="_blank" rel="noreferrer">Open printable walk-in QR</a>
           </div>
           <form class="form-card" data-payment-settings>
@@ -50,17 +51,17 @@ async function render() {
               <legend>GCash</legend>
               <label class="check-row"><input type="checkbox" name="gcashEnabled" ${gcash.enabled !== false ? "checked" : ""}> Accept GCash</label>
               <div class="form-row"><label>Account name<input name="gcashName" value="${gcash.accountName || ""}"></label><label>Mobile number<input name="gcashNumber" value="${gcash.accountNumber || ""}"></label></div>
-              <label class="upload-box">Upload GCash QR image<input type="file" accept="image/jpeg,image/png,image/webp" data-qr="gcash"></label>
+              <label class="upload-box">Choose GCash QR image<input type="file" accept="image/jpeg,image/png,image/webp" data-qr="gcash"><small>Use the QR image from the official GCash account. Maximum 2 MB.</small></label>
               ${draft.gcashQr ? `<img class="qr-preview" src="${draft.gcashQr}" alt="Saved GCash QR code">` : `<div class="empty-state">No GCash QR uploaded yet.</div>`}
             </fieldset>
             <fieldset class="settings-group">
               <legend>Maya</legend>
               <label class="check-row"><input type="checkbox" name="mayaEnabled" ${maya.enabled ? "checked" : ""}> Accept Maya</label>
               <div class="form-row"><label>Account name<input name="mayaName" value="${maya.accountName || ""}"></label><label>Mobile number<input name="mayaNumber" value="${maya.accountNumber || ""}"></label></div>
-              <label class="upload-box">Upload Maya QR image<input type="file" accept="image/jpeg,image/png,image/webp" data-qr="maya"></label>
+              <label class="upload-box">Choose Maya QR image<input type="file" accept="image/jpeg,image/png,image/webp" data-qr="maya"><small>Use the QR image from the official Maya account. Maximum 2 MB.</small></label>
               ${draft.mayaQr ? `<img class="qr-preview" src="${draft.mayaQr}" alt="Saved Maya QR code">` : `<div class="empty-state">No Maya QR uploaded yet.</div>`}
             </fieldset>
-            <button class="button primary" type="submit">Save payment settings</button>
+            <button class="button primary full" type="submit">Save payment methods</button>
           </form>
         </div>
       </div>
@@ -97,7 +98,7 @@ async function render() {
       toast(error.message || "Payment settings could not be saved.");
     } finally {
       button.disabled = false;
-      button.textContent = "Save payment settings";
+      button.textContent = "Save payment methods";
     }
   });
   initHeader("admin");

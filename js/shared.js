@@ -294,7 +294,7 @@ const BarberCo = (() => {
       ["admin-dashboard.html", "dashboard", "Dashboard"],
       ["admin-logbook.html", "logbook", "Staff Logbook"],
       ["admin-users.html", "users", "Users & Permissions"],
-      ["admin-profile.html", "profile", "Admin Profile"],
+      ["admin-profile.html", "profile", "Payments & QR"],
       ["admin-services.html", "services", "Services"],
       ["admin-barbers.html", "barbers", "Barbers"],
       ["admin-reports.html", "reports", "Reports"],

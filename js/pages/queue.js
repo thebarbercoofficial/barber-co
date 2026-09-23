@@ -4,6 +4,10 @@ const savedTicketId = localStorage.getItem("barberCoQueueTicketId");
 let alertsEnabled = false;
 let lastTicketStatus = "";
 
+function escapeHtml(value = "") {
+  return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+
 function ringDevice() {
   if (!alertsEnabled) return;
   if ("vibrate" in navigator) navigator.vibrate([650, 180, 650, 180, 900]);
@@ -68,10 +72,10 @@ async function render() {
         </div>
       </div>
       <div class="now-next">
-        ${current ? [["Now serving", current], ["Next serving", next]].map(([label, item]) => `<article><span>${label}</span><strong>Queue #${String(item?.queueNumber || item?.id || 0).padStart(2, "0")}</strong><p>${item?.customer || "Waiting"} - ${item?.cutName || byId(state.services, item?.serviceId).name}</p></article>`).join("") : `<article><span>Now serving</span><strong>No active queue</strong><p>Walk-ins will appear here after scanning the QR or staff logbook entry.</p></article>`}
+        ${current ? [["Now serving", current], ["Next serving", next]].map(([label, item]) => `<article><span>${label}</span><strong>Queue #${String(item?.queueNumber || item?.id || 0).padStart(2, "0")}</strong><p>${escapeHtml(item?.customer || "Waiting")} - ${escapeHtml(item?.cutName || byId(state.services, item?.serviceId).name)}</p></article>`).join("") : `<article><span>Now serving</span><strong>No active queue</strong><p>Walk-ins will appear here after scanning the QR or staff logbook entry.</p></article>`}
       </div>
       <div class="panel">
-        ${liveQueue.map((item) => `<div class="queue-row"><span>Queue #${String(item.queueNumber || item.id).padStart(2, "0")} - ${byId(barbers, item.barberId).name}</span><strong>${item.customer} - ${item.cutName || byId(state.services, item.serviceId).name}</strong><span class="status-pill ${String(item.status).toLowerCase()}">${item.status}</span></div>`).join("") || `<div class="empty-state">No customers are in the queue yet.</div>`}
+        ${liveQueue.map((item) => `<div class="queue-row"><span>Queue #${String(item.queueNumber || item.id).padStart(2, "0")} - ${escapeHtml(byId(barbers, item.barberId).name)}</span><strong>${escapeHtml(item.customer)} - ${escapeHtml(item.cutName || byId(state.services, item.serviceId).name)}</strong><span class="status-pill ${String(item.status).toLowerCase()}">${escapeHtml(item.status)}</span></div>`).join("") || `<div class="empty-state">No customers are in the queue yet.</div>`}
       </div>
     </section>
   `;

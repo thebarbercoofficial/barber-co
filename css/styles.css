@@ -1082,6 +1082,188 @@ textarea:focus,
   font-size: clamp(2.5rem, 5vw, 4.7rem);
 }
 
+.workspace-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.queue-display-body {
+  min-height: 100vh;
+  overflow: hidden;
+  background: #100c09;
+  color: var(--white);
+}
+
+.tv-board {
+  display: grid;
+  min-height: 100vh;
+  grid-template-rows: auto minmax(240px, 0.9fr) minmax(280px, 1.1fr) auto;
+  background: radial-gradient(circle at 80% 10%, rgba(199, 144, 63, 0.16), transparent 34%), #100c09;
+}
+
+.tv-header,
+.tv-footer,
+.tv-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tv-header {
+  padding: 22px 36px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: #17110d;
+}
+
+.tv-brand,
+.tv-meta {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.tv-brand img {
+  width: 68px;
+  height: 68px;
+  object-fit: contain;
+}
+
+.tv-brand div {
+  display: grid;
+  gap: 4px;
+}
+
+.tv-brand span,
+.tv-serving > p {
+  color: var(--gold);
+  font-size: clamp(0.8rem, 1.3vw, 1.15rem);
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.tv-brand strong {
+  font-size: clamp(1.1rem, 2vw, 1.75rem);
+}
+
+.tv-meta > span {
+  min-width: 110px;
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.tv-meta button {
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 6px;
+  padding: 11px 16px;
+  background: transparent;
+  color: var(--white);
+  font-weight: 800;
+}
+
+.tv-serving,
+.tv-waiting {
+  padding: clamp(24px, 3vw, 44px);
+}
+
+.tv-serving {
+  display: grid;
+  align-content: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.tv-serving > p {
+  margin-bottom: 14px;
+}
+
+.tv-ticket {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-left: 5px solid var(--gold);
+  border-radius: 6px;
+  padding: 20px 22px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.tv-ticket.featured {
+  grid-template-columns: minmax(130px, 0.32fr) minmax(220px, 1fr);
+  align-items: center;
+  padding: clamp(24px, 3vw, 42px);
+  background: linear-gradient(100deg, rgba(199, 144, 63, 0.22), rgba(255, 255, 255, 0.055));
+}
+
+.tv-ticket span {
+  color: var(--gold);
+  font-weight: 900;
+}
+
+.tv-ticket strong {
+  min-width: 0;
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: clamp(1.7rem, 3.2vw, 3.8rem);
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.tv-ticket p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.tv-ticket.featured p {
+  grid-column: 2;
+  font-size: clamp(1rem, 1.5vw, 1.35rem);
+}
+
+.tv-section-title h2 {
+  margin: 0;
+  color: var(--white);
+  font-size: clamp(1.7rem, 2.6vw, 2.8rem);
+}
+
+.tv-section-title span {
+  color: rgba(255, 255, 255, 0.65);
+  font-weight: 700;
+}
+
+.tv-ticket-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.tv-ticket-grid .tv-ticket strong {
+  font-size: clamp(1.25rem, 2vw, 2rem);
+}
+
+.tv-empty {
+  display: grid;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.tv-empty strong {
+  color: var(--white);
+  font-size: clamp(1.4rem, 2.6vw, 2.7rem);
+}
+
+.tv-empty.centered {
+  place-content: center;
+  min-height: 100vh;
+  text-align: center;
+}
+
+.tv-footer {
+  padding: 16px 36px;
+  background: var(--gold);
+  color: #17110d;
+  font-weight: 900;
+}
+
 .metric strong {
   display: block;
   margin: 6px 0;
@@ -1658,6 +1840,20 @@ body.is-loaded .login-note {
   .sidebar a {
     flex: 0 0 auto;
     width: auto;
+  }
+
+  .workspace-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .tv-board {
+    overflow: auto;
+  }
+
+  .tv-ticket-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .status-panel {

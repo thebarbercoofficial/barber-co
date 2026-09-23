@@ -440,12 +440,17 @@ async function handler(req, res) {
     const id = path.split("/").pop();
     if (!ObjectId.isValid(id)) return send(res, 404, { error: "Queue ticket not found." });
     const allowed = ["waiting", "serving", "done", "cancelled"];
-    if (!allowed.includes(body.status)) return send(res, 400, { error: "Choose a valid queue status." });
+    const customer = body.customer == null ? null : String(body.customer).trim().slice(0, 120);
+    if (body.status != null && !allowed.includes(body.status)) return send(res, 400, { error: "Choose a valid queue status." });
+    if (customer != null && customer.length < 2) return send(res, 400, { error: "Enter at least two characters for the customer name." });
+    if (body.status == null && customer == null) return send(res, 400, { error: "No queue changes were provided." });
     if (body.status === "serving") {
       const current = await database.collection("queue").findOne({ status: "serving", _id: { $ne: new ObjectId(id) } });
       if (current) return send(res, 409, { error: "Finish the current customer before serving another." });
     }
-    const update = { status: body.status, updatedAt: new Date() };
+    const update = { updatedAt: new Date() };
+    if (body.status != null) update.status = body.status;
+    if (customer != null) update.customer = customer;
     if (body.status === "serving") update.calledAt = new Date();
     if (body.status === "done") Object.assign(update, { paid: true, paidAt: new Date() });
     await database.collection("queue").updateOne({ _id: new ObjectId(id) }, { $set: update });

@@ -57,10 +57,10 @@ async function render() {
         reader.readAsDataURL(proofFile);
       });
       const payload = await api("/appointments", { method: "POST", body: JSON.stringify({ ...booking, paymentMethod: state.paymentMethod, paymentProof }) });
-      toast(`Booking created. Queue #${String(payload.appointment.queueNumber).padStart(2, "0")}.`);
+      toast(`Booking submitted for approval. Queue #${String(payload.appointment.queueNumber).padStart(2, "0")}.`);
       state.booking = null;
       save();
-      window.setTimeout(() => { location.href = "queue.html"; }, 700);
+      window.setTimeout(() => { location.href = "user-profile.html#bookings"; }, 900);
     } catch (error) {
       toast(error.message || "The booking could not be submitted.");
       button.disabled = false;

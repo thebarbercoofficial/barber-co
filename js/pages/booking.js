@@ -7,6 +7,10 @@ if (!BarberCo.isAuthenticated()) {
   throw new Error("A customer account is required to book.");
 }
 
+function escapeAttr(value = "") {
+  return String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
 function localDateValue(date = new Date()) {
   const offset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
@@ -27,7 +31,7 @@ async function render() {
     <section class="section top">
       <div class="booking-layout">
         <div><p class="eyebrow">Online Booking</p><h2>Reserve before arriving.</h2><p class="muted">Online bookings require advance payment and include a PHP 100 booking fee. Walk-ins are handled by staff at the shop.</p><div class="panel"><h3>Selected summary</h3><div class="summary-list"><div><span>Service</span><strong>${selected.name}</strong></div><div><span>Cut price</span><strong>${peso(selected.price)}</strong></div><div><span>Online booking fee</span><strong>${peso(onlineFee)}</strong></div><div><span>Total advance payment</span><strong>${peso(Number(selected.price) + onlineFee)}</strong></div><div><span>Duration</span><strong>${selected.duration}</strong></div></div></div></div>
-        <form class="form-card" data-booking><div class="account-booking-note"><span>Booking as</span><strong>${state.user.name}</strong><small>${state.user.email}</small></div><label>Service<select name="service">${serviceOptions()}</select></label><label>Preferred barber<select name="barber">${barberOptions()}</select></label>${hasBarbers ? "" : `<p class="muted">No active barber is assigned yet. Staff can assign one from the logbook.</p>`}<div class="form-row"><label>Date<input type="date" name="date" min="${minimumDate}" required></label><label>Time<input type="time" name="time" required></label></div><p class="field-help">Past dates and times cannot be booked.</p><label>Special request<textarea name="request" rows="4" placeholder="Fade preference, beard trim details, or notes"></textarea></label><button class="button primary full" type="submit">Proceed to payment</button></form>
+        <form class="form-card" data-booking><div class="account-booking-note"><span>Booking account</span><strong>${escapeAttr(state.user.name)}</strong><small>${escapeAttr(state.user.email)}</small></div><label>Name or nickname to call<input name="customer" required minlength="2" maxlength="120" value="${escapeAttr(state.user.name)}" placeholder="Name staff should call out"></label><label>Service<select name="service">${serviceOptions()}</select></label><label>Preferred barber<select name="barber">${barberOptions()}</select></label>${hasBarbers ? "" : `<p class="muted">No active barber is assigned yet. Staff can assign one from the logbook.</p>`}<div class="form-row"><label>Date<input type="date" name="date" min="${minimumDate}" required></label><label>Time<input type="time" name="time" required></label></div><p class="field-help">Past dates and times cannot be booked.</p><label>Special request<textarea name="request" rows="4" placeholder="Fade preference, beard trim details, or notes"></textarea></label><button class="button primary full" type="submit">Proceed to payment</button></form>
       </div>
     </section>
   `;
@@ -53,7 +57,7 @@ async function render() {
       return;
     }
     const service = byId(state.services, data.get("service"));
-    state.booking = { serviceId: data.get("service"), barberId: data.get("barber"), date: data.get("date"), time: data.get("time"), request: data.get("request"), source: "online", bookingFee: onlineFee, total: Number(service.price) + onlineFee };
+    state.booking = { customer: data.get("customer"), serviceId: data.get("service"), barberId: data.get("barber"), date: data.get("date"), time: data.get("time"), request: data.get("request"), source: "online", bookingFee: onlineFee, total: Number(service.price) + onlineFee };
     state.selectedServiceId = state.booking.serviceId;
     state.selectedBarberId = state.booking.barberId;
     save();

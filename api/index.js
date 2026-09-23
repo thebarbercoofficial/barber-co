@@ -340,6 +340,8 @@ async function handler(req, res) {
 
   if (req.method === "POST" && path === "/appointments") {
     const user = await requireUser(req, database);
+    const customer = String(body.customer || user.name || "").trim().slice(0, 120);
+    if (customer.length < 2) return send(res, 400, { error: "Enter the name or nickname staff should call." });
     const date = String(body.date || "");
     const time = String(body.time || "");
     const appointmentAt = new Date(`${date}T${time}:00+08:00`);
@@ -366,9 +368,15 @@ async function handler(req, res) {
     }
     const queueNumber = await nextQueueNumber(database);
     const bookingFee = Math.max(0, Number(settings.bookingFee) || 0);
-    const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId: body.barberId || "", date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
+    const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId: body.barberId || "", date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof, userId: user._id, customer, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
     await database.collection("appointments").insertOne(appointment);
     return send(res, 201, { appointment: normalizeDoc(appointment) });
+  }
+
+  if (req.method === "GET" && path === "/appointments/mine") {
+    const user = await requireUser(req, database);
+    const appointments = await database.collection("appointments").find({ userId: user._id }).sort({ createdAt: -1 }).limit(50).toArray();
+    return send(res, 200, { appointments: appointments.map(normalizeDoc) });
   }
 
   if (path === "/admin/appointments") {
@@ -378,8 +386,14 @@ async function handler(req, res) {
 
   if (path.startsWith("/admin/appointments/") && req.method === "PATCH") {
     await requireRole(req, database, ["admin", "moderator"]);
-    await database.collection("appointments").updateOne({ _id: new ObjectId(path.split("/").pop()) }, { $set: { status: body.status, updatedAt: new Date() } });
-    return send(res, 200, { ok: true });
+    const id = path.split("/").pop();
+    const allowed = ["pending", "confirmed", "completed", "cancelled"];
+    if (!ObjectId.isValid(id) || !allowed.includes(body.status)) return send(res, 400, { error: "Choose a valid appointment status." });
+    const update = { status: body.status, updatedAt: new Date() };
+    if (["confirmed", "completed"].includes(body.status)) update.paid = true;
+    await database.collection("appointments").updateOne({ _id: new ObjectId(id) }, { $set: update });
+    const appointment = await database.collection("appointments").findOne({ _id: new ObjectId(id) });
+    return send(res, 200, { appointment: normalizeDoc(appointment) });
   }
 
   if (req.method === "POST" && path === "/queue/walkin") {

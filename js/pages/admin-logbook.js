@@ -25,7 +25,7 @@ function queueRows() {
       <strong>${escapeHtml(item.customer)}<br><small class="muted">${escapeHtml(item.cutName || byId(state.services, item.serviceId).name)} - ${peso(item.price || byId(state.services, item.serviceId).price)} - ${item.source === "shop-qr" ? "Customer QR" : "Staff entry"}</small></strong>
       <span>${byId(barbers, item.barberId).name}</span>
       <span class="status-pill ${item.status}">${statusText(item.status)}</span>
-      <span class="button-row"><button class="button secondary small" type="button" data-rename="${item.mongoId || item.id}">Edit name</button><button class="button primary small" type="button" data-status="${item.mongoId || item.id}:serving">Serve</button><button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:done">Paid / done</button><button class="button danger small" type="button" data-status="${item.mongoId || item.id}:cancelled">Cancel</button></span>
+      <span class="button-row"><button class="button secondary small" type="button" data-rename="${item.mongoId || item.id}">Edit name</button>${item.status === "waiting" ? `<button class="button primary small" type="button" data-status="${item.mongoId || item.id}:serving">Serve</button>` : `<button class="button primary small" type="button" disabled>Serving</button>`}<button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:done">Paid / done</button><button class="button danger small" type="button" data-status="${item.mongoId || item.id}:cancelled">Cancel</button></span>
     </div>`).join("");
 }
 
@@ -43,6 +43,13 @@ function updateQueueUI() {
   if (rows) rows.innerHTML = queueRows();
   const stamp = document.querySelector("[data-last-sync]");
   if (stamp) stamp.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  const nextButton = document.querySelector("[data-next]");
+  if (nextButton) {
+    const serving = liveQueue.find((item) => item.status === "serving");
+    const hasWaiting = liveQueue.some((item) => item.status === "waiting");
+    nextButton.disabled = Boolean(serving) || !hasWaiting;
+    nextButton.textContent = serving ? `Serving ${serving.customer}` : hasWaiting ? "Call next customer" : "No customers waiting";
+  }
 }
 
 async function refreshQueue({ quiet = false } = {}) {
@@ -105,7 +112,7 @@ async function initialize() {
       toast(payload.ticket ? `Now serving ${payload.ticket.customer}, queue #${payload.ticket.queueNumber}.` : "No waiting customers.");
       await refreshQueue();
     } catch (error) { toast(error.message || "The next customer could not be called."); }
-    finally { event.currentTarget.disabled = false; }
+    finally { updateQueueUI(); }
   });
 
   document.querySelector("[data-queue-rows]").addEventListener("click", async (event) => {

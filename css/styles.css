@@ -846,6 +846,11 @@ textarea:focus,
   border-bottom: 0;
 }
 
+.queue-row,
+.appointment-row {
+  padding-inline: 16px;
+}
+
 .method,
 .tab {
   min-height: 42px;

@@ -21,8 +21,51 @@ const defaultSettings = {
   _id: "shop",
   gcash: { enabled: true, accountName: "The Barber Co", accountNumber: "", qrImage: "" },
   maya: { enabled: false, accountName: "The Barber Co", accountNumber: "", qrImage: "" },
-  bookingFee: 100
+  bookingFee: 100,
+  operatingHours: {
+    sunday: { open: "09:00", close: "20:00", closed: false },
+    monday: { open: "10:00", close: "20:00", closed: false },
+    tuesday: { open: "10:00", close: "20:00", closed: false },
+    wednesday: { open: "10:00", close: "20:00", closed: false },
+    thursday: { open: "10:00", close: "20:00", closed: false },
+    friday: { open: "10:00", close: "20:00", closed: false },
+    saturday: { open: "09:00", close: "20:00", closed: false }
+  },
+  closedDates: []
 };
+
+const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const fixedPhilippineHolidays = new Set(["01-01", "02-25", "04-09", "05-01", "06-12", "08-21", "11-01", "11-02", "11-30", "12-08", "12-24", "12-25", "12-30", "12-31"]);
+
+function minutes(value) {
+  const [hour, minute] = String(value || "").split(":").map(Number);
+  return Number.isInteger(hour) && Number.isInteger(minute) ? hour * 60 + minute : NaN;
+}
+
+function mergedSettings(settings = {}) {
+  return {
+    ...defaultSettings,
+    ...settings,
+    gcash: { ...defaultSettings.gcash, ...(settings.gcash || {}) },
+    maya: { ...defaultSettings.maya, ...(settings.maya || {}) },
+    operatingHours: { ...defaultSettings.operatingHours, ...(settings.operatingHours || {}) },
+    closedDates: Array.isArray(settings.closedDates) ? settings.closedDates : []
+  };
+}
+
+function bookingWindow(date, time, settings, durationMinutes = 30) {
+  const localNoon = new Date(`${date}T12:00:00+08:00`);
+  const day = dayNames[localNoon.getUTCDay()];
+  const hours = settings.operatingHours[day];
+  if (fixedPhilippineHolidays.has(date.slice(5)) || settings.closedDates.includes(date)) return { error: "The shop is closed on the selected holiday." };
+  if (!hours || hours.closed) return { error: "The shop is closed on the selected day." };
+  const start = minutes(time);
+  if (start < minutes(hours.open) || start + durationMinutes > minutes(hours.close)) {
+    return { error: `Choose a time between ${hours.open} and ${hours.close}.` };
+  }
+  if (start % 30 !== 0) return { error: "Appointments are available in 30-minute time slots." };
+  return { day, hours };
+}
 
 function send(res, status, data) {
   res.statusCode = status;
@@ -170,7 +213,7 @@ async function handler(req, res) {
 
   if (req.method === "GET" && path === "/settings") {
     const settings = await database.collection("settings").findOne({ _id: "shop" });
-    return send(res, 200, { settings: settings || defaultSettings });
+    return send(res, 200, { settings: mergedSettings(settings) });
   }
 
   if (req.method === "POST" && path === "/auth/register") {
@@ -271,10 +314,24 @@ async function handler(req, res) {
         qrImage
       };
     };
+    const operatingHours = {};
+    for (const day of dayNames) {
+      const supplied = body.operatingHours?.[day] || defaultSettings.operatingHours[day];
+      const open = String(supplied.open || "");
+      const close = String(supplied.close || "");
+      const closed = Boolean(supplied.closed);
+      if (!closed && (!/^\d{2}:\d{2}$/.test(open) || !/^\d{2}:\d{2}$/.test(close) || minutes(open) >= minutes(close))) {
+        return send(res, 400, { error: `Enter valid opening and closing times for ${day}.` });
+      }
+      operatingHours[day] = { open, close, closed };
+    }
+    const closedDates = [...new Set((Array.isArray(body.closedDates) ? body.closedDates : []).map(String).filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)))].sort();
     const update = {
       gcash: sanitizeMethod(body.gcash),
       maya: sanitizeMethod(body.maya),
       bookingFee: Math.max(0, Number(body.bookingFee) || 0),
+      operatingHours,
+      closedDates,
       updatedAt: new Date()
     };
     await database.collection("settings").updateOne({ _id: "shop" }, { $set: update }, { upsert: true });
@@ -357,7 +414,10 @@ async function handler(req, res) {
       const barber = await database.collection("barbers").findOne({ $or: [{ slug: body.barberId }, ...(ObjectId.isValid(body.barberId) ? [{ _id: new ObjectId(body.barberId) }] : [])], status: { $nin: ["fired", "on-leave"] } });
       if (!barber) return send(res, 400, { error: "The selected barber is not available." });
     }
-    const settings = await database.collection("settings").findOne({ _id: "shop" }) || defaultSettings;
+    const settings = mergedSettings(await database.collection("settings").findOne({ _id: "shop" }));
+    const durationMinutes = Math.max(30, Number.parseInt(service.duration, 10) || 30);
+    const window = bookingWindow(date, time, settings, durationMinutes);
+    if (window.error) return send(res, 400, { error: window.error });
     const paymentMethod = ["GCash", "Maya"].find((name) => name === body.paymentMethod && settings[name.toLowerCase()]?.enabled) || "";
     const paymentProof = String(body.paymentProof || "");
     if (!paymentMethod || !/^data:image\/(jpeg|png|webp);base64,/.test(paymentProof)) {

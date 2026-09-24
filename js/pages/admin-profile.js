@@ -6,6 +6,20 @@ if (!BarberCo.canAccess("admin")) {
 }
 
 const draft = { gcashQr: "", mayaQr: "" };
+const dayNames = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+const defaultHours = {
+  monday: { open: "10:00", close: "20:00" }, tuesday: { open: "10:00", close: "20:00" },
+  wednesday: { open: "10:00", close: "20:00" }, thursday: { open: "10:00", close: "20:00" },
+  friday: { open: "10:00", close: "20:00" }, saturday: { open: "09:00", close: "20:00" },
+  sunday: { open: "09:00", close: "20:00" }
+};
+
+function scheduleRows(operatingHours = {}) {
+  return dayNames.map((day) => {
+    const hours = { ...defaultHours[day], ...(operatingHours[day] || {}) };
+    return `<div class="schedule-setting-row"><strong>${day[0].toUpperCase()}${day.slice(1)}</strong><label>Opens<input type="time" name="${day}Open" value="${hours.open}"></label><label>Closes<input type="time" name="${day}Close" value="${hours.close}"></label><label class="check-row"><input type="checkbox" name="${day}Closed" ${hours.closed ? "checked" : ""}> Closed</label></div>`;
+  }).join("");
+}
 
 function readImage(file) {
   if (!file) return Promise.resolve("");
@@ -28,6 +42,7 @@ async function render() {
   }
   const gcash = settings.gcash || { enabled: true, accountName: "", accountNumber: "", qrImage: "" };
   const maya = settings.maya || { enabled: false, accountName: "", accountNumber: "", qrImage: "" };
+  const operatingHours = settings.operatingHours || defaultHours;
   draft.gcashQr = draft.gcashQr || gcash.qrImage || "";
   draft.mayaQr = draft.mayaQr || maya.qrImage || "";
 
@@ -36,8 +51,8 @@ async function render() {
     <section class="app-shell">
       ${adminSidebar("profile")}
       <div class="workspace">
-        <p class="eyebrow">Admin only</p><h1>Payments & QR</h1>
-        <p class="muted workspace-intro">Add the payment accounts customers will see during online booking. Upload the official QR image, enter the matching account details, enable the method, then save.</p>
+        <p class="eyebrow">Admin only</p><h1>Shop settings</h1>
+        <p class="muted workspace-intro">Manage the payment accounts, booking hours, weekly closures, holidays, and special shop closure dates used on every device.</p>
         <div class="grid-2">
           <div class="panel profile-head">
             ${avatar(state.user.name || "The Barber Co Admin", state.user.photo || "")}
@@ -61,7 +76,13 @@ async function render() {
               <label class="upload-box">Choose Maya QR image<input type="file" accept="image/jpeg,image/png,image/webp" data-qr="maya"><small>Use the QR image from the official Maya account. Maximum 2 MB.</small></label>
               ${draft.mayaQr ? `<img class="qr-preview" src="${draft.mayaQr}" alt="Saved Maya QR code">` : `<div class="empty-state">No Maya QR uploaded yet.</div>`}
             </fieldset>
-            <button class="button primary full" type="submit">Save payment methods</button>
+            <fieldset class="settings-group">
+              <legend>Booking schedule</legend>
+              <p class="muted">Customers only receive time slots that fit inside these hours. Mark a day closed to remove it from booking.</p>
+              <div class="schedule-settings">${scheduleRows(operatingHours)}</div>
+              <label>Holiday and special closure dates<textarea name="closedDates" rows="4" placeholder="2026-12-24, 2026-12-31">${(settings.closedDates || []).join("\n")}</textarea><small>Enter one date per line or separate dates with commas. Fixed Philippine national holidays are blocked automatically.</small></label>
+            </fieldset>
+            <button class="button primary full" type="submit">Save shop settings</button>
           </form>
         </div>
       </div>
@@ -88,7 +109,9 @@ async function render() {
         body: JSON.stringify({
           bookingFee: Number(data.get("bookingFee")),
           gcash: { enabled: data.has("gcashEnabled"), accountName: data.get("gcashName"), accountNumber: data.get("gcashNumber"), qrImage: draft.gcashQr },
-          maya: { enabled: data.has("mayaEnabled"), accountName: data.get("mayaName"), accountNumber: data.get("mayaNumber"), qrImage: draft.mayaQr }
+          maya: { enabled: data.has("mayaEnabled"), accountName: data.get("mayaName"), accountNumber: data.get("mayaNumber"), qrImage: draft.mayaQr },
+          operatingHours: Object.fromEntries(dayNames.map((day) => [day, { open: data.get(`${day}Open`), close: data.get(`${day}Close`), closed: data.has(`${day}Closed`) }])),
+          closedDates: String(data.get("closedDates") || "").split(/[\s,]+/).filter(Boolean)
         })
       });
       state.shopSettings = payload.settings;
@@ -98,7 +121,7 @@ async function render() {
       toast(error.message || "Payment settings could not be saved.");
     } finally {
       button.disabled = false;
-      button.textContent = "Save payment methods";
+      button.textContent = "Save shop settings";
     }
   });
   initHeader("admin");

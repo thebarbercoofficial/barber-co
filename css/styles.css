@@ -913,6 +913,28 @@ textarea:focus,
   font-weight: 800;
 }
 
+.schedule-settings {
+  display: grid;
+  gap: 10px;
+}
+
+.schedule-setting-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) repeat(2, minmax(130px, 1fr)) minmax(110px, auto);
+  align-items: end;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.schedule-setting-row:last-child {
+  border-bottom: 0;
+}
+
+.schedule-setting-row > strong {
+  align-self: center;
+}
+
 .check-row {
   display: flex;
   align-items: center;
@@ -1929,6 +1951,14 @@ body.is-loaded .login-note {
     gap: 4px;
   }
 
+  .schedule-setting-row {
+    grid-template-columns: minmax(100px, 0.7fr) repeat(2, minmax(120px, 1fr));
+  }
+
+  .schedule-setting-row .check-row {
+    grid-column: 2 / -1;
+  }
+
   .tv-board {
     overflow: auto;
   }
@@ -2001,6 +2031,15 @@ body.is-loaded .login-note {
   .form-card,
   .panel {
     width: 100%;
+  }
+
+  .schedule-setting-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .schedule-setting-row > strong,
+  .schedule-setting-row .check-row {
+    grid-column: 1 / -1;
   }
 
   .login-screen {

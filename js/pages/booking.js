@@ -1,4 +1,4 @@
-const { state, barbers, nav, initHeader, byId, peso, serviceOptions, barberOptions, save, loadCatalog, loadSettings, toast } = BarberCo;
+const { state, barbers, nav, initHeader, byId, peso, serviceOptions, barberOptions, save, loadCatalog, loadSettings, toast, api } = BarberCo;
 const params = new URLSearchParams(location.search);
 if (params.get("service")) state.selectedServiceId = params.get("service");
 

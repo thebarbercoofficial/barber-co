@@ -98,6 +98,35 @@ async function unavailableBarbers(database, date, time, durationMinutes) {
   }).map((appointment) => appointment.barberId))];
 }
 
+function appointmentSlotIds(date, barberId, time, durationMinutes) {
+  const start = minutes(time);
+  const ids = [];
+  for (let value = start; value < start + durationMinutes; value += 15) {
+    ids.push(`${date}:${barberId}:${value}`);
+  }
+  return ids;
+}
+
+async function lockAppointmentSlots(database, appointmentId, date, barberId, time, durationMinutes) {
+  if (!barberId) return;
+  const locks = appointmentSlotIds(date, barberId, time, durationMinutes).map((_id) => ({
+    _id,
+    appointmentId: String(appointmentId),
+    createdAt: new Date()
+  }));
+  try {
+    await database.collection("appointmentSlots").insertMany(locks, { ordered: true });
+  } catch (error) {
+    await database.collection("appointmentSlots").deleteMany({ appointmentId: String(appointmentId) });
+    if (error?.code === 11000) {
+      const conflict = new Error("That barber was just booked for this time. Choose another barber or time.");
+      conflict.status = 409;
+      throw conflict;
+    }
+    throw error;
+  }
+}
+
 function send(res, status, data) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
@@ -453,9 +482,10 @@ async function handler(req, res) {
     }
     const service = await database.collection("services").findOne({ $or: [{ slug: body.serviceId }, ...(ObjectId.isValid(body.serviceId) ? [{ _id: new ObjectId(body.serviceId) }] : [])], active: { $ne: false } });
     if (!service) return send(res, 400, { error: "Choose an available service." });
+    let selectedBarber = null;
     if (body.barberId) {
-      const barber = await database.collection("barbers").findOne({ $or: [{ slug: body.barberId }, ...(ObjectId.isValid(body.barberId) ? [{ _id: new ObjectId(body.barberId) }] : [])], status: { $nin: ["fired", "on-leave"] } });
-      if (!barber) return send(res, 400, { error: "The selected barber is not available." });
+      selectedBarber = await database.collection("barbers").findOne({ $or: [{ slug: body.barberId }, ...(ObjectId.isValid(body.barberId) ? [{ _id: new ObjectId(body.barberId) }] : [])], status: { $nin: ["fired", "on-leave"] } });
+      if (!selectedBarber) return send(res, 400, { error: "The selected barber is not available." });
     }
     const settings = mergedSettings(await database.collection("settings").findOne({ _id: "shop" }));
     const durationMinutes = Math.max(30, Number.parseInt(service.duration, 10) || 30);
@@ -476,7 +506,13 @@ async function handler(req, res) {
     const queueNumber = await nextQueueNumber(database);
     const bookingFee = Math.max(0, Number(settings.bookingFee) || 0);
     const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId: body.barberId || "", date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
-    await database.collection("appointments").insertOne(appointment);
+    await lockAppointmentSlots(database, appointment._id, date, selectedBarber ? String(selectedBarber._id) : "", time, durationMinutes);
+    try {
+      await database.collection("appointments").insertOne(appointment);
+    } catch (error) {
+      await database.collection("appointmentSlots").deleteMany({ appointmentId: String(appointment._id) });
+      throw error;
+    }
     return send(res, 201, { appointment: normalizeDoc(appointment) });
   }
 
@@ -499,6 +535,9 @@ async function handler(req, res) {
     const update = { status: body.status, updatedAt: new Date() };
     if (["confirmed", "completed"].includes(body.status)) update.paid = true;
     await database.collection("appointments").updateOne({ _id: new ObjectId(id) }, { $set: update });
+    if (["completed", "cancelled"].includes(body.status)) {
+      await database.collection("appointmentSlots").deleteMany({ appointmentId: id });
+    }
     const appointment = await database.collection("appointments").findOne({ _id: new ObjectId(id) });
     return send(res, 200, { appointment: normalizeDoc(appointment) });
   }

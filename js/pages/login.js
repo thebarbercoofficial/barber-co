@@ -65,7 +65,7 @@ document.querySelector("[data-login]").addEventListener("submit", async (event) 
     setSession(payload);
     const next = new URLSearchParams(location.search).get("next");
     const safeNext = next && !next.includes(":") && !next.startsWith("//") ? next : "";
-    location.href = payload.user.role === "admin" ? "admin-dashboard.html" : payload.user.role === "moderator" ? "admin-logbook.html" : safeNext || "user-profile.html";
+    location.href = payload.user.role === "admin" ? "admin-dashboard.html" : payload.user.role === "moderator" ? "admin-logbook.html" : safeNext || "index.html";
   } catch (error) {
     const offline = error.code === "BACKEND_UNAVAILABLE" || /fetch|network/i.test(error.message || "");
     showLoginAlert(offline ? "Service unavailable" : "Sign in failed", offline ? "The account service is not connected. Please try again shortly." : error.message || "Check your email and password.");

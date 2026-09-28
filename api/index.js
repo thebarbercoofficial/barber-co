@@ -23,13 +23,13 @@ const defaultSettings = {
   maya: { enabled: false, accountName: "The Barber Co", accountNumber: "", qrImage: "" },
   bookingFee: 100,
   operatingHours: {
-    sunday: { open: "09:00", close: "20:00", closed: false },
-    monday: { open: "10:00", close: "20:00", closed: false },
-    tuesday: { open: "10:00", close: "20:00", closed: false },
-    wednesday: { open: "10:00", close: "20:00", closed: false },
-    thursday: { open: "10:00", close: "20:00", closed: false },
-    friday: { open: "10:00", close: "20:00", closed: false },
-    saturday: { open: "09:00", close: "20:00", closed: false }
+    sunday: { open: "13:00", close: "20:00", closed: false },
+    monday: { open: "13:00", close: "20:00", closed: false },
+    tuesday: { open: "13:00", close: "20:00", closed: false },
+    wednesday: { open: "13:00", close: "20:00", closed: false },
+    thursday: { open: "13:00", close: "20:00", closed: false },
+    friday: { open: "13:00", close: "20:00", closed: false },
+    saturday: { open: "13:00", close: "20:00", closed: false }
   },
   closedDates: []
 };
@@ -65,6 +65,29 @@ function bookingWindow(date, time, settings, durationMinutes = 30) {
   }
   if (start % 30 !== 0) return { error: "Appointments are available in 30-minute time slots." };
   return { day, hours };
+}
+
+async function unavailableBarbers(database, date, time, durationMinutes) {
+  const appointments = await database.collection("appointments").find({
+    date,
+    barberId: { $nin: ["", null] },
+    status: { $in: ["pending", "confirmed"] }
+  }).toArray();
+  if (!appointments.length) return [];
+  const services = await database.collection("services").find().toArray();
+  const durations = new Map();
+  for (const service of services) {
+    const duration = Math.max(30, Number.parseInt(service.duration, 10) || 30);
+    durations.set(service.slug, duration);
+    durations.set(String(service._id), duration);
+  }
+  const requestedStart = minutes(time);
+  const requestedEnd = requestedStart + durationMinutes;
+  return [...new Set(appointments.filter((appointment) => {
+    const existingStart = minutes(appointment.time);
+    const existingEnd = existingStart + (durations.get(appointment.serviceId) || 30);
+    return requestedStart < existingEnd && requestedEnd > existingStart;
+  }).map((appointment) => appointment.barberId))];
 }
 
 function send(res, status, data) {
@@ -206,7 +229,8 @@ async function nextQueueNumber(database) {
 async function handler(req, res) {
   if (req.method === "OPTIONS") return send(res, 200, { ok: true });
   const database = await db();
-  const path = new URL(req.url, "https://barber.local").pathname.replace(/^\/api/, "") || "/";
+  const requestUrl = new URL(req.url, "https://barber.local");
+  const path = requestUrl.pathname.replace(/^\/api/, "") || "/";
   const body = ["POST", "PATCH", "DELETE"].includes(req.method) ? await readBody(req) : {};
 
   if (req.method === "GET" && path === "/health") return send(res, 200, { ok: true });
@@ -214,6 +238,17 @@ async function handler(req, res) {
   if (req.method === "GET" && path === "/settings") {
     const settings = await database.collection("settings").findOne({ _id: "shop" });
     return send(res, 200, { settings: mergedSettings(settings) });
+  }
+
+  if (req.method === "GET" && path === "/availability") {
+    const date = String(requestUrl.searchParams.get("date") || "");
+    const time = String(requestUrl.searchParams.get("time") || "");
+    const serviceId = String(requestUrl.searchParams.get("serviceId") || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return send(res, 400, { error: "Choose a valid date and time." });
+    const service = await database.collection("services").findOne({ $or: [{ slug: serviceId }, ...(ObjectId.isValid(serviceId) ? [{ _id: new ObjectId(serviceId) }] : [])], active: { $ne: false } });
+    if (!service) return send(res, 400, { error: "Choose an available service." });
+    const duration = Math.max(30, Number.parseInt(service.duration, 10) || 30);
+    return send(res, 200, { unavailableBarberIds: await unavailableBarbers(database, date, time, duration) });
   }
 
   if (req.method === "POST" && path === "/auth/register") {
@@ -418,6 +453,10 @@ async function handler(req, res) {
     const durationMinutes = Math.max(30, Number.parseInt(service.duration, 10) || 30);
     const window = bookingWindow(date, time, settings, durationMinutes);
     if (window.error) return send(res, 400, { error: window.error });
+    if (body.barberId) {
+      const unavailable = await unavailableBarbers(database, date, time, durationMinutes);
+      if (unavailable.includes(body.barberId)) return send(res, 409, { error: "That barber was just booked for this time. Choose another barber or time." });
+    }
     const paymentMethod = ["GCash", "Maya"].find((name) => name === body.paymentMethod && settings[name.toLowerCase()]?.enabled) || "";
     const paymentProof = String(body.paymentProof || "");
     if (!paymentMethod || !/^data:image\/(jpeg|png|webp);base64,/.test(paymentProof)) {
@@ -428,7 +467,7 @@ async function handler(req, res) {
     }
     const queueNumber = await nextQueueNumber(database);
     const bookingFee = Math.max(0, Number(settings.bookingFee) || 0);
-    const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId: body.barberId || "", date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof, userId: user._id, customer, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
+    const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId: body.barberId || "", date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
     await database.collection("appointments").insertOne(appointment);
     return send(res, 201, { appointment: normalizeDoc(appointment) });
   }

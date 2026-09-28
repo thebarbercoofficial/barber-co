@@ -8,10 +8,10 @@ if (!BarberCo.canAccess("admin")) {
 const draft = { gcashQr: "", mayaQr: "" };
 const dayNames = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 const defaultHours = {
-  monday: { open: "10:00", close: "20:00" }, tuesday: { open: "10:00", close: "20:00" },
-  wednesday: { open: "10:00", close: "20:00" }, thursday: { open: "10:00", close: "20:00" },
-  friday: { open: "10:00", close: "20:00" }, saturday: { open: "09:00", close: "20:00" },
-  sunday: { open: "09:00", close: "20:00" }
+  monday: { open: "13:00", close: "20:00" }, tuesday: { open: "13:00", close: "20:00" },
+  wednesday: { open: "13:00", close: "20:00" }, thursday: { open: "13:00", close: "20:00" },
+  friday: { open: "13:00", close: "20:00" }, saturday: { open: "13:00", close: "20:00" },
+  sunday: { open: "13:00", close: "20:00" }
 };
 
 function scheduleRows(operatingHours = {}) {
@@ -78,7 +78,7 @@ async function render() {
             </fieldset>
             <fieldset class="settings-group">
               <legend>Booking schedule</legend>
-              <p class="muted">Customers only receive time slots that fit inside these hours. Mark a day closed to remove it from booking.</p>
+              <p class="muted">Online reservations start at 1:00 PM by default. Customers only receive time slots that fit inside these hours. Mark a day closed to remove it from booking.</p>
               <div class="schedule-settings">${scheduleRows(operatingHours)}</div>
               <label>Holiday and special closure dates<textarea name="closedDates" rows="4" placeholder="2026-12-24, 2026-12-31">${(settings.closedDates || []).join("\n")}</textarea><small>Enter one date per line or separate dates with commas. Fixed Philippine national holidays are blocked automatically.</small></label>
             </fieldset>

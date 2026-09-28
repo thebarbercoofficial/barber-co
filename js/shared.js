@@ -317,7 +317,7 @@ const BarberCo = (() => {
   function barberOptions(selectedId = state.selectedBarberId) {
     const available = barbers.filter((barber) => barber.status !== "fired");
     if (!available.length) return `<option value="">Assign later</option>`;
-    return available.map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""}>${barber.name}</option>`).join("");
+    return `<option value="">Assign later</option>${available.map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""} ${barber.status === "on-leave" ? "disabled" : ""}>${barber.name}${barber.status === "on-leave" ? " - on leave" : ""}</option>`).join("")}`;
   }
 
   return { state, barbers, save, peso, byId, initials, avatar, toast, initHeader, nav, shopEndcap, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, loadSettings, setSession, clearSession, authToken, isAuthenticated, currentRole, canAccess };

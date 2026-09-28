@@ -26,7 +26,7 @@ document.querySelector("[data-register]").addEventListener("submit", async (even
       body: JSON.stringify({ name, email, password })
     });
     setSession(payload);
-    location.href = safeNext || "user-profile.html";
+    location.href = safeNext || "index.html";
   } catch (error) {
     const offline = error.code === "BACKEND_UNAVAILABLE" || /fetch|network/i.test(error.message || "");
     toast(offline ? "Account registration is temporarily unavailable. Please try again shortly." : error.message || "This account could not be created.");

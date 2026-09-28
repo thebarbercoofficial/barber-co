@@ -75,13 +75,20 @@ function bookingWindow(date, time, settings, durationMinutes = 30) {
   return { day, hours };
 }
 
-async function unavailableBarbers(database, date, time, durationMinutes) {
+async function unavailableBarbers(database, date, time, durationMinutes, excludedHoldId = "") {
+  const now = new Date();
   const appointments = await database.collection("appointments").find({
     date,
     barberId: { $nin: ["", null] },
     status: { $in: ["pending", "confirmed"] }
   }).toArray();
-  if (!appointments.length) return [];
+  const holds = await database.collection("appointmentHolds").find({
+    date,
+    barberId: { $nin: ["", null] },
+    expiresAt: { $gt: now },
+    ...(excludedHoldId ? { _id: { $ne: new ObjectId(excludedHoldId) } } : {})
+  }).toArray();
+  if (!appointments.length && !holds.length) return [];
   const services = await database.collection("services").find().toArray();
   const durations = new Map();
   for (const service of services) {
@@ -91,11 +98,17 @@ async function unavailableBarbers(database, date, time, durationMinutes) {
   }
   const requestedStart = minutes(time);
   const requestedEnd = requestedStart + durationMinutes;
-  return [...new Set(appointments.filter((appointment) => {
+  const unavailable = appointments.filter((appointment) => {
     const existingStart = minutes(appointment.time);
     const existingEnd = existingStart + (durations.get(appointment.serviceId) || 30);
     return requestedStart < existingEnd && requestedEnd > existingStart;
-  }).map((appointment) => appointment.barberId))];
+  }).map((appointment) => appointment.barberId);
+  unavailable.push(...holds.filter((hold) => {
+    const existingStart = minutes(hold.time);
+    const existingEnd = existingStart + Number(hold.durationMinutes || 30);
+    return requestedStart < existingEnd && requestedEnd > existingStart;
+  }).map((hold) => hold.barberId));
+  return [...new Set(unavailable)];
 }
 
 function appointmentSlotIds(date, barberId, time, durationMinutes) {
@@ -107,12 +120,13 @@ function appointmentSlotIds(date, barberId, time, durationMinutes) {
   return ids;
 }
 
-async function lockAppointmentSlots(database, appointmentId, date, barberId, time, durationMinutes) {
+async function lockAppointmentSlots(database, appointmentId, date, barberId, time, durationMinutes, expiresAt = null) {
   if (!barberId) return;
   const locks = appointmentSlotIds(date, barberId, time, durationMinutes).map((_id) => ({
     _id,
     appointmentId: String(appointmentId),
-    createdAt: new Date()
+    createdAt: new Date(),
+    ...(expiresAt ? { expiresAt } : {})
   }));
   try {
     await database.collection("appointmentSlots").insertMany(locks, { ordered: true });
@@ -164,7 +178,9 @@ async function ensureSeed(database) {
         database.collection("services").createIndex({ slug: 1 }, { unique: true }),
         database.collection("barbers").createIndex({ slug: 1 }, { unique: true }),
         database.collection("queue").createIndex({ queueNumber: 1 }),
-        database.collection("appointments").createIndex({ createdAt: -1 })
+        database.collection("appointments").createIndex({ createdAt: -1 }),
+        database.collection("appointmentHolds").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+        database.collection("appointmentSlots").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
       ]);
       for (const service of seedServices) {
         await database.collection("services").updateOne({ slug: service.slug }, { $setOnInsert: { ...service, createdAt: new Date() } }, { upsert: true });
@@ -286,6 +302,51 @@ async function handler(req, res) {
     if (!service) return send(res, 400, { error: "Choose an available service." });
     const duration = Math.max(30, Number.parseInt(service.duration, 10) || 30);
     return send(res, 200, { unavailableBarberIds: await unavailableBarbers(database, date, time, duration) });
+  }
+
+  if (req.method === "POST" && path === "/appointment-holds") {
+    const user = await requireUser(req, database);
+    const date = String(body.date || "");
+    const time = String(body.time || "");
+    const serviceId = String(body.serviceId || "");
+    const barberId = String(body.barberId || "");
+    const appointmentAt = new Date(`${date}T${time}:00+08:00`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time) || appointmentAt.getTime() <= Date.now()) {
+      return send(res, 400, { error: "Choose a valid future appointment date and time." });
+    }
+    const service = await database.collection("services").findOne({ $or: [{ slug: serviceId }, ...(ObjectId.isValid(serviceId) ? [{ _id: new ObjectId(serviceId) }] : [])], active: { $ne: false } });
+    if (!service) return send(res, 400, { error: "Choose an available service." });
+    let selectedBarber = null;
+    if (barberId) {
+      selectedBarber = await database.collection("barbers").findOne({ $or: [{ slug: barberId }, ...(ObjectId.isValid(barberId) ? [{ _id: new ObjectId(barberId) }] : [])], status: { $nin: ["fired", "on-leave"] } });
+      if (!selectedBarber) return send(res, 400, { error: "The selected barber is not available." });
+    }
+    const settings = mergedSettings(await database.collection("settings").findOne({ _id: "shop" }));
+    const durationMinutes = Math.max(30, Number.parseInt(service.duration, 10) || 30);
+    const window = bookingWindow(date, time, settings, durationMinutes);
+    if (window.error) return send(res, 400, { error: window.error });
+    const previousHolds = await database.collection("appointmentHolds").find({ userId: user._id }).toArray();
+    const previousIds = previousHolds.map((hold) => String(hold._id));
+    if (previousIds.length) {
+      await database.collection("appointmentSlots").deleteMany({ appointmentId: { $in: previousIds } });
+      await database.collection("appointmentHolds").deleteMany({ userId: user._id });
+    }
+    if (barberId) {
+      const unavailable = await unavailableBarbers(database, date, time, durationMinutes);
+      if (unavailable.includes(barberId)) return send(res, 409, { error: "That barber is already reserved for this time. Choose another barber or time." });
+    }
+    const hold = {
+      _id: new ObjectId(), userId: user._id, serviceId, barberId, date, time, durationMinutes,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000), createdAt: new Date()
+    };
+    await lockAppointmentSlots(database, hold._id, date, selectedBarber ? String(selectedBarber._id) : "", time, durationMinutes, hold.expiresAt);
+    try {
+      await database.collection("appointmentHolds").insertOne(hold);
+    } catch (error) {
+      await database.collection("appointmentSlots").deleteMany({ appointmentId: String(hold._id) });
+      throw error;
+    }
+    return send(res, 201, { hold: normalizeDoc(hold) });
   }
 
   if (req.method === "POST" && path === "/auth/register") {
@@ -491,8 +552,17 @@ async function handler(req, res) {
     const durationMinutes = Math.max(30, Number.parseInt(service.duration, 10) || 30);
     const window = bookingWindow(date, time, settings, durationMinutes);
     if (window.error) return send(res, 400, { error: window.error });
+    const holdId = String(body.holdId || "");
+    const hold = holdId && ObjectId.isValid(holdId) ? await database.collection("appointmentHolds").findOne({
+      _id: new ObjectId(holdId),
+      userId: user._id,
+      expiresAt: { $gt: new Date() }
+    }) : null;
+    if (holdId && (!hold || hold.serviceId !== body.serviceId || hold.barberId !== (body.barberId || "") || hold.date !== date || hold.time !== time)) {
+      return send(res, 409, { error: "Your temporary reservation expired or changed. Return to booking and choose the slot again." });
+    }
     if (body.barberId) {
-      const unavailable = await unavailableBarbers(database, date, time, durationMinutes);
+      const unavailable = await unavailableBarbers(database, date, time, durationMinutes, hold ? holdId : "");
       if (unavailable.includes(body.barberId)) return send(res, 409, { error: "That barber was just booked for this time. Choose another barber or time." });
     }
     const paymentMethod = ["GCash", "Maya"].find((name) => name === body.paymentMethod && settings[name.toLowerCase()]?.enabled) || "";
@@ -506,9 +576,18 @@ async function handler(req, res) {
     const queueNumber = await nextQueueNumber(database);
     const bookingFee = Math.max(0, Number(settings.bookingFee) || 0);
     const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId: body.barberId || "", date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
-    await lockAppointmentSlots(database, appointment._id, date, selectedBarber ? String(selectedBarber._id) : "", time, durationMinutes);
+    if (hold && selectedBarber) {
+      const transfer = await database.collection("appointmentSlots").updateMany(
+        { appointmentId: holdId, expiresAt: { $gt: new Date() } },
+        { $set: { appointmentId: String(appointment._id) }, $unset: { expiresAt: "" } }
+      );
+      if (!transfer.modifiedCount) return send(res, 409, { error: "Your temporary reservation expired. Return to booking and choose the slot again." });
+    } else if (selectedBarber) {
+      await lockAppointmentSlots(database, appointment._id, date, String(selectedBarber._id), time, durationMinutes);
+    }
     try {
       await database.collection("appointments").insertOne(appointment);
+      if (hold) await database.collection("appointmentHolds").deleteOne({ _id: hold._id });
     } catch (error) {
       await database.collection("appointmentSlots").deleteMany({ appointmentId: String(appointment._id) });
       throw error;

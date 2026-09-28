@@ -127,8 +127,9 @@ async function render() {
   serviceInput.addEventListener("change", updateTimes);
   timeInput.addEventListener("change", updateBarberAvailability);
   updateTimes();
-  document.querySelector("[data-booking]").addEventListener("submit", (event) => {
+  document.querySelector("[data-booking]").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const submitButton = event.submitter || event.target.querySelector('[type="submit"]');
     const data = new FormData(event.target);
     const appointmentTime = new Date(`${data.get("date")}T${data.get("time")}:00`);
     if (!Number.isFinite(appointmentTime.getTime()) || appointmentTime <= new Date()) {
@@ -137,11 +138,22 @@ async function render() {
     }
     if (timeInput.disabled || !timeInput.value) return toast("Choose an available date and time during shop hours.");
     const service = byId(state.services, data.get("service"));
-    state.booking = { customer: state.user.name, serviceId: data.get("service"), barberId: data.get("barber"), date: data.get("date"), time: data.get("time"), request: data.get("request"), source: "online", bookingFee: onlineFee, total: Number(service.price) + onlineFee };
-    state.selectedServiceId = state.booking.serviceId;
-    state.selectedBarberId = state.booking.barberId;
-    save();
-    location.href = "payment.html";
+    const booking = { customer: state.user.name, serviceId: data.get("service"), barberId: data.get("barber"), date: data.get("date"), time: data.get("time"), request: data.get("request"), source: "online", bookingFee: onlineFee, total: Number(service.price) + onlineFee };
+    submitButton.disabled = true;
+    submitButton.textContent = "Reserving slot...";
+    try {
+      const payload = await api("/appointment-holds", { method: "POST", body: JSON.stringify(booking) });
+      state.booking = { ...booking, holdId: payload.hold.id, holdExpiresAt: payload.hold.expiresAt };
+      state.selectedServiceId = booking.serviceId;
+      state.selectedBarberId = booking.barberId;
+      save();
+      location.href = "payment.html";
+    } catch (error) {
+      toast(error.message || "That appointment time could not be reserved.");
+      submitButton.disabled = false;
+      submitButton.textContent = "Proceed to payment";
+      await updateBarberAvailability();
+    }
   });
   initHeader("booking");
 }

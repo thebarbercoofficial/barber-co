@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "start": "vercel dev",
-    "check": "node --check api/index.js && node --check js/shared.js && node --check js/pages/booking.js && node --check js/pages/payment.js",
+    "check": "node --check api/index.js && node --check js/shared.js && node --check js/pages/booking.js && node --check js/pages/payment.js && node --check js/pages/admin-schedule.js",
     "test": "node tests/booking-hold.test.js"
   },
   "dependencies": {

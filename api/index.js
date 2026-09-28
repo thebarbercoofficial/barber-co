@@ -43,12 +43,20 @@ function minutes(value) {
 }
 
 function mergedSettings(settings = {}) {
+  const operatingHours = { ...defaultSettings.operatingHours, ...(settings.operatingHours || {}) };
+  for (const day of dayNames) {
+    const hours = operatingHours[day] || defaultSettings.operatingHours[day];
+    operatingHours[day] = {
+      ...hours,
+      open: minutes(hours.open) < minutes("13:00") ? "13:00" : hours.open
+    };
+  }
   return {
     ...defaultSettings,
     ...settings,
     gcash: { ...defaultSettings.gcash, ...(settings.gcash || {}) },
     maya: { ...defaultSettings.maya, ...(settings.maya || {}) },
-    operatingHours: { ...defaultSettings.operatingHours, ...(settings.operatingHours || {}) },
+    operatingHours,
     closedDates: Array.isArray(settings.closedDates) ? settings.closedDates : []
   };
 }

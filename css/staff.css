@@ -144,7 +144,7 @@ body.staff-page .site-header.staff-header { position: fixed; inset: 0 0 auto; he
 .staff-page .settings-form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; align-items: start; padding: 0; border: 0; background: transparent; }
 .settings-form > label, .settings-form > button, .settings-form > .schedule-group { grid-column: 1 / -1; }
 .staff-page .settings-group { padding: 16px; background: #fff; border: 1px solid var(--line); border-radius: 6px; margin: 0; min-width: 0; }
-.settings-group legend { font-size: 13px; font-weight: 700; color: var(--copper); padding: 0 7px; }
+.staff-page .settings-group-title { font-size: 13px; font-weight: 700; color: var(--copper); padding: 0; margin: 0 0 16px; }
 .staff-page .check-row { display: flex; gap: 8px; align-items: center; }
 .staff-page .check-row input { width: 15px; height: 15px; min-height: 0; accent-color: var(--gold); }
 .staff-page .upload-box { padding: 12px; min-height: 0; background: #fbf4e8; border: 1px dashed #d8bc8e; border-radius: 4px; text-align: left; font-size: 11px; }

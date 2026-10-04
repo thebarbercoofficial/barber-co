@@ -61,26 +61,26 @@ async function render() {
           </div>
           <form class="form-card settings-form" data-payment-settings>
             <label>Online booking fee<input type="number" min="0" name="bookingFee" value="${Number(settings.bookingFee ?? 100)}" required></label>
-            <fieldset class="settings-group">
-              <legend>GCash</legend>
+            <div class="settings-group" role="group" aria-labelledby="gcash-settings-title">
+              <h3 class="settings-group-title" id="gcash-settings-title">GCash</h3>
               <label class="check-row"><input type="checkbox" name="gcashEnabled" ${gcash.enabled !== false ? "checked" : ""}> Accept GCash</label>
               <div class="form-row"><label>Account name<input name="gcashName" value="${safeText(gcash.accountName || "")}"></label><label>Mobile number<input name="gcashNumber" value="${safeText(gcash.accountNumber || "")}"></label></div>
               <label class="upload-box">Choose GCash QR image<input type="file" accept="image/jpeg,image/png,image/webp" data-qr="gcash"><small>Use the QR image from the official GCash account. Maximum 2 MB.</small></label>
               <div data-qr-preview="gcash">${draft.gcashQr ? `<img class="qr-preview" src="${safeText(draft.gcashQr)}" alt="Saved GCash QR code">` : `<div class="empty-state">No GCash QR uploaded yet.</div>`}</div>
-            </fieldset>
-            <fieldset class="settings-group">
-              <legend>Maya</legend>
+            </div>
+            <div class="settings-group" role="group" aria-labelledby="maya-settings-title">
+              <h3 class="settings-group-title" id="maya-settings-title">Maya</h3>
               <label class="check-row"><input type="checkbox" name="mayaEnabled" ${maya.enabled ? "checked" : ""}> Accept Maya</label>
               <div class="form-row"><label>Account name<input name="mayaName" value="${safeText(maya.accountName || "")}"></label><label>Mobile number<input name="mayaNumber" value="${safeText(maya.accountNumber || "")}"></label></div>
               <label class="upload-box">Choose Maya QR image<input type="file" accept="image/jpeg,image/png,image/webp" data-qr="maya"><small>Use the QR image from the official Maya account. Maximum 2 MB.</small></label>
               <div data-qr-preview="maya">${draft.mayaQr ? `<img class="qr-preview" src="${safeText(draft.mayaQr)}" alt="Saved Maya QR code">` : `<div class="empty-state">No Maya QR uploaded yet.</div>`}</div>
-            </fieldset>
-            <fieldset class="settings-group schedule-group">
-              <legend>Booking schedule</legend>
+            </div>
+            <div class="settings-group schedule-group" role="group" aria-labelledby="schedule-settings-title">
+              <h3 class="settings-group-title" id="schedule-settings-title">Booking schedule</h3>
               <p class="muted">Online reservations start at 1:00 PM by default. Customers only receive time slots that fit inside these hours. Mark a day closed to remove it from booking.</p>
               <div class="schedule-settings">${scheduleRows(operatingHours)}</div>
               <label>Holiday and special closure dates<textarea name="closedDates" rows="4" placeholder="2026-12-24, 2026-12-31">${(settings.closedDates || []).join("\n")}</textarea><small>Enter one date per line or separate dates with commas. Fixed Philippine national holidays are blocked automatically.</small></label>
-            </fieldset>
+            </div>
             <button class="button primary full" type="submit">${icon('Save')} Save shop settings</button>
           </form>
         </div>

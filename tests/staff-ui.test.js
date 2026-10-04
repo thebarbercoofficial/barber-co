@@ -87,6 +87,19 @@ async function main() {
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
         assert.ok(overflow <= 1, `${name} at ${width}: horizontal overflow ${overflow}`);
         assert.equal(await page.locator('.site-header').evaluate((el) => Math.round(el.getBoundingClientRect().height)), 64);
+        if (name === 'profile') {
+          const groups = await page.locator('.settings-group').evaluateAll((elements) => elements.map((group) => {
+            const box = group.getBoundingClientRect();
+            const heading = group.querySelector('.settings-group-title').getBoundingClientRect();
+            const next = group.querySelector('.settings-group-title').nextElementSibling.getBoundingClientRect();
+            return { name: group.querySelector('h3').textContent, topInset: heading.top - box.top, leftInset: heading.left - box.left, rightInset: box.right - heading.right, gap: next.top - heading.bottom };
+          }));
+          assert.equal(groups.length, 3);
+          for (const group of groups) {
+            assert.ok(group.topInset >= 16 && group.leftInset >= 16 && group.rightInset >= 16, `${group.name} must stay inside its box at ${width}px`);
+            assert.ok(group.gap >= 15, `${group.name} needs space above its fields at ${width}px`);
+          }
+        }
         assert.equal(await page.locator('.site-header').evaluate((el) => getComputedStyle(el).backgroundColor), 'rgb(43, 26, 18)', 'Staff header must match the oak theme');
         if (['dashboard', 'reports'].includes(name)) {
           await page.waitForFunction(() => Boolean(Chart.getChart(document.querySelector('[data-trend-chart]'))));

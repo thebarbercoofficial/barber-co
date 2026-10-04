@@ -184,6 +184,8 @@ const BarberCo = (() => {
   }
 
   function initHeader(activePage) {
+    const staff = Boolean(document.querySelector('.app-shell'));
+    document.body.classList.toggle('staff-page', staff);
     const header = document.querySelector("[data-header]");
     const nav = document.querySelector("[data-nav]");
     const toggle = document.querySelector("[data-nav-toggle]");
@@ -196,6 +198,22 @@ const BarberCo = (() => {
         toggle.setAttribute("aria-expanded", String(isOpen));
       });
     }
+    const staffToggle = document.querySelector('[data-staff-toggle]');
+    staffToggle?.addEventListener('click', () => {
+      const open = document.body.classList.toggle('staff-menu-open');
+      staffToggle.setAttribute('aria-expanded', String(open));
+    });
+    document.querySelector('[data-sidebar-dismiss]')?.addEventListener('click', () => {
+      document.body.classList.remove('staff-menu-open');
+      staffToggle?.setAttribute('aria-expanded', 'false');
+    });
+    if (staffToggle) document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && document.body.classList.contains('staff-menu-open')) {
+        document.body.classList.remove('staff-menu-open');
+        staffToggle.setAttribute('aria-expanded', 'false');
+        staffToggle.focus();
+      }
+    });
     document.querySelector("[data-logout]")?.addEventListener("click", () => {
       clearSession();
       location.href = "login.html";
@@ -220,7 +238,7 @@ const BarberCo = (() => {
       document.body.classList.add("is-leaving");
       window.setTimeout(() => { window.location.href = href; }, 180);
     });
-    initMotion();
+    if (!staff) initMotion();
     requestAnimationFrame(() => document.body.classList.add("is-loaded"));
   }
 
@@ -247,6 +265,13 @@ const BarberCo = (() => {
   function nav(active = "") {
     const role = currentRole();
     const signedIn = isAuthenticated();
+    if (active === 'admin') {
+      const roleLabel = role === 'moderator' ? 'Moderator' : 'Administrator';
+      return `<header class="site-header staff-header" data-header>
+        <div class="staff-header-brand"><button class="icon-button staff-menu-toggle" type="button" data-staff-toggle aria-label="Open staff navigation" aria-expanded="false" aria-controls="staff-sidebar">${icon('Menu')}</button><a class="brand" href="${role === 'moderator' ? 'admin-logbook.html' : 'admin-dashboard.html'}"><img class="brand-logo" src="images/logo.png" alt="The Barber Co"><span>The Barber Co<small>SHOP WORKSPACE</small></span></a></div>
+        <div class="staff-header-actions"><a class="header-link" href="queue-display.html" target="_blank" rel="noreferrer" title="Open TV queue display">${icon('Monitor')}<span>Queue display</span></a><a class="header-link" href="index.html" title="Open public website">${icon('ExternalLink')}<span>View website</span></a><span class="staff-account">${avatar(safeText(state.user.name || 'Staff'), safeText(state.user.photo || ''), 'staff-avatar')}<span><strong>${safeText(state.user.name || 'Staff')}</strong><small>${roleLabel}</small></span></span><button class="icon-button" type="button" data-logout aria-label="Log out" title="Log out">${icon('LogOut')}</button></div>
+      </header>`;
+    }
     const accountHref = role === "admin" ? "admin-dashboard.html" : role === "moderator" ? "admin-logbook.html" : state.user?.email ? "user-profile.html" : "login.html";
     const accountLabel = role === "admin" ? "Admin" : role === "moderator" ? "Logbook" : state.user?.email ? "Profile" : "Login";
     const links = [
@@ -307,7 +332,20 @@ const BarberCo = (() => {
       ["index.html", "public", "Public Site"]
     ];
     const links = currentRole() === "moderator" ? moderatorLinks : adminLinks;
-    return `<aside class="sidebar">${links.map(([href, key, label]) => `<a class="${active === key ? "active" : ""}" href="${href}">${label}</a>`).join("")}</aside>`;
+    const icons = { dashboard: 'LayoutDashboard', logbook: 'ListOrdered', users: 'Users', profile: 'Settings2', services: 'Scissors', barbers: 'ContactRound', reports: 'ChartNoAxesCombined', schedule: 'CalendarDays', public: 'ExternalLink' };
+    const operations = links.filter(([, key]) => ['dashboard', 'logbook', 'schedule'].includes(key));
+    const management = links.filter(([, key]) => !['dashboard', 'logbook', 'schedule', 'public'].includes(key));
+    const group = (title, items) => items.length ? `<div class="sidebar-group"><p>${title}</p>${items.map(([href, key, label]) => `<a class="${active === key ? 'active' : ''}" href="${href}" ${active === key ? 'aria-current="page"' : ''}>${icon(icons[key])}<span>${label}</span></a>`).join('')}</div>` : '';
+    return `<button class="sidebar-backdrop" type="button" data-sidebar-dismiss aria-label="Close staff navigation"></button><aside class="sidebar" id="staff-sidebar"><div class="sidebar-shop"><img src="images/logo.png" alt=""><div>Carmona shop<small>${currentRole() === 'moderator' ? 'Front desk' : 'Administration'}</small></div><span class="shop-indicator" title="Staff workspace"></span></div>${group('DAILY OPERATIONS', operations)}${group('SHOP MANAGEMENT', management)}<div class="sidebar-footer"><a href="index.html">${icon('ExternalLink')}<span>Public website</span></a><small>The Barber Co / Since 2022</small></div></aside>`;
+  }
+
+  function safeText(value = '') {
+    return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+  }
+
+  function icon(name) {
+    const node = window.lucide?.icons?.[name];
+    return node ? window.lucide.createElement(node, { width: 18, height: 18, 'aria-hidden': 'true', 'stroke-width': 1.8 }).outerHTML : '';
   }
 
   function serviceOptions(selectedId = state.selectedServiceId) {
@@ -320,5 +358,5 @@ const BarberCo = (() => {
     return `<option value="">Assign later</option>${available.map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""} ${barber.status === "on-leave" ? "disabled" : ""}>${barber.name}${barber.status === "on-leave" ? " - on leave" : ""}</option>`).join("")}`;
   }
 
-  return { state, barbers, save, peso, byId, initials, avatar, toast, initHeader, nav, shopEndcap, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, loadSettings, setSession, clearSession, authToken, isAuthenticated, currentRole, canAccess };
+  return { state, barbers, save, peso, byId, initials, avatar, toast, initHeader, nav, shopEndcap, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, loadSettings, setSession, clearSession, authToken, isAuthenticated, currentRole, canAccess, icon, safeText };
 })();

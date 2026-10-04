@@ -1,4 +1,4 @@
-const { state, nav, initHeader, adminSidebar, avatar, api, loadSettings, toast } = BarberCo;
+const { state, nav, initHeader, adminSidebar, avatar, api, loadSettings, toast, icon, safeText } = BarberCo;
 
 if (!BarberCo.canAccess("admin")) {
   location.replace("login.html");
@@ -51,38 +51,37 @@ async function render() {
     <section class="app-shell">
       ${adminSidebar("profile")}
       <div class="workspace">
-        <p class="eyebrow">Admin only</p><h1>Shop settings</h1>
-        <p class="muted workspace-intro">Manage the payment accounts, booking hours, weekly closures, holidays, and special shop closure dates used on every device.</p>
-        <div class="grid-2">
-          <div class="panel profile-head">
+        <div class="workspace-heading"><div><p class="eyebrow">ADMINISTRATOR ONLY</p><h1>Shop settings</h1><p class="muted">Payment methods, booking hours, and shop closures.</p></div><span class="count-badge">${icon('LockKeyhole')} Admin access</span></div>
+        <div class="settings-layout">
+          <div class="panel profile-head settings-account">
             ${avatar(state.user.name || "The Barber Co Admin", state.user.photo || "")}
-            <h2>${state.user.name || "The Barber Co Admin"}</h2>
+            <h2>${safeText(state.user.name || "The Barber Co Admin")}</h2>
             <p class="muted">Moderators cannot view or change these payment settings.</p>
-            <a class="button secondary" href="printables/walk-in-qr.html" target="_blank" rel="noreferrer">Open printable walk-in QR</a>
+            <a class="button secondary" href="printables/walk-in-qr.html" target="_blank" rel="noreferrer">${icon('QrCode')} Shop walk-in QR</a>
           </div>
-          <form class="form-card" data-payment-settings>
+          <form class="form-card settings-form" data-payment-settings>
             <label>Online booking fee<input type="number" min="0" name="bookingFee" value="${Number(settings.bookingFee ?? 100)}" required></label>
             <fieldset class="settings-group">
               <legend>GCash</legend>
               <label class="check-row"><input type="checkbox" name="gcashEnabled" ${gcash.enabled !== false ? "checked" : ""}> Accept GCash</label>
-              <div class="form-row"><label>Account name<input name="gcashName" value="${gcash.accountName || ""}"></label><label>Mobile number<input name="gcashNumber" value="${gcash.accountNumber || ""}"></label></div>
+              <div class="form-row"><label>Account name<input name="gcashName" value="${safeText(gcash.accountName || "")}"></label><label>Mobile number<input name="gcashNumber" value="${safeText(gcash.accountNumber || "")}"></label></div>
               <label class="upload-box">Choose GCash QR image<input type="file" accept="image/jpeg,image/png,image/webp" data-qr="gcash"><small>Use the QR image from the official GCash account. Maximum 2 MB.</small></label>
-              ${draft.gcashQr ? `<img class="qr-preview" src="${draft.gcashQr}" alt="Saved GCash QR code">` : `<div class="empty-state">No GCash QR uploaded yet.</div>`}
+              <div data-qr-preview="gcash">${draft.gcashQr ? `<img class="qr-preview" src="${safeText(draft.gcashQr)}" alt="Saved GCash QR code">` : `<div class="empty-state">No GCash QR uploaded yet.</div>`}</div>
             </fieldset>
             <fieldset class="settings-group">
               <legend>Maya</legend>
               <label class="check-row"><input type="checkbox" name="mayaEnabled" ${maya.enabled ? "checked" : ""}> Accept Maya</label>
-              <div class="form-row"><label>Account name<input name="mayaName" value="${maya.accountName || ""}"></label><label>Mobile number<input name="mayaNumber" value="${maya.accountNumber || ""}"></label></div>
+              <div class="form-row"><label>Account name<input name="mayaName" value="${safeText(maya.accountName || "")}"></label><label>Mobile number<input name="mayaNumber" value="${safeText(maya.accountNumber || "")}"></label></div>
               <label class="upload-box">Choose Maya QR image<input type="file" accept="image/jpeg,image/png,image/webp" data-qr="maya"><small>Use the QR image from the official Maya account. Maximum 2 MB.</small></label>
-              ${draft.mayaQr ? `<img class="qr-preview" src="${draft.mayaQr}" alt="Saved Maya QR code">` : `<div class="empty-state">No Maya QR uploaded yet.</div>`}
+              <div data-qr-preview="maya">${draft.mayaQr ? `<img class="qr-preview" src="${safeText(draft.mayaQr)}" alt="Saved Maya QR code">` : `<div class="empty-state">No Maya QR uploaded yet.</div>`}</div>
             </fieldset>
-            <fieldset class="settings-group">
+            <fieldset class="settings-group schedule-group">
               <legend>Booking schedule</legend>
               <p class="muted">Online reservations start at 1:00 PM by default. Customers only receive time slots that fit inside these hours. Mark a day closed to remove it from booking.</p>
               <div class="schedule-settings">${scheduleRows(operatingHours)}</div>
               <label>Holiday and special closure dates<textarea name="closedDates" rows="4" placeholder="2026-12-24, 2026-12-31">${(settings.closedDates || []).join("\n")}</textarea><small>Enter one date per line or separate dates with commas. Fixed Philippine national holidays are blocked automatically.</small></label>
             </fieldset>
-            <button class="button primary full" type="submit">Save shop settings</button>
+            <button class="button primary full" type="submit">${icon('Save')} Save shop settings</button>
           </form>
         </div>
       </div>
@@ -93,7 +92,8 @@ async function render() {
       const image = await readImage(event.target.files[0]);
       if (event.target.dataset.qr === "gcash") draft.gcashQr = image;
       else draft.mayaQr = image;
-      render();
+      const preview = document.querySelector(`[data-qr-preview="${event.target.dataset.qr}"]`);
+      preview.innerHTML = image ? `<img class="qr-preview" src="${safeText(image)}" alt="Selected payment QR code">` : '<div class="empty-state">No QR image selected.</div>';
     } catch (error) { toast(error.message); }
   }));
 

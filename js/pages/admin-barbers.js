@@ -1,4 +1,4 @@
-const { state, barbers, nav, initHeader, adminSidebar, initials, save, toast, api } = BarberCo;
+const { state, barbers, nav, initHeader, adminSidebar, initials, save, toast, api, icon, safeText } = BarberCo;
 
 if (!BarberCo.canAccess("admin")) {
   location.replace("login.html");
@@ -10,16 +10,15 @@ function statusLabel(status) {
 }
 
 function rows() {
-  if (!barbers.length) return `<div class="empty-state">No barbers yet. Add the first real barber above.</div>`;
+  if (!barbers.length) return `<div class="staff-empty">${icon('Scissors')}<strong>No barbers added</strong><span>Add your team to open barber selection for customers.</span></div>`;
   return barbers.map((barber) => `
-    <div class="appointment-row">
-      <span class="avatar small-avatar">${initials(barber.name)}</span>
-      <span>${barber.name}<br><small class="muted">${barber.role}</small></span>
-      <strong>${statusLabel(barber.status)}</strong>
+    <div class="appointment-row management-record">
+      <div class="person-cell"><span class="staff-avatar">${initials(barber.name)}</span><div><strong>${safeText(barber.name)}</strong><small>${safeText(barber.role)}</small></div></div>
+      <span class="status-pill ${barber.status}">${statusLabel(barber.status)}</span>
       <span class="button-row">
-        <button class="button secondary small" type="button" data-status="${barber.mongoId || barber.id}:active">Active</button>
-        <button class="button secondary small" type="button" data-status="${barber.mongoId || barber.id}:on-leave">On leave</button>
-        <button class="button danger small" type="button" data-delete="${barber.mongoId || barber.id}">Remove</button>
+        <button class="button secondary small" type="button" data-status="${barber.mongoId || barber.id}:active" ${barber.status === 'active' ? 'disabled' : ''}>Active</button>
+        <button class="button secondary small" type="button" data-status="${barber.mongoId || barber.id}:on-leave" ${barber.status === 'on-leave' ? 'disabled' : ''}>On leave</button>
+        <button class="icon-button danger-icon" type="button" data-delete="${barber.mongoId || barber.id}" title="Remove barber" aria-label="Remove ${safeText(barber.name)}">${icon('Trash2')}</button>
       </span>
     </div>
   `).join("");
@@ -43,14 +42,16 @@ async function render() {
     <section class="app-shell">
       ${adminSidebar("barbers")}
       <div class="workspace">
-        <p class="eyebrow">Barber Management</p><h1>Team availability</h1>
+        <div class="workspace-heading"><div><p class="eyebrow">TEAM MANAGEMENT</p><h1>Barbers</h1><p class="muted">Manage the team and availability for online reservations.</p></div><span class="count-badge">${barbers.filter((item) => item.status === 'active').length} active</span></div>
+        <div class="management-layout"><section><div class="panel-heading"><h3>Your team</h3>${icon('Scissors')}</div><div class="record-list" data-barber-rows>${rows()}</div></section>
         <form class="panel" data-barber-form>
-          <div class="form-row"><label>Name<input name="name" required placeholder="New barber"></label><label>Specialty<input name="role" required placeholder="Fade specialist"></label></div>
+          <div class="panel-heading"><h3>Add a barber</h3>${icon('UserRoundPlus')}</div>
+          <label>Name<input name="name" required placeholder="Barber name"></label><label>Specialty<input name="role" required placeholder="Fade specialist"></label>
           <label>Status<select name="status"><option value="active">Active</option><option value="on-leave">On leave</option></select></label>
           <label>Bio<input name="bio" placeholder="Short public profile"></label>
-          <button class="button primary" type="submit">Add barber</button>
+          <button class="button primary full" type="submit">${icon('Plus')} Add barber</button>
         </form>
-        <div class="panel" data-barber-rows>${rows()}</div>
+        </div>
       </div>
     </section>
   `;

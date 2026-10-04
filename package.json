@@ -5,11 +5,16 @@
   "scripts": {
     "start": "vercel dev",
     "check": "node --check api/index.js && node --check js/shared.js && node --check js/pages/booking.js && node --check js/pages/payment.js && node --check js/pages/admin-schedule.js",
-    "test": "node tests/booking-hold.test.js"
+    "test": "node tests/booking-hold.test.js",
+    "test:ui": "node tests/staff-ui.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "jsonwebtoken": "^9.0.2",
+    "lucide": "1.52.0",
     "mongodb": "^6.8.0"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
   }
 }

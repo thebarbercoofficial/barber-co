@@ -1,4 +1,4 @@
-const { state, barbers, nav, initHeader, adminSidebar, peso, save, toast, api } = BarberCo;
+const { state, barbers, nav, initHeader, adminSidebar, peso, save, toast, api, icon, safeText } = BarberCo;
 
 if (!BarberCo.canAccess("admin")) {
   location.replace("login.html");
@@ -10,15 +10,10 @@ async function getAnalytics() {
     return await api("/admin/analytics");
   } catch (error) {
     if (error.message.includes("Admin") && !BarberCo.canAccess("admin")) location.href = "login.html";
-    const appointmentRevenue = state.appointments.filter((item) => item.paid).reduce((sum, item) => sum + Number(item.total || BarberCo.byId(state.services, item.serviceId).price), 0);
-    const walkInRevenue = state.queue.filter((item) => item.paid).reduce((sum, item) => sum + Number(item.price || 0), 0);
     return {
+      connectionError: error.message,
       totals: {
-        customers: state.accounts.length,
-        bookings: state.appointments.length,
-        walkins: state.queue.length,
-        revenue: appointmentRevenue + walkInRevenue,
-        waiting: state.queue.filter((item) => item.status === "waiting").length
+        customers: 0, bookings: 0, walkins: 0, revenue: 0, waiting: 0
       },
       barbers,
       services: state.services
@@ -40,6 +35,10 @@ function callNextLocal() {
 
 async function render() {
   const analytics = await getAnalytics();
+  const results = await Promise.allSettled([api('/admin/queue'), api('/admin/appointments')]);
+  const queue = results[0].status === 'fulfilled' ? results[0].value.queue.filter((item) => ['waiting', 'serving'].includes(item.status)) : [];
+  const requests = results[1].status === 'fulfilled' ? results[1].value.appointments.filter((item) => item.status === 'pending') : [];
+  const dateLabel = new Intl.DateTimeFormat('en-PH', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'Asia/Manila' }).format(new Date());
   if (analytics.barbers) {
     state.barbers.splice(0, state.barbers.length, ...analytics.barbers);
     save();
@@ -49,9 +48,10 @@ async function render() {
     <section class="app-shell">
       ${adminSidebar("dashboard")}
       <div class="workspace">
-        <p class="eyebrow">Admin Dashboard</p><h1>Shop overview</h1>
-        <div class="grid-4"><article class="metric"><span>Total customers</span><strong>${analytics.totals.customers}</strong><small class="muted">Registered accounts</small></article><article class="metric"><span>Bookings</span><strong>${analytics.totals.bookings}</strong><small class="muted">All appointments</small></article><article class="metric"><span>Total earnings</span><strong>${peso(analytics.totals.revenue)}</strong><small class="muted">Verified payments</small></article><article class="metric"><span>Waiting walk-ins</span><strong>${analytics.totals.waiting}</strong><small class="muted">Live queue</small></article></div>
-        <div class="grid-2 section"><div class="panel"><h3>Barbers monitoring</h3>${state.barbers.length ? state.barbers.map((barber) => `<div class="summary-list"><div><span>${barber.name}</span><strong>${barber.status || "active"}</strong></div></div>`).join("") : `<div class="empty-state">No barbers added yet.</div>`}<a class="button secondary full" href="admin-barbers.html">Manage barbers</a></div><form class="panel" data-quick-service><h3>Queue and services</h3><button class="button primary full" type="button" data-call-next>Call next walk-in</button><label>New service name<input name="name" required placeholder="New package"></label><label>Price<input type="number" name="price" required placeholder="250"></label><button class="button secondary full" type="submit">Add service</button></form></div>
+        <div class="workspace-heading"><div><p class="eyebrow">DAILY OPERATIONS</p><h1>Shop overview</h1><p class="muted">${dateLabel}</p></div><a class="button primary" href="admin-logbook.html">${icon('ListOrdered')} Open front desk</a></div>
+        ${analytics.connectionError ? `<div class="connection-error" role="alert">${safeText(analytics.connectionError)}</div>` : ''}
+        <div class="grid-4 metric-grid">${[['Users', 'Customers', analytics.totals.customers, 'Registered accounts'], ['CalendarDays', 'Bookings', analytics.totals.bookings, 'All appointments'], ['Wallet', 'Earnings', peso(analytics.totals.revenue), 'Verified payments'], ['ListOrdered', 'In the queue', analytics.totals.waiting, 'Waiting walk-ins']].map(([symbol, label, value, detail]) => `<article class="metric"><div class="metric-label">${label}${icon(symbol)}</div><strong>${analytics.connectionError ? '--' : value}</strong><small class="muted">${detail}</small></article>`).join('')}</div>
+        <div class="dashboard-layout"><div><section class="panel"><div class="panel-heading"><h3>At the front desk <span class="count-badge">${queue.length}</span></h3><a class="text-action" href="admin-logbook.html">View queue ${icon('ArrowUpRight')}</a></div>${queue.length ? queue.slice(0, 6).map((item) => `<div class="compact-row"><span class="ticket-number">#${String(item.queueNumber).padStart(2, '0')}</span><div class="row-main"><strong>${safeText(item.customer)}</strong><small>${safeText(item.cutName || 'Service to be assigned')}</small></div><span class="status-pill ${item.status}">${item.status === 'serving' ? 'Serving' : 'Waiting'}</span></div>`).join('') : `<div class="staff-empty">${icon('ListOrdered')}<strong>${results[0].status === 'rejected' ? 'Queue could not load' : 'The line is clear'}</strong><span>Add a walk-in at the front desk or open the shop QR.</span></div>`}<div class="panel-actions"><button class="button primary" type="button" data-call-next ${!queue.some((item) => item.status === 'waiting') || queue.some((item) => item.status === 'serving') ? 'disabled' : ''}>${icon('Megaphone')} Call next</button><a class="button secondary" href="printables/walk-in-qr.html" target="_blank" rel="noreferrer">${icon('QrCode')} Shop QR</a></div></section><section class="panel"><div class="panel-heading"><h3>Awaiting payment verification <span class="count-badge">${requests.length}</span></h3><a class="text-action" href="admin-schedule.html">Review ${icon('ArrowUpRight')}</a></div>${requests.length ? requests.slice(0, 4).map((item) => `<div class="compact-row"><div class="row-main"><strong>${safeText(item.customer)}</strong><small>${item.date} / ${item.time}</small></div><strong>${peso(item.total)}</strong><a class="button secondary small" href="admin-schedule.html">Review</a></div>`).join('') : `<div class="staff-empty compact">${icon('CalendarCheck')}<strong>${results[1].status === 'rejected' ? 'Requests could not load' : 'No pending requests'}</strong></div>`}</section></div><div><section class="panel"><div class="panel-heading"><h3>Team availability</h3><a class="text-action" href="admin-barbers.html" aria-label="Manage barbers">${icon('ArrowUpRight')}</a></div>${state.barbers.length ? state.barbers.map((barber) => `<div class="compact-row"><span class="staff-avatar">${BarberCo.initials(barber.name)}</span><div class="row-main"><strong>${safeText(barber.name)}</strong><small>${safeText(barber.role || 'Barber')}</small></div><span class="status-pill ${barber.status || 'active'}">${barber.status === 'on-leave' ? 'On leave' : barber.status === 'fired' ? 'Inactive' : 'Active'}</span></div>`).join('') : `<div class="staff-empty compact"><strong>No barbers added</strong><a href="admin-barbers.html">Add your team</a></div>`}</section><form class="panel" data-quick-service><div class="panel-heading"><h3>Add a service</h3>${icon('Scissors')}</div><label>Service name<input name="name" required placeholder="e.g. Basic haircut"></label><label>Price (PHP)<input type="number" min="0" name="price" required placeholder="150"></label><button class="button secondary full" type="submit">${icon('Plus')} Add service</button></form></div></div>
       </div>
     </section>
   `;

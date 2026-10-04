@@ -1,4 +1,4 @@
-const { nav, initHeader, adminSidebar, toast, canAccess, api } = BarberCo;
+const { nav, initHeader, adminSidebar, toast, canAccess, api, icon, safeText } = BarberCo;
 
 if (!canAccess("admin")) {
   location.replace("login.html");
@@ -10,20 +10,24 @@ let accounts = [];
 
 function rows() {
   if (!accounts.length) return `<div class="empty-state">No registered accounts yet.</div>`;
-  return accounts.map((account) => {
+  const query = document.querySelector('[data-user-search]')?.value.toLowerCase().trim() || '';
+  const filtered = accounts.filter((account) => `${account.name} ${account.email}`.toLowerCase().includes(query));
+  if (!filtered.length) return `<div class="staff-empty"><strong>No matching accounts</strong></div>`;
+  return filtered.map((account) => {
     const protectedAccount = account.email === protectedAdminEmail;
-    return `<div class="appointment-row"><span>${account.name}<br><small class="muted">${account.email}</small></span><strong>${account.role}${protectedAccount ? " - protected" : ""}</strong><span class="button-row"><button class="button secondary small" type="button" data-role="${account.id}:customer" ${protectedAccount || account.role === "customer" ? "disabled" : ""}>Customer</button><button class="button secondary small" type="button" data-role="${account.id}:moderator" ${protectedAccount || account.role === "moderator" ? "disabled" : ""}>Moderator</button><button class="button primary small" type="button" data-role="${account.id}:admin" ${protectedAccount || account.role === "admin" ? "disabled" : ""}>Admin</button></span></div>`;
+    return `<div class="appointment-row management-record"><div class="person-cell"><span class="staff-avatar">${BarberCo.initials(account.name)}</span><div><strong>${safeText(account.name)}</strong><small>${safeText(account.email)}</small></div></div><span class="status-pill">${protectedAccount ? 'Protected owner' : safeText(account.role)}</span><select class="permission-select" data-role-select="${account.id}" aria-label="Role for ${safeText(account.name)}" ${protectedAccount ? 'disabled' : ''}>${['customer','moderator','admin'].map((role) => `<option value="${role}" ${account.role === role ? 'selected' : ''}>${role[0].toUpperCase() + role.slice(1)}</option>`).join('')}</select></div>`;
   }).join("");
 }
 
 async function render() {
-  document.querySelector("#app").innerHTML = `${nav("admin")}<section class="app-shell">${adminSidebar("users")}<div class="workspace"><p class="eyebrow">Users and Permissions</p><h1>Registered users</h1><p class="muted">Roles are saved to the shared database and apply on every device. The official owner account is protected.</p><form class="panel" data-account-form autocomplete="off"><div class="form-row"><label>Name<input name="name" autocomplete="off" required placeholder="Staff name"></label><label>Email<input type="email" name="email" autocomplete="off" required placeholder="staff@email.com"></label></div><div class="form-row"><label>Temporary password<input type="password" name="password" autocomplete="new-password" minlength="6" required></label><label>Permission<select name="role"><option value="customer">Customer</option><option value="moderator">Moderator</option><option value="admin">Admin</option></select></label></div><button class="button primary" type="submit">Create account</button></form><div class="panel" data-user-rows><div class="empty-state">Loading accounts...</div></div></div></section>`;
+  document.querySelector("#app").innerHTML = `${nav("admin")}<section class="app-shell">${adminSidebar("users")}<div class="workspace"><div class="workspace-heading"><div><p class="eyebrow">ACCESS MANAGEMENT</p><h1>Users & permissions</h1><p class="muted">The owner account is protected. Staff roles apply across all devices.</p></div></div><div class="management-layout"><section><div class="panel-heading"><h3>Registered accounts</h3>${icon('Users')}</div><div class="list-toolbar"><label class="search-field">${icon('Search')}<input type="search" data-user-search placeholder="Search name or email" aria-label="Search accounts"></label></div><div class="record-list" data-user-rows><div class="empty-state">Loading accounts...</div></div></section><form class="panel" data-account-form autocomplete="off"><div class="panel-heading"><h3>Create an account</h3>${icon('UserRoundPlus')}</div><label>Name<input name="name" autocomplete="off" required placeholder="Staff name"></label><label>Email<input type="email" name="email" autocomplete="off" required placeholder="staff@email.com"></label><label>Temporary password<input type="password" name="password" autocomplete="new-password" minlength="6" required></label><label>Permission<select name="role"><option value="customer">Customer</option><option value="moderator">Moderator</option><option value="admin">Admin</option></select></label><button class="button primary full" type="submit">${icon('Plus')} Create account</button></form></div></div></section>`;
   initHeader("admin");
   try {
     const payload = await api("/admin/users");
     accounts = payload.users || [];
     document.querySelector("[data-user-rows]").innerHTML = rows();
-  } catch (error) { toast(error.message || "Accounts could not be loaded."); }
+  } catch (error) { document.querySelector('[data-user-rows]').innerHTML = `<div class="connection-error" role="alert">${safeText(error.message || 'Accounts could not be loaded.')}</div>`; }
+  document.querySelector('[data-user-search]').addEventListener('input', () => { document.querySelector('[data-user-rows]').innerHTML = rows(); });
 
   document.querySelector("[data-account-form]").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -36,16 +40,17 @@ async function render() {
     } catch (error) { toast(error.message || "Account could not be created."); button.disabled = false; }
   });
 
-  document.querySelector("[data-user-rows]").addEventListener("click", async (event) => {
-    const button = event.target.closest("[data-role]");
+  document.querySelector("[data-user-rows]").addEventListener("change", async (event) => {
+    const button = event.target.closest("[data-role-select]");
     if (!button) return;
-    const [id, role] = button.dataset.role.split(":");
+    const id = button.dataset.roleSelect;
+    const role = button.value;
     button.disabled = true;
     try {
       const payload = await api(`/admin/users/${id}`, { method: "PATCH", body: JSON.stringify({ role }) });
       toast(`${payload.user.name} is now ${role}.`);
       render();
-    } catch (error) { toast(error.message || "Role could not be updated."); button.disabled = false; }
+    } catch (error) { toast(error.message || "Role could not be updated."); button.value = accounts.find((item) => item.id === id)?.role || 'customer'; button.disabled = false; }
   });
 }
 

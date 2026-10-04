@@ -1,4 +1,4 @@
-const { state, nav, initHeader, adminSidebar, peso, save, toast, api } = BarberCo;
+const { state, nav, initHeader, adminSidebar, peso, save, toast, api, icon, safeText } = BarberCo;
 
 if (!BarberCo.canAccess("admin")) {
   location.replace("login.html");
@@ -6,7 +6,8 @@ if (!BarberCo.canAccess("admin")) {
 }
 
 function renderRows() {
-  return state.services.map((service) => `<div class="appointment-row"><span>${service.name}<br><small class="muted">${service.detail}</small></span><strong>${peso(service.price)} - ${service.duration}</strong><span class="button-row"><button class="button secondary small" type="button" data-edit="${service.mongoId || service.id}">Edit</button><button class="button danger small" type="button" data-delete="${service.mongoId || service.id}">Remove</button></span></div>`).join("");
+  if (!state.services.length) return `<div class="staff-empty">${icon('Scissors')}<strong>No services yet</strong></div>`;
+  return state.services.map((service) => `<div class="appointment-row management-record"><div><strong>${safeText(service.name)}</strong><small>${safeText(service.detail)}</small></div><div><strong>${peso(service.price)}</strong><small>${safeText(service.duration)}</small></div><span class="button-row"><button class="icon-button" type="button" data-edit="${service.mongoId || service.id}" title="Edit service price" aria-label="Edit ${safeText(service.name)}">${icon('Pencil')}</button><button class="icon-button danger-icon" type="button" data-delete="${service.mongoId || service.id}" title="Remove service" aria-label="Remove ${safeText(service.name)}">${icon('Trash2')}</button></span></div>`).join("");
 }
 
 async function loadServices() {
@@ -27,9 +28,8 @@ async function render() {
     <section class="app-shell">
       ${adminSidebar("services")}
       <div class="workspace">
-        <p class="eyebrow">Services Management</p><h1>Service records</h1>
-        <form class="panel" data-service-form><div class="form-row"><label>Service name<input name="name" required placeholder="Package name"></label><label>Price<input type="number" name="price" required placeholder="150"></label></div><div class="form-row"><label>Duration<input name="duration" required placeholder="30 min"></label><label>Description<input name="detail" required placeholder="Short description"></label></div><button class="button primary" type="submit">Add service</button></form>
-        <div class="panel" data-service-rows>${renderRows()}</div>
+        <div class="workspace-heading"><div><p class="eyebrow">SHOP MANAGEMENT</p><h1>Services & pricing</h1><p class="muted">Cut prices and durations used in booking and at the front desk.</p></div><span class="count-badge">${state.services.length} services</span></div>
+        <div class="management-layout"><section><div class="panel-heading"><h3>Service menu</h3>${icon('Scissors')}</div><div class="record-list" data-service-rows>${renderRows()}</div></section><form class="panel" data-service-form><div class="panel-heading"><h3>Add a service</h3>${icon('Plus')}</div><label>Service name<input name="name" required placeholder="Package name"></label><div class="form-row"><label>Price (PHP)<input type="number" min="0" name="price" required placeholder="150"></label><label>Duration<input name="duration" required placeholder="30 min"></label></div><label>Description<input name="detail" required placeholder="Short description"></label><button class="button primary full" type="submit">${icon('Plus')} Add service</button></form></div>
       </div>
     </section>
   `;

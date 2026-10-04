@@ -21,7 +21,7 @@ async function render() {
     { id: "Maya", ...(settings.maya || {}) }
   ].filter((method) => method.enabled !== false && (method.accountNumber || method.qrImage));
   if (!methods.length) {
-    document.querySelector("#app").innerHTML = `${nav("booking")}<section class="section top"><div class="panel"><p class="eyebrow">Payment unavailable</p><h2>Online payment is not configured yet.</h2><p class="muted">Please contact the shop or join the walk-in queue instead.</p><a class="button primary" href="queue.html?walkin=1">Join as walk-in</a></div></section>`;
+    document.querySelector("#app").innerHTML = `${nav("booking")}<section class="section top"><div class="panel"><p class="eyebrow">Payment unavailable</p><h2>Online payment is not configured yet.</h2><p class="muted">Your slot is only a temporary hold. No booking has been submitted for staff approval.</p>${BarberCo.canAccess('admin') ? '<a class="button primary" href="admin-profile.html">Set up payments</a><a class="button secondary" href="admin-schedule.html">View appointments</a>' : '<p class="muted">Please contact the shop or join the walk-in queue instead.</p>'}<a class="button secondary" href="queue.html?walkin=1">Join as walk-in</a></div></section>`;
     initHeader("booking");
     return;
   }
@@ -45,6 +45,7 @@ async function render() {
   }));
   document.querySelector("[data-confirm-payment]").addEventListener("click", async () => {
     const button = document.querySelector("[data-confirm-payment]");
+    if (button.disabled) return;
     const proofFile = document.querySelector("[data-payment-proof]").files[0];
     if (!proofFile) return toast("Upload your payment proof before submitting.");
     if (proofFile.size > 2 * 1024 * 1024) return toast("Payment proof must be 2 MB or smaller.");
@@ -61,7 +62,7 @@ async function render() {
       toast(`Booking submitted for approval. Queue #${String(payload.appointment.queueNumber).padStart(2, "0")}.`);
       state.booking = null;
       save();
-      window.setTimeout(() => { location.href = "user-profile.html#bookings"; }, 900);
+      window.setTimeout(() => { location.href = BarberCo.canAccess('moderator') ? 'admin-schedule.html' : 'user-profile.html#bookings'; }, 900);
     } catch (error) {
       toast(error.message || "The booking could not be submitted.");
       button.disabled = false;

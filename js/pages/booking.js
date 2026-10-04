@@ -45,6 +45,12 @@ async function render() {
   const hours = settings.operatingHours || {};
   const closedDates = new Set(settings.closedDates || []);
   const minimumDate = localDateValue();
+  const paymentReady = [settings.gcash, settings.maya].some((method) => method?.enabled && (method.accountNumber || method.qrImage));
+  if (!paymentReady) {
+    document.querySelector("#app").innerHTML = `${nav("booking")}<section class="section top"><div class="panel"><p class="eyebrow">Online booking unavailable</p><h2>Payment setup is incomplete.</h2><p class="muted">No payment number or QR code has been added. No booking has been submitted.</p>${BarberCo.canAccess('admin') ? '<a class="button primary" href="admin-profile.html">Set up payments</a>' : '<p class="muted">Please contact the shop or join the walk-in queue.</p>'}<a class="button secondary" href="queue.html?walkin=1">Walk-in queue</a></div></section>`;
+    initHeader("booking");
+    return;
+  }
   document.querySelector("#app").innerHTML = `
     ${nav("booking")}
     <section class="section top">

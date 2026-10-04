@@ -239,6 +239,10 @@ function tokenFor(user) {
   return jwt.sign({ sub: String(user._id), role: user.role || "customer" }, jwtSecret, { expiresIn: "7d" });
 }
 
+function paymentConfigured(settings) {
+  return [settings.gcash, settings.maya].some((method) => method?.enabled && (method.accountNumber || method.qrImage));
+}
+
 async function requireUser(req, database, adminOnly = false) {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : "";
@@ -326,6 +330,7 @@ async function handler(req, res) {
     const durationMinutes = Math.max(30, Number.parseInt(service.duration, 10) || 30);
     const window = bookingWindow(date, time, settings, durationMinutes);
     if (window.error) return send(res, 400, { error: window.error });
+    if (!paymentConfigured(settings)) return send(res, 409, { error: "Online booking is unavailable until the administrator adds a payment number or QR code in Shop settings." });
     const previousHolds = await database.collection("appointmentHolds").find({ userId: user._id }).toArray();
     const previousIds = previousHolds.map((hold) => String(hold._id));
     if (previousIds.length) {
@@ -337,7 +342,8 @@ async function handler(req, res) {
       if (unavailable.includes(barberId)) return send(res, 409, { error: "That barber is already reserved for this time. Choose another barber or time." });
     }
     const hold = {
-      _id: new ObjectId(), userId: user._id, serviceId, barberId, date, time, durationMinutes,
+      _id: new ObjectId(), userId: user._id, customer: user.name, serviceId, barberId, date, time, durationMinutes,
+      total: Number(service.price) + Math.max(0, Number(settings.bookingFee) || 0),
       expiresAt: new Date(Date.now() + 10 * 60 * 1000), createdAt: new Date()
     };
     await lockAppointmentSlots(database, hold._id, date, selectedBarber ? String(selectedBarber._id) : "", time, durationMinutes, hold.expiresAt);
@@ -604,7 +610,20 @@ async function handler(req, res) {
 
   if (path === "/admin/appointments") {
     await requireRole(req, database, ["admin", "moderator"]);
-    if (req.method === "GET") return send(res, 200, { appointments: (await database.collection("appointments").find().sort({ createdAt: -1 }).toArray()).map(normalizeDoc) });
+    if (req.method === "GET") {
+      const [appointments, holds, settings] = await Promise.all([
+        database.collection("appointments").find().sort({ createdAt: -1 }).toArray(),
+        database.collection("appointmentHolds").find({ expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 }).toArray(),
+        database.collection("settings").findOne({ _id: "shop" })
+      ]);
+      const owners = holds.length ? await database.collection("users").find({ _id: { $in: holds.map((hold) => hold.userId) } }, { projection: { name: 1 } }).toArray() : [];
+      res.setHeader("Cache-Control", "no-store");
+      return send(res, 200, {
+        appointments: appointments.map(normalizeDoc),
+        reservations: holds.map((hold) => ({ ...normalizeDoc(hold), customer: hold.customer || owners.find((user) => String(user._id) === String(hold.userId))?.name || "Customer", status: "awaiting-payment" })),
+        paymentConfigured: paymentConfigured(mergedSettings(settings || {}))
+      });
+    }
   }
 
   if (path.startsWith("/admin/appointments/") && req.method === "PATCH") {

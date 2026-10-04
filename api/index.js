@@ -1,6 +1,7 @@
 const { MongoClient, ObjectId } = require("mongodb");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { buildAnalytics } = require('../lib/analytics');
 
 const mongoUri = process.env.MONGODB_URI;
 const dbName = process.env.MONGODB_DB || "barber_co";
@@ -611,8 +612,13 @@ async function handler(req, res) {
     const id = path.split("/").pop();
     const allowed = ["pending", "confirmed", "completed", "cancelled"];
     if (!ObjectId.isValid(id) || !allowed.includes(body.status)) return send(res, 400, { error: "Choose a valid appointment status." });
+    const current = await database.collection('appointments').findOne({ _id: new ObjectId(id) });
+    if (!current) return send(res, 404, { error: 'Appointment not found.' });
     const update = { status: body.status, updatedAt: new Date() };
-    if (["confirmed", "completed"].includes(body.status)) update.paid = true;
+    if (["confirmed", "completed"].includes(body.status)) {
+      update.paid = true;
+      if (!current.paid) update.paidAt = new Date();
+    }
     await database.collection("appointments").updateOne({ _id: new ObjectId(id) }, { $set: update });
     if (["completed", "cancelled"].includes(body.status)) {
       await database.collection("appointmentSlots").deleteMany({ appointmentId: id });
@@ -712,12 +718,8 @@ async function handler(req, res) {
       database.collection("services").find().toArray(),
       database.collection("barbers").find().toArray()
     ]);
-    const revenue = appointments.filter((item) => item.paid).reduce((sum, item) => {
-      const service = services.find((candidate) => String(candidate._id) === item.serviceId || candidate.slug === item.serviceId);
-      return sum + Number(service?.price || 0);
-    }, 0);
     return send(res, 200, {
-      totals: { customers: users, bookings: appointments.length, walkins: queue.length, revenue, waiting: queue.filter((item) => item.status === "waiting").length },
+      ...buildAnalytics(appointments, queue, users, services),
       barbers: barbers.map(normalizeDoc),
       services: services.map((service) => ({ ...normalizeDoc(service), bookings: appointments.filter((item) => item.serviceId === String(service._id) || item.serviceId === service.slug).length }))
     });

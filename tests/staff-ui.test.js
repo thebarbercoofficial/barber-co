@@ -12,6 +12,13 @@ const initialAppointments = ['pending', 'confirmed', 'completed'].map((status, i
 const accounts = [{ id: 'owner', name: 'Shop Owner', email: 'thebarberco.official@gmail.com', role: 'admin' }, { id: 'staff', name: 'Front Desk', email: 'staff@example.test', role: 'moderator' }, { id: 'customer', name: 'Customer Account', email: 'customer@example.test', role: 'customer' }];
 const settings = { bookingFee: 100, gcash: { enabled: true, accountName: 'The Barber Co', accountNumber: '09123456789' }, maya: { enabled: false }, closedDates: [] };
 const requests = [];
+const today = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+const daily = Array.from({ length: 365 }, (_, i) => {
+  const bookings = i >= 351 ? i % 3 : 0;
+  const walkins = i >= 351 ? i % 7 + 2 : 0;
+  return { date: new Date(Date.parse(`${today}T00:00:00Z`) - (364 - i) * 86400000).toISOString().slice(0, 10), bookings, walkins, revenue: bookings * 250 + walkins * 150 };
+});
+const dailyTotals = daily.reduce((sum, day) => ({ bookings: sum.bookings + day.bookings, walkins: sum.walkins + day.walkins, revenue: sum.revenue + day.revenue }), { bookings: 0, walkins: 0, revenue: 0 });
 
 async function fixtures(context, role) {
   let queue = structuredClone(initialQueue);
@@ -29,7 +36,7 @@ async function fixtures(context, role) {
     requests.push({ endpoint, method: req.method(), body: req.postDataJSON() });
     let data;
     if (endpoint.endsWith('/catalog')) data = { services, barbers };
-    else if (endpoint.endsWith('/analytics')) data = { totals: { customers: 24, bookings: 11, revenue: 2150, waiting: 8 }, services, barbers };
+    else if (endpoint.endsWith('/analytics')) data = { totals: { customers: 24, ...dailyTotals, waiting: 8 }, daily, services, barbers };
     else if (endpoint.endsWith('/settings')) data = { settings };
     else if (endpoint.endsWith('/users')) data = { users: accounts };
     else if (endpoint.includes('/users/')) data = { user: { ...accounts.find((item) => item.id === endpoint.split('/').pop()), role: req.postDataJSON().role } };
@@ -80,6 +87,30 @@ async function main() {
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
         assert.ok(overflow <= 1, `${name} at ${width}: horizontal overflow ${overflow}`);
         assert.equal(await page.locator('.site-header').evaluate((el) => Math.round(el.getBoundingClientRect().height)), 64);
+        assert.equal(await page.locator('.site-header').evaluate((el) => getComputedStyle(el).backgroundColor), 'rgb(43, 26, 18)', 'Staff header must match the oak theme');
+        if (['dashboard', 'reports'].includes(name)) {
+          await page.waitForFunction(() => Boolean(Chart.getChart(document.querySelector('[data-trend-chart]'))));
+          const pixels = await page.locator('canvas').evaluate((canvas) => {
+            const values = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+            let colored = 0;
+            for (let i = 3; i < values.length; i += 4) if (values[i]) colored++;
+            return colored;
+          });
+          assert.ok(pixels > 100, 'Chart canvas must render');
+          await page.locator('[data-chart-range]').selectOption('7');
+          assert.equal(await page.locator('[data-chart-rows] tr').count(), 7);
+          await page.locator('[data-chart-metric="bookings"]').click();
+          assert.equal(await page.locator('canvas').evaluate((canvas) => Chart.getChart(canvas).data.datasets[0].label), 'Online bookings');
+          const before = await page.locator('[data-chart-readout]').textContent();
+          await page.locator('[data-chart-day]').focus();
+          await page.keyboard.press('Home');
+          assert.notEqual(await page.locator('[data-chart-readout]').textContent(), before, 'Keyboard chart inspection must work');
+          await page.locator('[data-chart-metric="revenue"]').click();
+          await page.locator('[data-chart-range]').selectOption('30');
+          await page.waitForTimeout(350);
+          const line = await page.locator('canvas').evaluate((canvas) => Chart.getChart(canvas).getDatasetMeta(0).data.map((point) => point.y));
+          assert.ok(Math.max(...line) - Math.min(...line) > 20, 'The line must reflect varying data');
+        }
         await page.screenshot({ path: path.join(root, `staff-ui-${name}-${width}-check.png`), fullPage: true });
         if (width > 960) {
           await page.evaluate(() => window.scrollTo(0, 600));
@@ -92,6 +123,16 @@ async function main() {
           await page.locator('[data-sidebar-dismiss]').click({ position: { x: 300, y: 200 } });
         }
       }
+      await page.goto(`${base}/admin-reports.html`);
+      await page.waitForSelector('[data-chart-rows] tr');
+      const downloadEvent = page.waitForEvent('download');
+      await page.locator('[data-chart-export]').click();
+      const download = await downloadEvent;
+      const csv = fs.readFileSync(await download.path(), 'utf8');
+      assert.equal(csv.split('\r\n').length, 31);
+      assert.ok(csv.includes('Collected revenue (PHP)'));
+      const periodRevenue = daily.slice(-30).reduce((sum, day) => sum + day.revenue, 0);
+      assert.ok((await page.locator('[data-chart-footer]').textContent()).includes(periodRevenue.toLocaleString('en-PH', { minimumFractionDigits: 2 })));
       await page.goto(`${base}/admin-logbook.html`);
       await page.waitForSelector('[data-ticket-row]');
       assert.equal(await page.locator('[data-ticket-row="queue-0"] .button:disabled').textContent(), 'Serving');
@@ -133,11 +174,28 @@ async function main() {
     assert.equal(await page.locator('.sidebar a[href="admin-users.html"]').count(), 0);
     assert.equal(await page.locator('.sidebar a[href="admin-profile.html"]').count(), 0);
     assert.equal(await page.locator('.sidebar a[href="admin-reports.html"]').count(), 0);
+    assert.equal(await page.locator('[data-analytics]').count(), 0);
     await page.screenshot({ path: path.join(root, 'staff-ui-moderator-check.png'), fullPage: true });
     await page.goto(`${base}/admin-profile.html`);
     await page.waitForURL('**/login.html');
     console.log('Moderator navigation and admin-only page restriction passed');
     await mod.close();
+    const empty = await browser.newContext({ viewport: { width: 390, height: 900 } });
+    await fixtures(empty, 'admin');
+    await empty.route('**/api/admin/analytics', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ totals: { bookings: 0, customers: 0, waiting: 0, revenue: 0 }, services: [], barbers: [], daily: daily.map((day) => ({ ...day, bookings: 0, walkins: 0, revenue: 0 })) }) }));
+    const emptyPage = await empty.newPage();
+    await emptyPage.goto(`${base}/admin-reports.html`);
+    await emptyPage.waitForSelector('[data-chart-message]:visible');
+    assert.equal(await emptyPage.locator('[data-chart-message]').textContent(), 'No activity in this period');
+    assert.equal(await emptyPage.locator('[data-chart-rows] tr').count(), 30);
+    await empty.route('**/api/admin/analytics', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Analytics temporarily unavailable.' }) }));
+    await emptyPage.reload();
+    await emptyPage.waitForSelector('[data-chart-message]:visible');
+    assert.equal(await emptyPage.locator('[data-chart-message]').textContent(), 'Daily analytics could not be loaded.');
+    assert.equal(await emptyPage.locator('[data-chart-export]').isDisabled(), true);
+    assert.equal(await emptyPage.locator('[data-chart-rows] tr').count(), 0);
+    console.log('Empty charts and backend-error states passed without fabricated data');
+    await empty.close();
   } finally {
     if (browser) await browser.close();
     await new Promise((resolve) => server.close(resolve));

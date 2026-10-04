@@ -3,7 +3,8 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 
 const source = `${fs.readFileSync("api/index.js", "utf8")}\nmodule.exports.__test = { appointmentSlotIds, lockAppointmentSlots };`;
-const context = { require, module: { exports: {} }, exports: {}, process, console, setTimeout };
+const apiRequire = require('node:module').createRequire(require('node:path').resolve('api/index.js'));
+const context = { require: apiRequire, module: { exports: {} }, exports: {}, process, console, setTimeout };
 vm.runInNewContext(source, context);
 
 const { appointmentSlotIds, lockAppointmentSlots } = context.module.exports.__test;

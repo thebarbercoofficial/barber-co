@@ -2,6 +2,7 @@ const { MongoClient, ObjectId } = require("mongodb");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { buildAnalytics } = require('../lib/analytics');
+const { sanitizeMethod, validateQrImage, realPaymentConfigured, demoMethods } = require('../lib/payment-settings');
 
 const mongoUri = process.env.MONGODB_URI;
 const dbName = process.env.MONGODB_DB || "barber_co";
@@ -57,6 +58,8 @@ function mergedSettings(settings = {}) {
     ...settings,
     gcash: { ...defaultSettings.gcash, ...(settings.gcash || {}) },
     maya: { ...defaultSettings.maya, ...(settings.maya || {}) },
+    paymentMode: settings.paymentMode || (realPaymentConfigured(settings) ? 'live' : 'demo'),
+    demoMethods,
     operatingHours,
     closedDates: Array.isArray(settings.closedDates) ? settings.closedDates : []
   };
@@ -240,7 +243,7 @@ function tokenFor(user) {
 }
 
 function paymentConfigured(settings) {
-  return [settings.gcash, settings.maya].some((method) => method?.enabled && (method.accountNumber || method.qrImage));
+  return settings.paymentMode === 'demo' || realPaymentConfigured(settings);
 }
 
 async function requireUser(req, database, adminOnly = false) {
@@ -344,6 +347,7 @@ async function handler(req, res) {
     const hold = {
       _id: new ObjectId(), userId: user._id, customer: user.name, serviceId, barberId, date, time, durationMinutes,
       total: Number(service.price) + Math.max(0, Number(settings.bookingFee) || 0),
+      demoPayment: settings.paymentMode === 'demo',
       expiresAt: new Date(Date.now() + 10 * 60 * 1000), createdAt: new Date()
     };
     await lockAppointmentSlots(database, hold._id, date, selectedBarber ? String(selectedBarber._id) : "", time, durationMinutes, hold.expiresAt);
@@ -433,27 +437,19 @@ async function handler(req, res) {
     return send(res, 200, { user: publicUser({ ...target, role }) });
   }
 
+  if (path === "/admin/payment-qr/validate" && req.method === "POST") {
+    await requireRole(req, database, ["admin"]);
+    return send(res, 200, { validation: await validateQrImage(body.qrImage) });
+  }
+
   if (path === "/admin/settings" && req.method === "PATCH") {
     await requireRole(req, database, ["admin"]);
-    const sanitizeMethod = (method = {}) => {
-      const qrImage = String(method.qrImage || "");
-      if (qrImage && !/^data:image\/(jpeg|png|webp);base64,/.test(qrImage)) {
-        const error = new Error("Payment QR must be a JPG, PNG, or WebP image.");
-        error.status = 400;
-        throw error;
-      }
-      if (qrImage.length > 2.8 * 1024 * 1024) {
-        const error = new Error("Payment QR image must be 2 MB or smaller.");
-        error.status = 413;
-        throw error;
-      }
-      return {
-        enabled: method.enabled !== false,
-        accountName: String(method.accountName || "").trim().slice(0, 120),
-        accountNumber: String(method.accountNumber || "").trim().slice(0, 60),
-        qrImage
-      };
-    };
+    const paymentMode = body.paymentMode || 'live';
+    if (!['live', 'demo'].includes(paymentMode)) return send(res, 400, { error: 'Choose demo or real payments.' });
+    if (paymentMode === 'live' && body.paymentDetailsConfirmed !== true) return send(res, 400, { error: 'Confirm that you checked the payment recipient in GCash/Maya before enabling real payments.' });
+    const gcash = await sanitizeMethod(body.gcash, 'GCash', paymentMode);
+    const maya = await sanitizeMethod(body.maya, 'Maya', paymentMode);
+    if (paymentMode === 'live' && !realPaymentConfigured({ gcash, maya })) return send(res, 400, { error: 'Enable at least one configured payment method before switching to real payments.' });
     const operatingHours = {};
     for (const day of dayNames) {
       const supplied = body.operatingHours?.[day] || defaultSettings.operatingHours[day];
@@ -467,15 +463,17 @@ async function handler(req, res) {
     }
     const closedDates = [...new Set((Array.isArray(body.closedDates) ? body.closedDates : []).map(String).filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)))].sort();
     const update = {
-      gcash: sanitizeMethod(body.gcash),
-      maya: sanitizeMethod(body.maya),
+      gcash,
+      maya,
+      paymentMode,
+      paymentDetailsConfirmed: paymentMode === 'live' && body.paymentDetailsConfirmed === true,
       bookingFee: Math.max(0, Number(body.bookingFee) || 0),
       operatingHours,
       closedDates,
       updatedAt: new Date()
     };
     await database.collection("settings").updateOne({ _id: "shop" }, { $set: update }, { upsert: true });
-    return send(res, 200, { settings: { _id: "shop", ...update } });
+    return send(res, 200, { settings: mergedSettings({ _id: "shop", ...update }) });
   }
 
   if (req.method === "GET" && path === "/catalog") {
@@ -572,9 +570,12 @@ async function handler(req, res) {
       const unavailable = await unavailableBarbers(database, date, time, durationMinutes, hold ? holdId : "");
       if (unavailable.includes(body.barberId)) return send(res, 409, { error: "That barber was just booked for this time. Choose another barber or time." });
     }
-    const paymentMethod = ["GCash", "Maya"].find((name) => name === body.paymentMethod && settings[name.toLowerCase()]?.enabled) || "";
+    const demoPayment = settings.paymentMode === 'demo';
+    if (body.paymentMode && body.paymentMode !== settings.paymentMode) return send(res, 409, { error: 'Payment mode changed. Reload the payment page before proceeding.' });
+    const methods = demoPayment ? settings.demoMethods : settings;
+    const paymentMethod = ["GCash", "Maya"].find((name) => name === body.paymentMethod && methods[name.toLowerCase()]?.enabled) || "";
     const paymentProof = String(body.paymentProof || "");
-    if (!paymentMethod || !/^data:image\/(jpeg|png|webp);base64,/.test(paymentProof)) {
+    if (!paymentMethod || (!demoPayment && !/^data:image\/(jpeg|png|webp);base64,/.test(paymentProof))) {
       return send(res, 400, { error: "Upload a valid payment proof." });
     }
     if (paymentProof.length > 2.8 * 1024 * 1024) {
@@ -582,7 +583,7 @@ async function handler(req, res) {
     }
     const queueNumber = await nextQueueNumber(database);
     const bookingFee = Math.max(0, Number(settings.bookingFee) || 0);
-    const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId: body.barberId || "", date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
+    const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId: body.barberId || "", date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof: demoPayment ? '' : paymentProof, demoPayment, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
     if (hold && selectedBarber) {
       const transfer = await database.collection("appointmentSlots").updateMany(
         { appointmentId: holdId, expiresAt: { $gt: new Date() } },
@@ -621,6 +622,7 @@ async function handler(req, res) {
       return send(res, 200, {
         appointments: appointments.map(normalizeDoc),
         reservations: holds.map((hold) => ({ ...normalizeDoc(hold), customer: hold.customer || owners.find((user) => String(user._id) === String(hold.userId))?.name || "Customer", status: "awaiting-payment" })),
+        paymentMode: mergedSettings(settings || {}).paymentMode,
         paymentConfigured: paymentConfigured(mergedSettings(settings || {}))
       });
     }
@@ -634,7 +636,7 @@ async function handler(req, res) {
     const current = await database.collection('appointments').findOne({ _id: new ObjectId(id) });
     if (!current) return send(res, 404, { error: 'Appointment not found.' });
     const update = { status: body.status, updatedAt: new Date() };
-    if (["confirmed", "completed"].includes(body.status)) {
+    if (["confirmed", "completed"].includes(body.status) && !current.demoPayment) {
       update.paid = true;
       if (!current.paid) update.paidAt = new Date();
     }
@@ -740,7 +742,7 @@ async function handler(req, res) {
     return send(res, 200, {
       ...buildAnalytics(appointments, queue, users, services),
       barbers: barbers.map(normalizeDoc),
-      services: services.map((service) => ({ ...normalizeDoc(service), bookings: appointments.filter((item) => item.serviceId === String(service._id) || item.serviceId === service.slug).length }))
+      services: services.map((service) => ({ ...normalizeDoc(service), bookings: appointments.filter((item) => !item.demoPayment && (item.serviceId === String(service._id) || item.serviceId === service.slug)).length }))
     });
   }
 

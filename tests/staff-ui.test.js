@@ -38,6 +38,7 @@ async function fixtures(context, role) {
     if (endpoint.endsWith('/catalog')) data = { services, barbers };
     else if (endpoint.endsWith('/analytics')) data = { totals: { customers: 24, ...dailyTotals, waiting: 8 }, daily, services, barbers };
     else if (endpoint.endsWith('/settings')) data = { settings };
+    else if (endpoint.endsWith('/payment-qr/validate')) data = { validation: { format: 'QRPh', recipient: 'Isolated UI fixture', ownershipVerified: false } };
     else if (endpoint.endsWith('/users')) data = { users: accounts };
     else if (endpoint.includes('/users/')) data = { user: { ...accounts.find((item) => item.id === endpoint.split('/').pop()), role: req.postDataJSON().role } };
     else if (endpoint.endsWith('/barbers')) data = { barbers };
@@ -94,7 +95,7 @@ async function main() {
             const next = group.querySelector('.settings-group-title').nextElementSibling.getBoundingClientRect();
             return { name: group.querySelector('h3').textContent, topInset: heading.top - box.top, leftInset: heading.left - box.left, rightInset: box.right - heading.right, gap: next.top - heading.bottom };
           }));
-          assert.equal(groups.length, 3);
+          assert.equal(groups.length, 4);
           for (const group of groups) {
             assert.ok(group.topInset >= 16 && group.leftInset >= 16 && group.rightInset >= 16, `${group.name} must stay inside its box at ${width}px`);
             assert.ok(group.gap >= 15, `${group.name} needs space above its fields at ${width}px`);

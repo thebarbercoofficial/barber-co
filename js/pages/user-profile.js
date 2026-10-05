@@ -11,13 +11,14 @@ function escapeValue(value = "") {
 
 let myAppointments = [];
 
-function bookingStatus(status) {
+function bookingStatus(status, demo = false) {
+  if (demo) return status === 'confirmed' ? 'Demo booking accepted' : status === 'completed' ? 'Demo completed' : status === 'cancelled' ? 'Demo cancelled' : 'Demo awaiting staff approval';
   return status === "confirmed" ? "Accepted and payment verified" : status === "completed" ? "Completed" : status === "cancelled" ? "Cancelled" : "Waiting for staff approval";
 }
 
 function bookingRows() {
   if (!myAppointments.length) return `<div class="empty-state">You have no online bookings yet.</div>`;
-  return myAppointments.map((item) => `<div class="appointment-row"><span>Queue #${String(item.queueNumber || 0).padStart(2, "0")}<br><small class="muted">${escapeValue(item.date)} at ${escapeValue(item.time)}</small></span><strong>${escapeValue(item.customer)}<br><small class="muted">${escapeValue(byId(state.services, item.serviceId).name)} - ${peso(item.total || 0)}</small></strong><span class="status-pill ${escapeValue(item.status)}">${bookingStatus(item.status)}</span></div>`).join("");
+  return myAppointments.map((item) => `<div class="appointment-row"><span>${item.demoPayment ? 'DEMO / ' : ''}Queue #${String(item.queueNumber || 0).padStart(2, "0")}<br><small class="muted">${escapeValue(item.date)} at ${escapeValue(item.time)}</small></span><strong>${escapeValue(item.customer)}<br><small class="muted">${escapeValue(byId(state.services, item.serviceId).name)} - ${peso(item.total || 0)}${item.demoPayment ? ' (not charged)' : ''}</small></strong><span class="status-pill ${escapeValue(item.status)}">${bookingStatus(item.status, item.demoPayment)}</span></div>`).join("");
 }
 
 async function refreshBookings({ quiet = false } = {}) {

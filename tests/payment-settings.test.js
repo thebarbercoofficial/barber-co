@@ -1,0 +1,34 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const QRCode = require('qrcode');
+const { normalizeMobile, crc16, paymentPayload, validateQrImage, sanitizeMethod } = require('../lib/payment-settings');
+const tlv = (id, value) => `${id}${String(value.length).padStart(2, '0')}${value}`;
+const base = tlv('00', '01') + tlv('01', '11') + tlv('28', tlv('00', 'ph.ppmi.p2m') + tlv('01', 'TEST-RECIPIENT')) + tlv('52', '7298') + tlv('53', '608') + tlv('58', 'PH') + tlv('59', 'TEST SHOP') + tlv('60', 'CARMONA') + '6304';
+const payload = base + crc16(base);
+async function run() {
+  assert.equal(crc16('123456789'), '29B1');
+  for (const number of ['09123456789', '+639123456789', '639123456789', '0912 345 6789']) assert.equal(normalizeMobile(number), '09123456789');
+  for (const number of ['123', 'DEMO-GCASH', '091234567890', 'not-a-wallet']) assert.throws(() => normalizeMobile(number));
+  assert.equal(paymentPayload(payload).recipient, 'TEST SHOP');
+  assert.equal(paymentPayload(payload).ownershipVerified, false);
+  assert.throws(() => paymentPayload(`${payload.slice(0, -4)}0000`));
+  assert.throws(() => paymentPayload('https://example.com/not-a-payment'));
+  const dynamic = base.replace('010211', '010212');
+  assert.throws(() => paymentPayload(dynamic + crc16(dynamic)), /reusable/);
+  const image = await QRCode.toDataURL(payload, { width: 500, margin: 4 });
+  assert.equal((await validateQrImage(image)).format, 'QRPh');
+  const website = await QRCode.toDataURL('https://example.com/');
+  await assert.rejects(validateQrImage(website));
+  await assert.rejects(validateQrImage('data:image/png;base64,dGhpcyBpcyBub3QgYW4gaW1hZ2U='));
+  const logo = `data:image/png;base64,${fs.readFileSync('images/logo.png').toString('base64')}`;
+  await assert.rejects(validateQrImage(logo), /QR code/);
+  const demo = `data:image/png;base64,${fs.readFileSync('images/demo-gcash-qr.png').toString('base64')}`;
+  await assert.rejects(validateQrImage(demo), /payment QR/);
+  await assert.rejects(sanitizeMethod({ enabled: true, accountName: 'Test Shop' }, 'GCash', 'live'), /valid mobile/);
+  await assert.rejects(sanitizeMethod({ enabled: true, accountNumber: '09123456789' }, 'Maya', 'live'), /account name/);
+  const method = await sanitizeMethod({ enabled: true, accountName: 'Test Shop', accountNumber: '+639123456789', qrImage: image }, 'GCash', 'live');
+  assert.equal(method.accountNumber, '09123456789');
+  assert.equal(method.qrValidation.ownershipVerified, false);
+  console.log('Payment settings: number normalization, actual image scanning, QRPh checksum, non-payment/demo rejection, reusable QR checks, and ownership limitations passed');
+}
+run().catch((error) => { console.error(error); process.exitCode = 1; });

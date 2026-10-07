@@ -1,4 +1,4 @@
-const { state, nav, initHeader, save, api, setSession } = BarberCo;
+const { nav, initHeader, api, setSession } = BarberCo;
 
 document.querySelector("#app").innerHTML = `
   ${nav("login")}
@@ -8,8 +8,9 @@ document.querySelector("#app").innerHTML = `
       <h1 id="login-title">Welcome back.</h1>
       <p class="login-intro">Sign in to manage bookings, queue updates, and your barber preferences.</p>
       <form data-login>
-        <label>Email<input type="email" name="email" required placeholder="User"></label>
-        <label>Password<input type="password" name="password" required placeholder="Password"></label>
+        <div class="login-methods" role="group" aria-label="Sign-in method"><button class="method active" type="button" data-login-method="phone" aria-pressed="true">Mobile number</button><button class="method" type="button" data-login-method="email" aria-pressed="false">Email</button></div>
+        <label><span data-identifier-label>Mobile number</span><input type="tel" inputmode="tel" name="identifier" required autocomplete="username" placeholder="09XXXXXXXXX or +639XXXXXXXXX"></label>
+        <label>Password<input type="password" name="password" required autocomplete="current-password" placeholder="Password"></label>
         <button class="button primary full" type="submit">Sign In</button>
       </form>
       <div class="login-links">
@@ -44,6 +45,21 @@ document.querySelector("#app").innerHTML = `
   </main>
 `;
 
+document.querySelectorAll('[data-login-method]').forEach((button) => button.addEventListener('click', () => {
+  const phone = button.dataset.loginMethod === 'phone';
+  const input = document.querySelector('[name="identifier"]');
+  document.querySelector('[data-identifier-label]').textContent = phone ? 'Mobile number' : 'Email';
+  input.type = phone ? 'tel' : 'email';
+  input.inputMode = phone ? 'tel' : 'email';
+  input.placeholder = phone ? '09XXXXXXXXX or +639XXXXXXXXX' : 'you@example.com';
+  input.value = '';
+  document.querySelectorAll('[data-login-method]').forEach((method) => {
+    method.classList.toggle('active', method === button);
+    method.setAttribute('aria-pressed', String(method === button));
+  });
+  input.focus();
+}));
+
 function showLoginAlert(title, message, isSuccess = false) {
   const alert = document.querySelector("[data-login-alert]");
   alert.querySelector("strong").textContent = title;
@@ -57,18 +73,22 @@ function showLoginAlert(title, message, isSuccess = false) {
 document.querySelector("[data-login]").addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = new FormData(event.target);
-  const email = String(data.get("email")).trim().toLowerCase();
+  const identifier = String(data.get("identifier") || '').trim();
   const password = String(data.get("password"));
+  const button = event.submitter || event.target.querySelector('[type="submit"]');
+  if (button.disabled) return;
+  button.disabled = true;
 
   try {
-    const payload = await api("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+    const payload = await api("/auth/login", { method: "POST", body: JSON.stringify({ identifier, password }) });
     setSession(payload);
     const next = new URLSearchParams(location.search).get("next");
     const safeNext = next && !next.includes(":") && !next.startsWith("//") ? next : "";
     location.href = payload.user.role === "admin" ? "admin-dashboard.html" : payload.user.role === "moderator" ? "admin-logbook.html" : safeNext || "index.html";
   } catch (error) {
     const offline = error.code === "BACKEND_UNAVAILABLE" || /fetch|network/i.test(error.message || "");
-    showLoginAlert(offline ? "Service unavailable" : "Sign in failed", offline ? "The account service is not connected. Please try again shortly." : error.message || "Check your email and password.");
+    showLoginAlert(offline ? "Service unavailable" : "Sign in failed", offline ? "The account service is not connected. Please try again shortly." : error.message || "Check your mobile number or email and password.");
+    button.disabled = false;
   }
 });
 

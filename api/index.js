@@ -2,7 +2,8 @@ const { MongoClient, ObjectId } = require("mongodb");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { buildAnalytics } = require('../lib/analytics');
-const { sanitizeMethod, validateQrImage, realPaymentConfigured, demoMethods } = require('../lib/payment-settings');
+const { sanitizeMethod, validateQrImage, realPaymentConfigured, demoMethods, normalizeMobile } = require('../lib/payment-settings');
+const { phoneUsers, availablePhone } = require('../lib/phone-login');
 
 const mongoUri = process.env.MONGODB_URI;
 const dbName = process.env.MONGODB_DB || "barber_co";
@@ -179,6 +180,7 @@ async function ensureSeed(database) {
     ensureSeed.promise = (async () => {
       await Promise.all([
         database.collection("users").createIndex({ email: 1 }, { unique: true }),
+        database.collection("users").createIndex({ phoneLogin: 1 }, { unique: true, partialFilterExpression: { phoneLogin: { $type: 'string' } } }),
         database.collection("services").createIndex({ slug: 1 }, { unique: true }),
         database.collection("barbers").createIndex({ slug: 1 }, { unique: true }),
         database.collection("queue").createIndex({ queueNumber: 1 }),
@@ -365,20 +367,30 @@ async function handler(req, res) {
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
     if (name.length < 2 || !email || password.length < 6) return send(res, 400, { error: "Name, email, and a 6-character password are required." });
-    const user = { _id: new ObjectId(), name, email, passwordHash: await bcrypt.hash(password, 10), role: "customer", phone: body.phone || "", createdAt: new Date() };
+    const phone = await availablePhone(database, body.phone);
+    const user = { _id: new ObjectId(), name, email, passwordHash: await bcrypt.hash(password, 10), role: "customer", phone, ...(phone ? { phoneLogin: phone } : {}), createdAt: new Date() };
     try {
       await database.collection("users").insertOne(user);
     } catch (error) {
-      if (error?.code === 11000) return send(res, 409, { error: "An account with this email already exists. Try logging in." });
+      if (error?.code === 11000) return send(res, 409, { error: error.keyPattern?.phoneLogin ? 'An account with this mobile number already exists. Try logging in.' : "An account with this email already exists. Try logging in." });
       throw error;
     }
     return send(res, 201, { user: publicUser(user), token: tokenFor(user) });
   }
 
   if (req.method === "POST" && path === "/auth/login") {
-    const email = String(body.email || "").trim().toLowerCase();
-    const user = await database.collection("users").findOne({ email });
-    if (!user || !(await bcrypt.compare(String(body.password || ""), user.passwordHash))) return send(res, 401, { error: "Wrong email or password." });
+    const identifier = String(body.identifier ?? body.phone ?? body.email ?? '').trim();
+    let user;
+    if (identifier.includes('@')) {
+      user = await database.collection('users').findOne({ email: identifier.toLowerCase() });
+    } else {
+      const phone = normalizeMobile(identifier);
+      if (!phone) return send(res, 400, { error: 'Enter your mobile number or email.' });
+      const matches = await phoneUsers(database, phone);
+      // Ambiguous legacy numbers must use email; never choose an arbitrary account.
+      if (matches.length === 1) user = matches[0];
+    }
+    if (!user || !(await bcrypt.compare(String(body.password || ""), user.passwordHash))) return send(res, 401, { error: "Incorrect login details. Try email if your account has no linked mobile number." });
     return send(res, 200, { user: publicUser(user), token: tokenFor(user) });
   }
 
@@ -392,16 +404,23 @@ async function handler(req, res) {
     const photo = body.photo == null ? (user.photo || "") : String(body.photo);
     if (photo && !/^data:image\/(jpeg|png|webp);base64,/.test(photo)) return send(res, 400, { error: "Profile photo must be a JPG, PNG, or WebP image." });
     if (photo.length > 2.8 * 1024 * 1024) return send(res, 413, { error: "Profile photo must be 2 MB or smaller." });
+    const phone = body.phone == null ? (user.phone || '') : await availablePhone(database, body.phone, user._id);
     const update = {
       name: String(body.name || user.name).trim().slice(0, 120),
       username: String(body.username || "").trim().slice(0, 60),
-      phone: String(body.phone || "").trim().slice(0, 40),
+      phone,
       location: String(body.location || "").trim().slice(0, 160),
       bio: String(body.bio || "").trim().slice(0, 1000),
       photo,
       updatedAt: new Date()
     };
-    await database.collection("users").updateOne({ _id: user._id }, { $set: update });
+    if (body.phone != null && phone) update.phoneLogin = phone;
+    try {
+      await database.collection("users").updateOne({ _id: user._id }, { $set: update, ...(body.phone != null && !phone ? { $unset: { phoneLogin: '' } } : {}) });
+    } catch (error) {
+      if (error?.code === 11000) return send(res, 409, { error: 'This mobile number is already linked to another account.' });
+      throw error;
+    }
     return send(res, 200, { user: publicUser({ ...user, ...update }) });
   }
 
@@ -413,7 +432,8 @@ async function handler(req, res) {
       const password = String(body.password || "");
       const role = ["customer", "moderator", "admin"].includes(body.role) ? body.role : "customer";
       if (!email || password.length < 6) return send(res, 400, { error: "Email and a 6-character password are required." });
-      const user = { _id: new ObjectId(), name: String(body.name || "Staff").trim(), email, passwordHash: await bcrypt.hash(password, 10), role, phone: body.phone || "", createdAt: new Date() };
+      const phone = await availablePhone(database, body.phone);
+      const user = { _id: new ObjectId(), name: String(body.name || "Staff").trim(), email, passwordHash: await bcrypt.hash(password, 10), role, phone, ...(phone ? { phoneLogin: phone } : {}), createdAt: new Date() };
       try {
         await database.collection("users").insertOne(user);
       } catch (error) {

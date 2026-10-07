@@ -8,7 +8,8 @@
     "test": "node tests/booking-hold.test.js && node tests/analytics.test.js && node tests/analytics-api.test.js && node tests/payment-settings.test.js",
     "test:ui": "node tests/staff-ui.test.js",
     "test:booking": "node tests/booking-review.test.js",
-    "test:phone": "node tests/phone-login.test.js"
+    "test:phone": "node tests/phone-login.test.js",
+    "test:public": "node tests/public-queue-ui.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -690,6 +690,7 @@ async function handler(req, res) {
   }
 
   if (req.method === "GET" && path === "/queue") {
+    res.setHeader('Cache-Control', 'no-store');
     return send(res, 200, { queue: (await database.collection("queue").find({ status: { $in: ["waiting", "serving"] } }).sort({ queueNumber: 1 }).toArray()).map(normalizeDoc) });
   }
 

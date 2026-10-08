@@ -130,6 +130,10 @@ async function main() {
     assert.equal((await request('/admin/settings', 'admin', config, 'PATCH')).status, 200);
     assert.equal(settings.gcash.accountNumber, '09123456789');
     assert.equal((await request('/appointments', 'admin', { ...booking, time: '15:00', paymentMethod: 'GCash', demoPayment: true })).status, 400, 'A client cannot bypass real payment proof by claiming to be a demo');
+    settings.paymentMode = 'demo';
+    assert.equal((await request('/appointments', 'admin', { ...booking, time: '15:00', paymentMethod: 'GCash' })).status, 400, 'Demo bookings also require a receipt');
+    assert.equal((await request('/appointments', 'admin', { ...booking, time: '15:00', paymentMethod: 'Maya', paymentProof: 'data:text/html;base64,abcd' })).status, 400);
+    assert.equal((await request('/appointments', 'admin', { ...booking, time: '15:00', paymentMethod: 'Maya', paymentProof: `data:image/png;base64,${'a'.repeat(3 * 1024 * 1024)}` })).status, 413);
     console.log('API: admin booking, payment hold visibility, submission, moderator approval, own status, access, expiry, and missing payment setup passed');
 
     browser = await chromium.launch({ headless: true, channel: 'chrome' });
@@ -176,10 +180,14 @@ async function main() {
       assert.equal(await review.locator('[data-payment-warning]').isVisible(), mode === 'demo');
       assert.ok((await review.locator('[data-appointment-panel]').innerText()).includes(user.name));
       assert.equal(await review.locator('[data-status]').count(), 0);
-      if (mode === 'live') await page.locator('[data-payment-proof]').setInputFiles(path.join(root, 'images/logo.png'));
-      else {
-        assert.equal(await page.locator('[data-payment-proof]').count(), 0);
+      await page.locator('[data-payment-proof]').waitFor();
+      await page.locator('[data-confirm-payment]').click();
+      await page.locator('[data-toast]').filter({ hasText: 'Upload your payment proof' }).waitFor();
+      assert.equal(records.appointments.some((item) => item.time === time), false);
+      await page.locator('[data-payment-proof]').setInputFiles(path.join(root, 'images/logo.png'));
+      if (mode === 'demo') {
         await page.getByRole('button', { name: 'Maya demo', exact: true }).click();
+        assert.equal(await page.locator('[data-payment-proof]').evaluate((input) => input.files[0]?.name), 'logo.png', 'Switching wallet must retain the receipt');
         await page.locator('.qr-preview').waitFor();
         assert.equal(await page.locator('.qr-preview').evaluate((image) => image.complete && image.naturalWidth > 0), true);
         await page.waitForTimeout(350);
@@ -190,9 +198,11 @@ async function main() {
       const saved = records.appointments.find((item) => item.time === time);
       assert.ok(saved, 'The browser submission must reach the API database');
       assert.equal(saved.demoPayment, mode === 'demo');
+      assert.ok(saved.paymentProof.startsWith('data:image/png;base64,'), 'Receipt must be stored in both modes');
       if (role === 'admin') await page.locator(`[data-status="${saved._id}:confirmed"]`).waitFor();
       await review.reload();
       await review.locator('[data-filter="pending"]').click();
+      assert.equal(await review.locator(`.appointment-record:has([data-status="${saved._id}:confirmed"]) a.text-action`).getAttribute('href'), saved.paymentProof, 'Staff must be able to view the uploaded receipt');
       await review.locator(`[data-status="${saved._id}:confirmed"]`).click();
       await review.locator('[data-filter="confirmed"]').click();
       await review.locator(`[data-status="${saved._id}:completed"]`).waitFor();
@@ -221,6 +231,9 @@ async function main() {
     assert.equal(analytics.status, 200);
     assert.equal(analytics.data.totals.bookings, 3, 'Demo records must not inflate real bookings');
     assert.equal(analytics.data.totals.revenue, 750, 'Accepting demos must not inflate collected revenue');
+    assert.equal(analytics.data.barberPerformance[0].bookings, 3);
+    assert.equal(analytics.data.barberPerformance[0].demoBookings, 2);
+    assert.equal(analytics.data.barberPerformance[0].revenue, 750);
     const adminContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     await adminContext.addInitScript(({ base, auth, user }) => {
       localStorage.setItem('barberCoApiBase', base);
@@ -230,6 +243,11 @@ async function main() {
     await adminContext.route('https://fonts.googleapis.com/**', (route) => route.abort());
     await adminContext.route('https://fonts.gstatic.com/**', (route) => route.abort());
     const setup = await adminContext.newPage();
+    await setup.goto(`${base}/admin-reports.html`);
+    await setup.locator('[data-barber-rows] tr').waitFor();
+    assert.equal(await setup.locator('[data-barber-rows] tr').count(), 1);
+    const cells = await setup.locator('[data-barber-rows] tr').first().locator('td').allTextContents();
+    assert.deepEqual(cells, ['3', '0', '0', '0', '750.00', '2'], 'Reports must render actual API statistics, not catalog placeholders');
     await setup.goto(`${base}/admin-profile.html`);
     await setup.locator('[name="demoPayments"]').waitFor();
     assert.equal(await setup.locator('[name="demoPayments"]').isChecked(), true);

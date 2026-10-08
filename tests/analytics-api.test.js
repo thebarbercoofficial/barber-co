@@ -7,9 +7,9 @@ const { ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
 const secret = 'isolated-analytics-test-secret';
 const owner = { _id: new ObjectId(), role: 'admin', name: 'Test owner' };
-const appointment = { _id: new ObjectId(), customer: 'Test booking', serviceId: 'basic', total: 250, status: 'pending', paid: false, createdAt: new Date() };
+const appointment = { _id: new ObjectId(), customer: 'Test booking', barberId: 'alex', serviceId: 'basic', total: 250, status: 'pending', paid: false, createdAt: new Date() };
 const queue = [{ _id: new ObjectId(), price: 150, paid: true, status: 'done', createdAt: new Date(), paidAt: new Date() }];
-const records = { appointments: [appointment], queue, services: [{ _id: new ObjectId(), slug: 'basic', price: 150 }], barbers: [] };
+const records = { appointments: [appointment], queue, services: [{ _id: new ObjectId(), slug: 'basic', price: 150 }], barbers: [{ _id: new ObjectId(), slug: 'alex', name: 'Alex' }] };
 const database = { collection(name) {
   return {
     find: () => ({ toArray: async () => records[name] || [] }),
@@ -51,6 +51,10 @@ async function run() {
   response = await request('GET', '/api/admin/analytics');
   assert.equal(response.body.totals.revenue, 400);
   assert.equal(response.body.daily.at(-1).revenue, 400);
+  assert.equal(response.body.barberPerformance[0].completed, 1);
+  assert.equal(response.body.barberPerformance[0].bookings, 1);
+  assert.equal(response.body.barberPerformance[0].revenue, 250);
+  assert.equal(response.body.barberPerformance.reduce((sum, row) => sum + row.revenue, 0), response.body.totals.revenue);
   console.log('Analytics API admin-only access, collected totals, and stable payment timestamps passed');
 }
 

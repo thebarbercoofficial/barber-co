@@ -1,7 +1,7 @@
 const { MongoClient, ObjectId } = require("mongodb");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { buildAnalytics } = require('../lib/analytics');
+const { buildAnalytics, buildBarberPerformance } = require('../lib/analytics');
 const { sanitizeMethod, validateQrImage, realPaymentConfigured, demoMethods, normalizeMobile } = require('../lib/payment-settings');
 const { phoneUsers, availablePhone } = require('../lib/phone-login');
 
@@ -595,7 +595,7 @@ async function handler(req, res) {
     const methods = demoPayment ? settings.demoMethods : settings;
     const paymentMethod = ["GCash", "Maya"].find((name) => name === body.paymentMethod && methods[name.toLowerCase()]?.enabled) || "";
     const paymentProof = String(body.paymentProof || "");
-    if (!paymentMethod || (!demoPayment && !/^data:image\/(jpeg|png|webp);base64,/.test(paymentProof))) {
+    if (!paymentMethod || !/^data:image\/(jpeg|png|webp);base64,/.test(paymentProof)) {
       return send(res, 400, { error: "Upload a valid payment proof." });
     }
     if (paymentProof.length > 2.8 * 1024 * 1024) {
@@ -603,7 +603,7 @@ async function handler(req, res) {
     }
     const queueNumber = await nextQueueNumber(database);
     const bookingFee = Math.max(0, Number(settings.bookingFee) || 0);
-    const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId: body.barberId || "", date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof: demoPayment ? '' : paymentProof, demoPayment, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
+    const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId: body.barberId || "", date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof, demoPayment, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
     if (hold && selectedBarber) {
       const transfer = await database.collection("appointmentSlots").updateMany(
         { appointmentId: holdId, expiresAt: { $gt: new Date() } },
@@ -753,6 +753,7 @@ async function handler(req, res) {
 
   if (req.method === "GET" && path === "/admin/analytics") {
     await requireRole(req, database, ["admin"]);
+    res.setHeader('Cache-Control', 'no-store');
     const [appointments, queue, users, services, barbers] = await Promise.all([
       database.collection("appointments").find().toArray(),
       database.collection("queue").find().toArray(),
@@ -762,6 +763,7 @@ async function handler(req, res) {
     ]);
     return send(res, 200, {
       ...buildAnalytics(appointments, queue, users, services),
+      barberPerformance: buildBarberPerformance(appointments, queue, barbers, services),
       barbers: barbers.map(normalizeDoc),
       services: services.map((service) => ({ ...normalizeDoc(service), bookings: appointments.filter((item) => !item.demoPayment && (item.serviceId === String(service._id) || item.serviceId === service.slug)).length }))
     });

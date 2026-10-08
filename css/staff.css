@@ -204,6 +204,9 @@ body.staff-page .site-header.staff-header { position: fixed; inset: 0 0 auto; he
 .data-table-scroll thead th, .data-table-scroll tfoot th, .data-table-scroll tfoot td { font-weight: 600; }
 .data-table-scroll tfoot { position: sticky; bottom: 0; background: #e6d6bf; }
 .data-table-scroll tbody tr:hover { background: #f5e8d2; }
+.barber-performance-table table { min-width: 700px; }
+.barber-performance-table tbody th { white-space: normal; min-width: 150px; max-width: 240px; overflow-wrap: anywhere; font-weight: 600; }
+.barber-performance-table tbody th small { display: block; margin-top: 4px; font-weight: 400; }
 .staff-page .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 @media (max-width: 680px) {
   .analytics-section { padding: 16px 0; }

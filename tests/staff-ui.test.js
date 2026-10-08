@@ -19,6 +19,7 @@ const daily = Array.from({ length: 365 }, (_, i) => {
   return { date: new Date(Date.parse(`${today}T00:00:00Z`) - (364 - i) * 86400000).toISOString().slice(0, 10), bookings, walkins, revenue: bookings * 250 + walkins * 150 };
 });
 const dailyTotals = daily.reduce((sum, day) => ({ bookings: sum.bookings + day.bookings, walkins: sum.walkins + day.walkins, revenue: sum.revenue + day.revenue }), { bookings: 0, walkins: 0, revenue: 0 });
+const barberPerformance = barbers.map((barber, index) => ({ ...barber, bookings: index ? 2 : 8, walkins: index ? 3 : 20, completed: index ? 4 : 24, cancelled: index ? 1 : 2, revenue: index ? 700 : 5000, demoBookings: index ? 0 : 1 }));
 
 async function fixtures(context, role) {
   let queue = structuredClone(initialQueue);
@@ -36,7 +37,7 @@ async function fixtures(context, role) {
     requests.push({ endpoint, method: req.method(), body: req.postDataJSON() });
     let data;
     if (endpoint.endsWith('/catalog')) data = { services, barbers };
-    else if (endpoint.endsWith('/analytics')) data = { totals: { customers: 24, ...dailyTotals, waiting: 8 }, daily, services, barbers };
+    else if (endpoint.endsWith('/analytics')) data = { totals: { customers: 24, ...dailyTotals, waiting: 8 }, daily, services, barbers, barberPerformance };
     else if (endpoint.endsWith('/settings')) data = { settings };
     else if (endpoint.endsWith('/payment-qr/validate')) data = { validation: { format: 'QRPh', recipient: 'Isolated UI fixture', ownershipVerified: false } };
     else if (endpoint.endsWith('/users')) data = { users: accounts };
@@ -139,6 +140,22 @@ async function main() {
       }
       await page.goto(`${base}/admin-reports.html`);
       await page.waitForSelector('[data-chart-rows] tr');
+      assert.equal(await page.locator('[data-barber-rows] tr').count(), 2);
+      assert.ok((await page.locator('[data-barber-rows] tr').first().innerText()).includes('Alex Santos'));
+      await page.locator('[data-barber-sort]').selectOption('name');
+      await page.locator('[data-barber-search]').fill('Luis');
+      assert.equal(await page.locator('[data-barber-rows] tr').count(), 1);
+      assert.ok((await page.locator('[data-barber-rows]').innerText()).includes('700.00'));
+      const barberDownloadEvent = page.waitForEvent('download');
+      await page.locator('[data-barber-export]').click();
+      const barberDownload = await barberDownloadEvent;
+      const barberCsv = fs.readFileSync(await barberDownload.path(), 'utf8');
+      assert.ok(barberCsv.includes('Luis Reyes') && !barberCsv.includes('Alex Santos'));
+      assert.ok(barberCsv.includes('Completed cuts') && barberCsv.includes('Demo bookings'));
+      await page.locator('[data-barber-search]').fill('missing');
+      assert.ok((await page.locator('[data-barber-rows]').innerText()).includes('No barbers match'));
+      await page.locator('[data-barber-search]').fill('');
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
       const downloadEvent = page.waitForEvent('download');
       await page.locator('[data-chart-export]').click();
       const download = await downloadEvent;

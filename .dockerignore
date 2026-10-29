@@ -1,0 +1,9 @@
+*
+!package.json
+!package-lock.json
+!server.js
+!api/
+!api/**
+!lib/
+!lib/**
+!Dockerfile

@@ -51,4 +51,20 @@ Legacy compatibility suites explicitly enable test-only demo/unverified flags. T
 
 ## Deployment
 
-Deployment verification will be recorded after the release is pushed and both hosting services finish building. Source tests alone are not evidence of a live deployment or real email/SMS delivery.
+Application commit: `7a778e3b5ffd1bc93a512d496e7a9a52de0fb747`.
+
+- GitHub Pages deployment succeeded: https://github.com/thebarbercoofficial/barber-co/actions/runs/40889110515
+- Vercel commit status: success, "Deployment has completed".
+- Published site: https://thebarbercoofficial.github.io/barber-co/
+- Published API: https://barber-co-seven.vercel.app/api
+- All seven listed test commands passed. Additional syntax checks covered every JavaScript file under `api`, `lib`, and `js`; `git diff --check` passed.
+- `node tests/published-smoke.test.js` passed against the public URLs: the release asset version is present, registration fits at 1440px/390px, anonymous staff-page access redirects to login, and analytics/appointments/queue/notifications/private-receipt endpoints all return 401 without credentials.
+- Observed read-only API request durations in that smoke run were 282-809 ms. These are individual measurements, not a before/after benchmark or latency guarantee.
+
+### Confirmed Live Blockers
+
+The deployed `/auth/capabilities` returned `email: false`, `sms: false`, and `verificationRequired: true`. Therefore real email verification/reset and SMS delivery are **not operational**. Strict new registration correctly refuses to create an account while email delivery is unavailable. No provider keys were found in this project's local environment; an external service account, verified sender and server credentials cannot be fabricated by code.
+
+The deployed settings contain **no GCash/Maya recipient number or QR image**. The payment mode is `live`, and demo mode is disabled. Online booking correctly cannot proceed until the administrator supplies real wallet details in Shop Settings. No real receipt/transfer was created to conceal this missing configuration.
+
+**Conclusion:** application repairs are deployed and the listed automated checks pass. This is not a claim that every production dependency is ready. Real end-to-end email/SMS delivery, wallet payment and a live customer booking acceptance remain unproven until those external dependencies are configured. Isolated integration tests prove the application flows, not those external services.

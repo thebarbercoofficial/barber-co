@@ -56,6 +56,8 @@ document.querySelectorAll('[data-login-method]').forEach((button) => button.addE
   input.placeholder = phone ? '09XXXXXXXXX or +639XXXXXXXXX' : 'you@example.com';
   input.value = '';
   document.querySelector('[name="password"]').value = '';
+  document.querySelector('[data-login-alert]').classList.remove('show');
+  window.clearTimeout(showLoginAlert.timer);
   document.querySelectorAll('[data-login-method]').forEach((method) => {
     method.classList.toggle('active', method === button);
     method.setAttribute('aria-pressed', String(method === button));

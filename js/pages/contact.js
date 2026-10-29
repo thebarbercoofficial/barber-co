@@ -1,4 +1,4 @@
-const { nav, shopEndcap, initHeader, toast } = BarberCo;
+const { nav, shopEndcap, initHeader, api } = BarberCo;
 document.querySelector("#app").innerHTML = `
   ${nav("contact")}
   <section class="section top">
@@ -9,9 +9,27 @@ document.querySelector("#app").innerHTML = `
   </section>
   ${shopEndcap({ eyebrow: "Find us in Carmona", title: "Come see the space in person.", copy: "Questions about a cut, a booking, or the live queue? Send us a message, then stop by when it is time for your chair.", href: "queue.html", label: "See the walk-in queue" })}
 `;
-document.querySelector("[data-contact]").addEventListener("submit", (event) => {
+document.querySelector("[data-contact]").addEventListener("submit", async (event) => {
   event.preventDefault();
-  event.target.reset();
-  toast("Message drafted. Backend email delivery comes later.");
+  const form = event.target;
+  const button = form.querySelector('[type="submit"]');
+  if (button.disabled) return;
+  button.disabled = true;
+  let feedback = form.querySelector('[data-contact-feedback]');
+  if (!feedback) {
+    feedback = document.createElement('p');
+    feedback.dataset.contactFeedback = '';
+    feedback.setAttribute('role', 'status');
+    form.append(feedback);
+  }
+  feedback.textContent = 'Sending your message...';
+  const data = new FormData(form);
+  try {
+    const response = await api('/contact', { method: 'POST', body: JSON.stringify({ name: data.get('name'), email: data.get('email'), message: data.get('message') }) });
+    feedback.textContent = response.message;
+    form.reset();
+  } catch (error) {
+    feedback.textContent = error.message || 'Your message was not sent. Please use Facebook or call the shop.';
+  } finally { button.disabled = false; }
 });
 initHeader("contact");

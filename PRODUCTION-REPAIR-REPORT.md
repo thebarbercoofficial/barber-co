@@ -8,6 +8,10 @@ The follow-up patch removes cached appointment fallback, distinguishes completed
 
 Other live Chrome observations: phone-mode email rejection works, changing login method clears the password, guest booking redirects to registration with the booking return path, confirmation and mobile checkbox layout are present, and an invalid saved admin session redirects to login. Real recovery still displays "Email delivery is not configured". Authenticated admin approval/payment was not verified in this follow-up because no valid admin session was available. No customer ticket, booking or payment was created during this retest.
 
+After commit `b09b787` finished deploying to both hosts, Chrome was reloaded against the public site: ticket #11 displayed Completed for both status and position, both empty current/next sections displayed No customer, and no cached booking was shown. At 390px the queue used one 343px column, had no horizontal overflow, and preserved an unsubmitted name through background polling. No console errors were recorded in that check. The service-specific Book this button also correctly redirected a guest to registration.
+
+A further review found the contact form only displayed an unfinished backend notice and discarded its input. The follow-up connects it to `/api/contact`, validates input, rate-limits accepted requests, and retains the draft on provider errors. It distinguishes provider acceptance from inbox delivery. `node tests/contact-api.test.js` verifies missing/rejected/accepted provider cases, validation, rate limiting and retry with an isolated transport. Real contact email remains dependent on the same missing live email credentials. Switching login modes also dismisses the previous method's error message.
+
 Release: production-20261029. Date: 2026-10-29.
 
 ## Scope And Evidence

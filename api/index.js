@@ -347,6 +347,29 @@ async function handler(req, res) {
   if (req.method === "GET" && path === "/health") return send(res, 200, { ok: true });
   if (req.method === 'GET' && path === '/auth/capabilities') return send(res, 200, { email: security.emailReady(), sms: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM), verificationRequired: !allowUnverified });
 
+  if (req.method === 'POST' && path === '/contact') {
+    const name = String(body.name || '').trim();
+    const email = String(body.email || '').trim().toLowerCase();
+    const message = String(body.message || '').trim();
+    if (name.length < 2 || name.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || message.length < 5 || message.length > 5000) return send(res, 400, { error: 'Enter your name, a valid email and a message of 5-5000 characters.' });
+    if (!security.emailReady()) return send(res, 503, { error: 'The email service is unavailable. Your message was not sent. Please message the shop on Facebook or call instead.' });
+    const key = security.digest(`contact:${email}`);
+    const attempts = database.collection('loginAttempts');
+    try {
+      await attempts.findOneAndUpdate({ _id: key, $or: [{ sentAt: { $exists: false } }, { sentAt: { $lt: new Date(Date.now() - 60000) } }] }, { $set: { sentAt: new Date(), expiresAt: new Date(Date.now() + 86400000) } }, { upsert: true, returnDocument: 'after' });
+    } catch (error) {
+      if (error.code === 11000) return send(res, 429, { error: 'Wait a minute before sending another message.' });
+      throw error;
+    }
+    try {
+      await security.sendEmail(process.env.ADMIN_EMAIL || 'thebarberco.official@gmail.com', 'The Barber Co website enquiry', `From: ${name}\nReply to: ${email}\n\n${message}`, `contact-${new ObjectId()}`);
+    } catch (error) {
+      await attempts.deleteOne({ _id: key });
+      return send(res, 503, { error: 'The email service could not accept your message. Your draft has been kept. Please use Facebook or call the shop.' });
+    }
+    return send(res, 200, { message: 'The email provider accepted your message for the shop. This does not guarantee inbox delivery.' });
+  }
+
   if (req.method === 'POST' && ['/auth/forgot-password', '/auth/resend-verification'].includes(path)) {
     if (!security.emailReady()) return send(res, 503, { error: 'Email delivery is not configured. Contact the shop for account assistance.' });
     const email = String(body.email || '').trim().toLowerCase();

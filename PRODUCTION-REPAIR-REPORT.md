@@ -12,6 +12,8 @@ After commit `b09b787` finished deploying to both hosts, Chrome was reloaded aga
 
 A further review found the contact form only displayed an unfinished backend notice and discarded its input. The follow-up connects it to `/api/contact`, validates input, rate-limits accepted requests, and retains the draft on provider errors. It distinguishes provider acceptance from inbox delivery. `node tests/contact-api.test.js` verifies missing/rejected/accepted provider cases, validation, rate limiting and retry with an isolated transport. Real contact email remains dependent on the same missing live email credentials. Switching login modes also dismisses the previous method's error message.
 
+Live verification after application commit `538638d` deployed successfully to Pages and Vercel: Chrome initially reused the cached old contact HTML, which was detected by inspecting its script URL. After reload, `live-retest-20261029` loaded. A synthetic enquiry reached the actual backend, displayed "Your message was not sent" with Facebook/phone alternatives, and retained name, email and message. No email was sent. Switching from an invalid phone-mode email to email mode cleared the password and dismissed the old alert (show class absent, opacity zero, pointer events none). Both new isolated tests and the existing core `npm test` suite passed again. The repaired public queue was left open in Chrome. Missing provider configuration and the absence of an authenticated admin session remain blockers to claiming a complete live end-to-end pass.
+
 Release: production-20261029. Date: 2026-10-29.
 
 ## Scope And Evidence

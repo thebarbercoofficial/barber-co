@@ -29,26 +29,24 @@ function ringDevice() {
   }
 }
 
-function fallbackQueueRows() {
-  const source = state.queue.length ? state.queue : state.appointments;
-  const current = source.find((item) => item.status === "serving" || item.status === "Ongoing") || source[0];
-  const next = source.find((item) => item.status === "waiting" || item.status === "Next") || source[1] || current;
-  return {
-    top: [current, next],
-    rows: source.map((item) => ({ ...item, queueNumber: item.queueNumber || item.id, status: String(item.status).toLowerCase() }))
-  };
+function paintQueue(queue, unavailable = false) {
+  const summary = document.querySelector('[data-live-summary]');
+  const rows = document.querySelector('[data-live-rows]');
+  if (!summary || !rows) return;
+  const current = queue.find((item) => item.status === 'serving');
+  const next = queue.find((item) => item.status === 'waiting');
+  summary.innerHTML = [['Now serving', current], ['Next in line', next]].map(([label, item]) => `<article><span>${label}</span><strong>${unavailable ? 'Live queue unavailable' : item ? `Queue #${String(item.queueNumber).padStart(2, '0')}` : 'No customer'}</strong><p>${unavailable ? 'Please check with the counter.' : item ? `${escapeHtml(item.customer)} - ${escapeHtml(item.cutName || byId(state.services, item.serviceId).name)}` : 'Waiting for the next customer.'}</p></article>`).join('');
+  rows.innerHTML = unavailable ? '<div class="empty-state">The live queue could not be refreshed. Please check with the counter.</div>' : queue.map((item) => `<div class="queue-row"><span>Queue #${String(item.queueNumber).padStart(2, '0')} - ${escapeHtml(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned')}</span><strong>${escapeHtml(item.customer)} - ${escapeHtml(item.cutName || byId(state.services, item.serviceId).name)}</strong><span class="status-pill ${item.status === 'serving' ? 'serving' : 'waiting'}">${item.status === 'serving' ? 'Now serving' : 'Waiting'}</span></div>`).join('') || '<div class="empty-state">No customers are in the queue yet.</div>';
+}
+
+async function refreshPublicQueue() {
+  try { paintQueue((await api('/queue')).queue || []); }
+  catch { paintQueue([], true); }
+  window.setTimeout(refreshPublicQueue, 7000);
 }
 
 async function render() {
   try { await loadCatalog(); } catch {}
-  let liveQueue = [];
-  try {
-    liveQueue = (await api("/queue")).queue || [];
-  } catch {
-    liveQueue = fallbackQueueRows().rows;
-  }
-  const current = liveQueue.find((item) => item.status === "serving") || liveQueue[0] || fallbackQueueRows().top[0];
-  const next = liveQueue.find((item) => item.status === "waiting" && item.id !== current?.id) || liveQueue[1] || fallbackQueueRows().top[1] || current;
   const ticketId = params.get("ticket") || savedTicketId;
 
   document.querySelector("#app").innerHTML = `
@@ -71,12 +69,8 @@ async function render() {
           <img class="qr-code" alt="Walk-in queue QR code" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`${location.origin}${location.pathname}?walkin=1`)}">
         </div>
       </div>
-      <div class="now-next">
-        ${current ? [["Now serving", current], ["Next serving", next]].map(([label, item]) => `<article><span>${label}</span><strong>Queue #${String(item?.queueNumber || item?.id || 0).padStart(2, "0")}</strong><p>${escapeHtml(item?.customer || "Waiting")} - ${escapeHtml(item?.cutName || byId(state.services, item?.serviceId).name)}</p></article>`).join("") : `<article><span>Now serving</span><strong>No active queue</strong><p>Walk-ins will appear here after scanning the QR or staff logbook entry.</p></article>`}
-      </div>
-      <div class="panel">
-        ${liveQueue.map((item) => `<div class="queue-row"><span>Queue #${String(item.queueNumber || item.id).padStart(2, "0")} - ${escapeHtml(byId(barbers, item.barberId).name)}</span><strong>${escapeHtml(item.customer)} - ${escapeHtml(item.cutName || byId(state.services, item.serviceId).name)}</strong><span class="status-pill ${String(item.status).toLowerCase()}">${escapeHtml(item.status)}</span></div>`).join("") || `<div class="empty-state">No customers are in the queue yet.</div>`}
-      </div>
+      <div class="now-next" data-live-summary><article><strong>Checking the live queue...</strong></article></div>
+      <div class="panel" data-live-rows></div>
     </section>
   `;
 
@@ -100,9 +94,10 @@ async function render() {
     alertsEnabled = true;
     toast("Alerts enabled. Keep this page open.");
     ringDevice();
-  }, { once: true });
+  });
 
   if (ticketId) updateTicket(ticketId);
+  refreshPublicQueue();
   initHeader("queue");
 }
 
@@ -111,18 +106,14 @@ async function updateTicket(ticketId) {
     const data = await api(`/queue/ticket/${ticketId}`);
     const panel = document.querySelector("[data-ticket-panel]");
     if (!panel) return;
-    panel.innerHTML = `<p class="eyebrow">Your Status</p><h2>Queue #${String(data.ticket.queueNumber).padStart(2, "0")}</h2><div class="summary-list"><div><span>Status</span><strong>${data.ticket.status}</strong></div><div><span>Position</span><strong>${data.position === 0 ? "Now serving" : `#${data.position} in line`}</strong></div><div><span>People ahead</span><strong>${data.waitingAhead}</strong></div></div><button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>`;
+    const status = data.ticket.status;
+    const position = status === 'serving' ? 'Now serving' : status === 'waiting' ? `#${data.position} in line` : status === 'done' ? 'Completed' : status === 'cancelled' ? 'Cancelled' : 'Not in line';
+    panel.innerHTML = `<p class="eyebrow">Your Status</p><h2>Queue #${String(data.ticket.queueNumber).padStart(2, "0")}</h2><div class="summary-list"><div><span>Status</span><strong>${escapeHtml(status === 'done' ? 'Completed' : status)}</strong></div><div><span>Position</span><strong>${position}</strong></div><div><span>People ahead</span><strong>${status === 'waiting' ? data.waitingAhead : '-'}</strong></div></div>${['waiting', 'serving'].includes(status) ? '<button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>' : ''}`;
     if (lastTicketStatus && lastTicketStatus !== "serving" && data.ticket.status === "serving") ringDevice();
     lastTicketStatus = data.ticket.status;
   } catch {
-    const ticket = state.queue.find((item) => item.id === ticketId);
     const panel = document.querySelector("[data-ticket-panel]");
-    if (ticket && panel) {
-      const waitingAhead = state.queue.filter((item) => item.status === "waiting" && item.queueNumber < ticket.queueNumber).length;
-      panel.innerHTML = `<p class="eyebrow">Your Status</p><h2>Queue #${String(ticket.queueNumber).padStart(2, "0")}</h2><div class="summary-list"><div><span>Status</span><strong>${ticket.status}</strong></div><div><span>Position</span><strong>${ticket.status === "serving" ? "Now serving" : `#${waitingAhead + 1} in line`}</strong></div><div><span>People ahead</span><strong>${waitingAhead}</strong></div></div><button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>`;
-      if (lastTicketStatus && lastTicketStatus !== "serving" && ticket.status === "serving") ringDevice();
-      lastTicketStatus = ticket.status;
-    }
+    if (panel) panel.innerHTML = '<p class="eyebrow">Your Status</p><h2>Ticket status unavailable</h2><p>Please check with the counter. Retrying automatically.</p>';
   }
   window.setTimeout(() => updateTicket(ticketId), 7000);
 }

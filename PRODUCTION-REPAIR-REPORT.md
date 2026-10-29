@@ -1,5 +1,13 @@
 # Production Repair Report
 
+## Follow-Up Live Chrome Retest
+
+The requested live Chrome retest found two additional public queue defects that the earlier isolated suites missed: completed ticket #11 was labeled "Now serving" in the position field, and an empty live queue fell back to a stale locally stored booking shown as both current and next. These were genuine failures, not successful tests.
+
+The follow-up patch removes cached appointment fallback, distinguishes completed/cancelled tickets from serving tickets, makes terminal API positions null, and refreshes public queue summaries/rows every seven seconds without replacing the join form. Provider outages show unavailable rather than invented queue data. `node tests/customer-queue-state.test.js` covers terminal/waiting/serving states, escaped names, unique next-customer display, empty queue and outages; it passes along with `npm test`.
+
+Other live Chrome observations: phone-mode email rejection works, changing login method clears the password, guest booking redirects to registration with the booking return path, confirmation and mobile checkbox layout are present, and an invalid saved admin session redirects to login. Real recovery still displays "Email delivery is not configured". Authenticated admin approval/payment was not verified in this follow-up because no valid admin session was available. No customer ticket, booking or payment was created during this retest.
+
 Release: production-20261029. Date: 2026-10-29.
 
 ## Scope And Evidence

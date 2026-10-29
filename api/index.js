@@ -861,7 +861,7 @@ async function handler(req, res) {
     const ticket = await database.collection("queue").findOne({ _id: new ObjectId(id) });
     if (!ticket) return send(res, 404, { error: "Ticket not found." });
     const waitingAhead = await database.collection("queue").countDocuments({ status: "waiting", queueNumber: { $lt: ticket.queueNumber } });
-    return send(res, 200, { ticket: normalizeDoc(ticket), position: ticket.status === "waiting" ? waitingAhead + 1 : 0, waitingAhead });
+    return send(res, 200, { ticket: normalizeDoc(ticket), position: ticket.status === "waiting" ? waitingAhead + 1 : ticket.status === 'serving' ? 0 : null, waitingAhead: ticket.status === 'waiting' ? waitingAhead : 0 });
   }
 
   if (req.method === "GET" && path === "/queue") {

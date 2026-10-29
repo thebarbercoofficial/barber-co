@@ -32,14 +32,16 @@ document.querySelector("#app").innerHTML = `
       <label>Email<input type="email" data-forgot-email placeholder="Email"></label>
       <div class="modal-actions">
         <button class="button secondary" type="button" data-close-forgot>Cancel</button>
-        <button class="button primary" type="button" data-send-code>Sent code</button>
+        <button class="button primary" type="button" data-send-code>Send code</button>
       </div>
     </section>
 
     <section class="login-modal reset-modal" data-reset-modal aria-label="Reset password dialog">
       <button class="modal-close" type="button" aria-label="Close" data-close-reset>x</button>
       <label>Email<input type="email" data-reset-email placeholder="User"></label>
-      <label>Re-Password<input type="password" data-reset-password placeholder="Reset password"></label>
+      <label>Email code<input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" data-reset-code></label>
+      <label>New password<input type="password" minlength="8" autocomplete="new-password" data-reset-password></label>
+      <label>Confirm password<input type="password" minlength="8" autocomplete="new-password" data-reset-confirm></label>
       <button class="button primary full" type="button" data-confirm-reset>Confirm</button>
     </section>
   </main>
@@ -53,6 +55,7 @@ document.querySelectorAll('[data-login-method]').forEach((button) => button.addE
   input.inputMode = phone ? 'tel' : 'email';
   input.placeholder = phone ? '09XXXXXXXXX or +639XXXXXXXXX' : 'you@example.com';
   input.value = '';
+  document.querySelector('[name="password"]').value = '';
   document.querySelectorAll('[data-login-method]').forEach((method) => {
     method.classList.toggle('active', method === button);
     method.setAttribute('aria-pressed', String(method === button));
@@ -75,17 +78,23 @@ document.querySelector("[data-login]").addEventListener("submit", async (event) 
   const data = new FormData(event.target);
   const identifier = String(data.get("identifier") || '').trim();
   const password = String(data.get("password"));
+  const phoneMode = document.querySelector('[data-login-method="phone"]').getAttribute('aria-pressed') === 'true';
+  if (phoneMode && !/^(09\d{9}|\+?639\d{9})$/.test(identifier.replace(/[\s()-]/g, ''))) {
+    showLoginAlert('Invalid mobile number', 'Use a Philippine mobile number, or switch to Email.');
+    return;
+  }
   const button = event.submitter || event.target.querySelector('[type="submit"]');
   if (button.disabled) return;
   button.disabled = true;
 
   try {
-    const payload = await api("/auth/login", { method: "POST", body: JSON.stringify({ identifier, password }) });
+    const payload = await api("/auth/login", { method: "POST", body: JSON.stringify({ identifier, password, method: phoneMode ? 'phone' : 'email' }) });
     setSession(payload);
     const next = new URLSearchParams(location.search).get("next");
-    const safeNext = next && !next.includes(":") && !next.startsWith("//") ? next : "";
+    const safeNext = next && /^(booking|index|services|barbers|queue|contact|about|user-profile)\.html(?:[?#].*)?$/.test(next) ? next : "";
     location.href = payload.user.role === "admin" ? "admin-dashboard.html" : payload.user.role === "moderator" ? "admin-logbook.html" : safeNext || "index.html";
   } catch (error) {
+    if (error.verificationRequired) location.href = `register.html?verify=${encodeURIComponent(identifier)}`;
     const offline = error.code === "BACKEND_UNAVAILABLE" || /fetch|network/i.test(error.message || "");
     showLoginAlert(offline ? "Service unavailable" : "Sign in failed", offline ? "The account service is not connected. Please try again shortly." : error.message || "Check your mobile number or email and password.");
     button.disabled = false;
@@ -100,20 +109,32 @@ document.querySelectorAll("[data-close-forgot]").forEach((button) => {
   button.addEventListener("click", () => document.querySelector("[data-forgot-modal]").classList.remove("show"));
 });
 
-document.querySelector("[data-send-code]").addEventListener("click", () => {
+document.querySelector("[data-send-code]").addEventListener("click", async (event) => {
   const email = document.querySelector("[data-forgot-email]").value;
-  document.querySelector("[data-forgot-modal]").classList.remove("show");
-  document.querySelector("[data-reset-email]").value = email;
-  document.querySelector("[data-reset-modal]").classList.add("show");
+  event.currentTarget.disabled = true;
+  try {
+    const payload = await api('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+    document.querySelector('[data-forgot-modal]').classList.remove('show');
+    document.querySelector('[data-reset-email]').value = email;
+    document.querySelector('[data-reset-modal]').classList.add('show');
+    showLoginAlert('Check your email', payload.message, true);
+  } catch (error) { showLoginAlert('Code not sent', error.message); }
+  finally { document.querySelector('[data-send-code]').disabled = false; }
 });
 
 document.querySelector("[data-close-reset]").addEventListener("click", () => {
   document.querySelector("[data-reset-modal]").classList.remove("show");
 });
 
-document.querySelector("[data-confirm-reset]").addEventListener("click", () => {
-  document.querySelector("[data-reset-modal]").classList.remove("show");
-  showLoginAlert("Password reset", "You can sign in now.", true);
+document.querySelector("[data-confirm-reset]").addEventListener("click", async (event) => {
+  event.currentTarget.disabled = true;
+  try {
+    const payload = await api('/auth/reset-password', { method: 'POST', body: JSON.stringify({ email: document.querySelector('[data-reset-email]').value, code: document.querySelector('[data-reset-code]').value, password: document.querySelector('[data-reset-password]').value, confirmPassword: document.querySelector('[data-reset-confirm]').value }) });
+    document.querySelector('[data-reset-modal]').classList.remove('show');
+    document.querySelector('[data-login]').reset();
+    showLoginAlert('Password changed', payload.message, true);
+  } catch (error) { showLoginAlert('Password not changed', error.message); }
+  finally { document.querySelector('[data-confirm-reset]').disabled = false; }
 });
 
 document.querySelector("[data-close-alert]").addEventListener("click", () => {

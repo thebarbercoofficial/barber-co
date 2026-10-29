@@ -18,7 +18,7 @@ async function loadAppointments(refreshCatalog = false) {
   try {
     if (refreshCatalog) await loadCatalog().catch(() => toast("Booking details are using the saved catalog."));
     const data = await api("/admin/appointments", { cache: "no-store" });
-    appointments = (data.appointments || []).map((item) => ({ ...item, id: item.mongoId || item.id, time: item.time || "Next available", status: item.status || "pending" }));
+    appointments = (data.appointments || []).map((item) => ({ ...item, paymentProof: item.paymentProof || (item.hasPaymentProof ? `#receipt-${item.mongoId || item.id}` : ''), id: item.mongoId || item.id, time: item.time || "Next available", status: item.status || "pending" }));
     reservations = data.reservations || [];
     paymentReady = data.paymentConfigured !== false;
     demoMode = data.paymentMode === 'demo';
@@ -54,6 +54,10 @@ function updatePanel(connectionError = "", force = false) {
   lastSnapshot = nextSnapshot;
   const panel = document.querySelector("[data-appointment-panel]");
   if (panel) panel.innerHTML = appointmentRows(connectionError);
+  panel?.querySelectorAll('.appointment-record').forEach((row) => {
+    const id = row.querySelector('[data-status]')?.dataset.status.split(':')[0];
+    if (id) row.querySelector('.button-row')?.insertAdjacentHTML('afterbegin', `<button class="icon-button" type="button" data-reschedule="${id}" title="Reschedule appointment" aria-label="Reschedule appointment">${icon('CalendarClock')}</button>`);
+  });
   document.querySelectorAll('[data-filter-count]').forEach((target) => {
     const filter = target.dataset.filterCount;
     target.textContent = filter === 'awaiting-payment' ? reservations.length : appointments.filter((item) => filter === 'all' || (filter === 'history' ? ['completed', 'cancelled'].includes(item.status) : item.status === filter)).length;
@@ -99,6 +103,47 @@ async function render() {
     updatePanel(latestConnectionError, true);
   }));
   document.querySelector("[data-appointment-panel]").addEventListener("click", async (event) => {
+    const reschedule = event.target.closest('[data-reschedule]');
+    if (reschedule) {
+      const item = appointments.find((entry) => entry.id === reschedule.dataset.reschedule);
+      const modal = document.createElement('dialog');
+      modal.className = 'receipt-dialog';
+      modal.innerHTML = `<form data-reschedule-form><h3>Reschedule appointment</h3><label>Date<input type="date" name="date" required value="${safeText(item.date)}"></label><label>Time<input type="time" name="time" step="1800" required value="${safeText(item.time)}"></label><p data-reschedule-error role="alert"></p><div class="button-row"><button class="button secondary" type="button" data-close>Cancel</button><button class="button primary" type="submit">Save schedule</button></div></form>`;
+      modal.querySelector('[data-close]').onclick = () => modal.close();
+      modal.addEventListener('close', () => modal.remove());
+      modal.querySelector('form').onsubmit = async (submit) => {
+        submit.preventDefault();
+        submit.submitter.disabled = true;
+        try { await api(`/admin/appointments/${item.id}/reschedule`, { method: 'PATCH', body: JSON.stringify(Object.fromEntries(new FormData(submit.target))) }); modal.close(); toast('Appointment rescheduled. Customer update recorded.'); await refreshAppointments({ force: true }); }
+        catch (error) { modal.querySelector('[data-reschedule-error]').textContent = error.message; submit.submitter.disabled = false; }
+      };
+      document.body.append(modal);
+      modal.showModal();
+      return;
+    }
+    const proofLink = event.target.closest('a.text-action');
+    if (proofLink && proofLink.textContent.includes('Payment proof')) {
+      event.preventDefault();
+      const row = proofLink.closest('.appointment-record');
+      const id = row.querySelector('[data-status]')?.dataset.status.split(':')[0];
+      const item = appointments.find((candidate) => candidate.id === id || candidate.paymentProof === proofLink.getAttribute('href'));
+      try {
+        const payload = item?.paymentProof?.startsWith('data:') ? item : await api(`/admin/appointments/${item?.id || id}/proof`);
+        const proof = payload.paymentProof;
+        if (!/^data:image\/(png|jpeg|webp);base64,/.test(proof || '')) throw new Error('No readable receipt was saved for this booking.');
+        const modal = document.createElement('dialog');
+        modal.className = 'receipt-dialog';
+        modal.innerHTML = '<form method="dialog"><button class="button secondary" autofocus>Close receipt</button></form><img alt="Customer payment receipt"><a class="button secondary" download="payment-receipt">Download receipt</a>';
+        modal.querySelector('img').src = proof;
+        const response = await fetch(proof);
+        const url = URL.createObjectURL(await response.blob());
+        modal.querySelector('a').href = url;
+        modal.addEventListener('close', () => { URL.revokeObjectURL(url); modal.remove(); });
+        document.body.append(modal);
+        modal.showModal();
+      } catch (error) { toast(error.message); }
+      return;
+    }
     const retry = event.target.closest("[data-retry]");
     if (retry) return refreshAppointments({ force: true, refreshCatalog: true });
     const button = event.target.closest("[data-status]");

@@ -1,6 +1,7 @@
 const BarberAnalytics = (() => {
   const { icon, safeText, peso } = BarberCo;
   let currentChart;
+  let refreshData = () => {};
   const series = {
     revenue: { label: 'Collected revenue', color: '#b77b2c', money: true },
     bookings: { label: 'Online bookings', color: '#a7562f' },
@@ -48,7 +49,7 @@ const BarberAnalytics = (() => {
       days = daily.slice(-Number(root.querySelector('[data-chart-range]').value));
       const selected = series[metric];
       const totals = days.reduce((sum, day) => ({ bookings: sum.bookings + day.bookings, walkins: sum.walkins + day.walkins, revenue: sum.revenue + day.revenue }), { bookings: 0, walkins: 0, revenue: 0 });
-      root.querySelector('[data-period-totals]').innerHTML = `<span><b>${totals.bookings}</b> bookings</span><span><b>${totals.walkins}</b> walk-ins</span><span><b>${peso(totals.revenue)}</b> collected</span>`;
+      root.querySelector('[data-period-totals]').innerHTML = `<span><b>${totals.bookings}</b> bookings</span><span><b>${totals.walkins}</b> walk-ins</span><span><b>${peso(totals.revenue)}</b> collected in selected period</span><span><b>${peso(analytics.totals?.revenue || 0)}</b> all-time collected</span>`;
       root.querySelector('[data-chart-rows]').innerHTML = [...days].reverse().map((day) => `<tr><th scope="row">${safeText(dateLabel(day.date))}</th><td>${day.bookings}</td><td>${day.walkins}</td><td>${Number(day.revenue).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td></tr>`).join('');
       root.querySelector('[data-chart-footer]').innerHTML = `<tr><th scope="row">Period total</th><td>${totals.bookings}</td><td>${totals.walkins}</td><td>${totals.revenue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td></tr>`;
       root.querySelector('[data-data-period]').textContent = `${dateLabel(days[0].date)} - ${dateLabel(days.at(-1).date)}`;
@@ -101,8 +102,9 @@ const BarberAnalytics = (() => {
       note.hidden = false;
       note.textContent = `${analytics.legacyPayments} older payment records use their last recorded update date.`;
     }
+    refreshData = (next) => { daily.splice(0, daily.length, ...next.daily); analytics = next; update(); };
     update();
   }
 
-  return { markup, mount };
+  return { markup, mount, refresh: (analytics) => window.Chart?.getChart(document.querySelector('[data-trend-chart]')) ? refreshData(analytics) : mount(analytics) };
 })();

@@ -36,7 +36,9 @@ async function fixtures(context, role) {
     const endpoint = new URL(req.url()).pathname;
     requests.push({ endpoint, method: req.method(), body: req.postDataJSON() });
     let data;
-    if (endpoint.endsWith('/catalog')) data = { services, barbers };
+    if (endpoint.endsWith('/me')) data = { user: { id: 'test-user', role, name: role === 'admin' ? 'Shop Owner' : 'Front Desk', email: 'qa@example.test' } };
+    else if (endpoint.endsWith('/notifications')) data = { notifications: [], emailConfigured: false, smsConfigured: false };
+    else if (endpoint.endsWith('/catalog')) data = { services, barbers };
     else if (endpoint.endsWith('/analytics')) data = { totals: { customers: 24, ...dailyTotals, waiting: 8 }, daily, services, barbers, barberPerformance };
     else if (endpoint.endsWith('/settings')) data = { settings };
     else if (endpoint.endsWith('/payment-qr/validate')) data = { validation: { format: 'QRPh', recipient: 'Isolated UI fixture', ownershipVerified: false } };
@@ -208,7 +210,7 @@ async function main() {
     assert.equal(await page.locator('[data-analytics]').count(), 0);
     await page.screenshot({ path: path.join(root, 'staff-ui-moderator-check.png'), fullPage: true });
     await page.goto(`${base}/admin-profile.html`);
-    await page.waitForURL('**/login.html');
+    await page.waitForURL(/\/(login|admin-logbook)\.html$/);
     console.log('Moderator navigation and admin-only page restriction passed');
     await mod.close();
     const empty = await browser.newContext({ viewport: { width: 390, height: 900 } });

@@ -44,7 +44,7 @@ const database = { collection(name) {
       const cursor = {
         sort(sort) { const [key, direction] = Object.entries(sort)[0]; items.sort((a, b) => (a[key] > b[key] ? 1 : a[key] < b[key] ? -1 : 0) * direction); return cursor; },
         limit(count) { items = items.slice(0, count); return cursor; },
-        async toArray() { return items.map((item) => options.projection ? Object.fromEntries(Object.entries(item).filter(([key]) => key === '_id' || options.projection[key])) : { ...item }); }
+        async toArray() { return items.map((item) => options.projection ? Object.fromEntries(Object.entries(item).filter(([key]) => Object.values(options.projection).some(Boolean) ? key === '_id' || options.projection[key] : options.projection[key] !== 0)) : { ...item }); }
       };
       return cursor;
     },
@@ -64,12 +64,12 @@ const database = { collection(name) {
     async deleteMany(query) { records[name] = records[name].filter((record) => !matches(record, query)); }
   };
 } };
-const context = { require: require('node:module').createRequire(path.join(root, 'api/index.js')), module: { exports: {} }, process: { env: { JWT_SECRET: secret } }, URL, console, fixtureDatabase: database };
+const context = { require: require('node:module').createRequire(path.join(root, 'api/index.js')), module: { exports: {} }, process: { env: { JWT_SECRET: secret, ALLOW_UNVERIFIED_ACCOUNTS: 'true', ALLOW_DEMO_PAYMENTS: 'true' } }, URL, console, fixtureDatabase: database };
 vm.runInNewContext(`${fs.readFileSync(path.join(root, 'api/index.js'), 'utf8')}\ndb = async () => fixtureDatabase;`, context);
 const handler = context.module.exports;
 const token = (role) => jwt.sign({ sub: String(users.find((user) => user.role === role)._id), role }, secret);
 const booking = { serviceId: 'basic', barberId: 'review-barber', date: '2100-03-03', time: '14:00', customer: 'Review admin' };
-const proof = 'data:image/png;base64,aXNvbGF0ZWQtdGVzdA==';
+const proof = `data:image/png;base64,${fs.readFileSync(path.join(root, 'images/logo.png')).toString('base64')}`;
 
 async function main() {
   const server = http.createServer((req, res) => {
@@ -202,7 +202,11 @@ async function main() {
       if (role === 'admin') await page.locator(`[data-status="${saved._id}:confirmed"]`).waitFor();
       await review.reload();
       await review.locator('[data-filter="pending"]').click();
-      assert.equal(await review.locator(`.appointment-record:has([data-status="${saved._id}:confirmed"]) a.text-action`).getAttribute('href'), saved.paymentProof, 'Staff must be able to view the uploaded receipt');
+      await review.locator(`.appointment-record:has([data-status="${saved._id}:confirmed"]) a.text-action`).click();
+      await review.locator('.receipt-dialog img').waitFor();
+      await review.waitForFunction(() => document.querySelector('.receipt-dialog img')?.naturalWidth > 0);
+      assert.equal(await review.locator('.receipt-dialog img').getAttribute('src'), saved.paymentProof, 'Staff must see the actual stored receipt');
+      await review.getByRole('button', { name: 'Close receipt' }).click();
       await review.locator(`[data-status="${saved._id}:confirmed"]`).click();
       await review.locator('[data-filter="confirmed"]').click();
       await review.locator(`[data-status="${saved._id}:completed"]`).waitFor();

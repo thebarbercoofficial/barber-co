@@ -1467,6 +1467,17 @@ select option:disabled {
   transform: translateY(0);
 }
 
+body.transaction-page #app,
+body.transaction-page .site-header,
+body.transaction-page .form-card,
+body.transaction-page .panel,
+body.transaction-page .login-card > * { animation: none !important; }
+.terms-consent > span { display: flex; align-items: flex-start; gap: 10px; line-height: 1.5; }
+.terms-consent input[type="checkbox"] { width: 18px; min-width: 18px; height: 18px; min-height: 18px; margin: 2px 0 0; padding: 0; }
+@media (max-width: 768px) {
+  .transaction-page .auth-art { display: none; }
+}
+
 .reveal:nth-child(2) {
   transition-delay: 80ms;
 }
@@ -2019,6 +2030,19 @@ body.is-loaded .login-note {
     top: 68%;
   }
 }
+
+body .login-modal {
+  z-index: 1000;
+  top: 50%;
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  width: min(400px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  transform: translate(-50%, -50%);
+}
+body .login-modal.show { animation: none; }
 
 @media (max-width: 640px) {
   .section {

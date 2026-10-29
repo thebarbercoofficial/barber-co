@@ -62,7 +62,7 @@ async function render() {
           <form class="form-card settings-form" data-payment-settings>
             <div class="settings-group schedule-group">
               <h3 class="settings-group-title">Payment mode</h3>
-              <label class="check-row"><input type="checkbox" name="demoPayments" ${settings.paymentMode === 'demo' ? 'checked' : ''}> Demo payments (no real money)</label>
+              ${settings.allowDemoPayments ? `<label class="check-row"><input type="checkbox" name="demoPayments" ${settings.paymentMode === 'demo' ? 'checked' : ''}> Test payments (no real money)</label>` : ''}
               <p class="muted" data-payment-mode-note></p>
               <label class="check-row" data-recipient-confirmation><input type="checkbox" name="paymentDetailsConfirmed" ${settings.paymentDetailsConfirmed ? 'checked' : ''}> I checked the recipient in GCash/Maya and confirmed these details belong to the shop.</label>
             </div>
@@ -98,13 +98,13 @@ async function render() {
     </section>`;
 
   const updateMode = () => {
-    const demo = document.querySelector('[name="demoPayments"]').checked;
+    const demo = document.querySelector('[name="demoPayments"]')?.checked || false;
     document.querySelector('[data-payment-mode-note]').textContent = demo ? 'GCash and Maya demo options are active. Demo bookings are labeled and excluded from real booking/revenue analytics. Real details below are saved separately.' : 'Real payments: mobile numbers must use Philippine format. Uploaded QRs must be reusable QRPh payment codes. Account ownership is not automatically verified.';
     document.querySelector('[data-recipient-confirmation]').style.display = demo ? 'none' : '';
     document.querySelector('[name="paymentDetailsConfirmed"]').required = !demo;
     document.querySelectorAll('[data-demo-preview]').forEach((element) => { element.style.display = demo ? '' : 'none'; });
   };
-  document.querySelector('[name="demoPayments"]').addEventListener('change', updateMode);
+  document.querySelector('[name="demoPayments"]')?.addEventListener('change', updateMode);
   updateMode();
   document.querySelectorAll('[data-qr-clear]').forEach((button) => button.addEventListener('click', () => {
     const method = button.dataset.qrClear;
@@ -158,6 +158,21 @@ async function render() {
     }
   });
   initHeader("admin");
+  loadMessagingStatus();
 }
 
 render();
+
+async function loadMessagingStatus() {
+  try {
+    const payload = await api('/admin/notifications');
+    const existing = document.querySelector('[data-messaging-status]');
+    existing?.remove();
+    document.querySelector('.workspace').insertAdjacentHTML('beforeend', `<section data-messaging-status><h3>Customer notifications</h3><p>Email provider: <strong>${payload.emailConfigured ? 'Configured' : 'Not configured'}</strong> / SMS provider: <strong>${payload.smsConfigured ? 'Configured' : 'Not configured'}</strong> / SMS verification: <strong>${payload.smsVerificationConfigured ? 'Configured' : 'Not configured'}</strong></p><p class="muted">Provider acceptance is not proof of delivery. Only verified destinations receive messages. Account notifications remain visible in customer profiles.</p><div class="data-table-scroll"><table><thead><tr><th>Update</th><th>Email</th><th>SMS</th><th>Action</th></tr></thead><tbody>${payload.notifications.map((item) => `<tr><th scope="row">${safeText(item.message)}</th><td>${safeText(item.channels?.email?.status || 'pending')}</td><td>${safeText(item.channels?.sms?.status || 'pending')}</td><td><button class="button secondary small" type="button" data-notification-retry="${safeText(item._id)}">Retry failed delivery</button></td></tr>`).join('') || '<tr><td colspan="4">No notifications recorded.</td></tr>'}</tbody></table></div></section>`);
+    document.querySelectorAll('[data-notification-retry]').forEach((button) => button.addEventListener('click', async () => {
+      button.disabled = true;
+      try { const result = await api('/admin/notifications/retry', { method: 'POST', body: JSON.stringify({ id: button.dataset.notificationRetry }) }); toast(result.message); await loadMessagingStatus(); }
+      catch (error) { toast(error.message); button.disabled = false; }
+    }));
+  } catch (error) { toast(`Notification status: ${error.message}`); }
+}

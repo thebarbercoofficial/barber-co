@@ -8,6 +8,7 @@ const bcrypt = require('bcryptjs');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const users = [];
+const loginAttempts = new Map();
 function matches(user, query) {
   return Object.entries(query).every(([key, value]) => {
     if (key === '$or') return value.some((item) => matches(user, item));
@@ -21,6 +22,12 @@ function unique(user, exclude) {
   if (key) { const error = new Error('Duplicate login identifier'); error.code = 11000; error.keyPattern = { [key]: 1 }; throw error; }
 }
 const database = { collection(name) {
+  if (name === 'loginAttempts') return {
+    async findOne(query) { return loginAttempts.get(query._id); },
+    async findOneAndUpdate(query, changes) { const item = loginAttempts.get(query._id) || { _id: query._id, failures: 0 }; item.failures += changes.$inc?.failures || 0; Object.assign(item, changes.$set); loginAttempts.set(query._id, item); return item; },
+    async updateOne(query, changes) { Object.assign(loginAttempts.get(query._id), changes.$set); },
+    async deleteOne(query) { loginAttempts.delete(query._id); }
+  };
   assert.equal(name, 'users');
   return {
     find(query) { let list = users.filter((user) => matches(user, query)); return { limit(count) { list = list.slice(0, count); return this; }, async toArray() { return list; } }; },
@@ -36,7 +43,7 @@ const database = { collection(name) {
     }
   };
 } };
-const context = { require: require('node:module').createRequire(path.join(root, 'api/index.js')), module: { exports: {} }, process: { env: { JWT_SECRET: 'isolated-phone-test-secret' } }, URL, console, fixtureDatabase: database };
+const context = { require: require('node:module').createRequire(path.join(root, 'api/index.js')), module: { exports: {} }, process: { env: { JWT_SECRET: 'isolated-phone-test-secret', ALLOW_UNVERIFIED_ACCOUNTS: 'true' } }, URL, console, fixtureDatabase: database };
 vm.runInNewContext(`${fs.readFileSync(path.join(root, 'api/index.js'), 'utf8')}\ndb = async () => fixtureDatabase;`, context);
 async function main() {
   const hash = await bcrypt.hash('Isolated-test-password', 4);
@@ -124,6 +131,8 @@ async function main() {
       await page.locator('[name="email"]').fill(`ui-${width}@phone.test`);
       await page.locator('[name="password"]').fill(registration.password);
       await page.locator('[type="checkbox"]').check();
+      await page.locator('[name="confirmPassword"]').fill(registration.password);
+      await page.locator('[name="birthDate"]').fill('2000-01-01');
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
       await page.screenshot({ path: path.join(root, `phone-register-${width}-check.png`), fullPage: true });
       await page.getByRole('button', { name: 'Create account and continue' }).click();

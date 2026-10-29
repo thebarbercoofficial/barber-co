@@ -152,6 +152,8 @@ async function initialize() {
 }
 
 initialize();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshQueue({ quiet: true }); });
+window.addEventListener('focus', () => refreshQueue({ quiet: true }));
 window.setInterval(() => {
   if (!document.hidden) refreshQueue({ quiet: true });
 }, 5000);

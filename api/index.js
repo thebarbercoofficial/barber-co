@@ -4,6 +4,10 @@ const jwt = require("jsonwebtoken");
 const { buildAnalytics, buildBarberPerformance } = require('../lib/analytics');
 const { sanitizeMethod, validateQrImage, realPaymentConfigured, demoMethods, normalizeMobile } = require('../lib/payment-settings');
 const { phoneUsers, availablePhone } = require('../lib/phone-login');
+const security = require('../lib/account-security');
+const messaging = require('../lib/notifications');
+const { validateReceipt } = require('../lib/receipt');
+const allowUnverified = process.env.ALLOW_UNVERIFIED_ACCOUNTS === 'true';
 
 const mongoUri = process.env.MONGODB_URI;
 const dbName = process.env.MONGODB_DB || "barber_co";
@@ -59,7 +63,8 @@ function mergedSettings(settings = {}) {
     ...settings,
     gcash: { ...defaultSettings.gcash, ...(settings.gcash || {}) },
     maya: { ...defaultSettings.maya, ...(settings.maya || {}) },
-    paymentMode: settings.paymentMode || (realPaymentConfigured(settings) ? 'live' : 'demo'),
+    paymentMode: process.env.ALLOW_DEMO_PAYMENTS === 'true' ? settings.paymentMode || 'live' : 'live',
+    allowDemoPayments: process.env.ALLOW_DEMO_PAYMENTS === 'true',
     demoMethods,
     operatingHours,
     closedDates: Array.isArray(settings.closedDates) ? settings.closedDates : []
@@ -68,6 +73,7 @@ function mergedSettings(settings = {}) {
 
 function bookingWindow(date, time, settings, durationMinutes = 30) {
   const localNoon = new Date(`${date}T12:00:00+08:00`);
+  if (!Number.isFinite(localNoon.getTime()) || new Date(localNoon.getTime() + 8 * 3600000).toISOString().slice(0, 10) !== date) return { error: 'Choose a valid calendar date.' };
   const day = dayNames[localNoon.getUTCDay()];
   const hours = settings.operatingHours[day];
   if (fixedPhilippineHolidays.has(date.slice(5)) || settings.closedDates.includes(date)) return { error: "The shop is closed on the selected holiday." };
@@ -80,12 +86,13 @@ function bookingWindow(date, time, settings, durationMinutes = 30) {
   return { day, hours };
 }
 
-async function unavailableBarbers(database, date, time, durationMinutes, excludedHoldId = "") {
+async function unavailableBarbers(database, date, time, durationMinutes, excludedHoldId = "", excludedAppointmentId = '') {
   const now = new Date();
   const appointments = await database.collection("appointments").find({
     date,
     barberId: { $nin: ["", null] },
-    status: { $in: ["pending", "confirmed"] }
+    status: { $in: ["pending", "confirmed"] },
+    ...(excludedAppointmentId ? { _id: { $ne: new ObjectId(excludedAppointmentId) } } : {})
   }).toArray();
   const holds = await database.collection("appointmentHolds").find({
     date,
@@ -149,6 +156,7 @@ async function lockAppointmentSlots(database, appointmentId, date, barberId, tim
 function send(res, status, data) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
+  res.setHeader('Cache-Control', 'no-store');
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
@@ -158,10 +166,17 @@ function send(res, status, data) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let raw = "";
-    req.on("data", (chunk) => { raw += chunk; });
+    let rejected = false;
+    req.setEncoding?.('utf8');
+    req.on("data", (chunk) => {
+      if (rejected) return;
+      raw += chunk;
+      if (raw.length > 8 * 1024 * 1024) { rejected = true; raw = ''; reject(Object.assign(new Error('Request is too large.'), { status: 413 })); }
+    });
     req.on("end", () => {
       if (!raw) return resolve({});
-      try { resolve(JSON.parse(raw)); } catch (error) { reject(error); }
+      if (rejected) return;
+      try { resolve(JSON.parse(raw)); } catch { reject(Object.assign(new Error('Invalid JSON request.'), { status: 400 })); }
     });
   });
 }
@@ -186,7 +201,10 @@ async function ensureSeed(database) {
         database.collection("queue").createIndex({ queueNumber: 1 }),
         database.collection("appointments").createIndex({ createdAt: -1 }),
         database.collection("appointmentHolds").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
-        database.collection("appointmentSlots").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+        database.collection("appointmentSlots").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+        database.collection('loginAttempts').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+        database.collection('accountCodes').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+        database.collection('notifications').createIndex({ userId: 1, createdAt: -1 })
       ]);
       for (const service of seedServices) {
         await database.collection("services").updateOne({ slug: service.slug }, { $setOnInsert: { ...service, createdAt: new Date() } }, { upsert: true });
@@ -201,7 +219,7 @@ async function ensureSeed(database) {
       );
       const adminEmail = String(process.env.ADMIN_EMAIL || "thebarberco.official@gmail.com").toLowerCase();
       const adminPassword = process.env.ADMIN_PASSWORD;
-      if (adminPassword) {
+      if (adminPassword && !await database.collection('users').findOne({ email: adminEmail })) {
         const hash = await bcrypt.hash(adminPassword, 10);
         await database.collection("users").updateOne(
           { email: adminEmail },
@@ -214,7 +232,7 @@ async function ensureSeed(database) {
       }
       const moderatorEmail = String(process.env.MODERATOR_EMAIL || "staff@thebarberco.local").toLowerCase();
       const moderatorPassword = process.env.MODERATOR_PASSWORD;
-      if (moderatorPassword) {
+      if (moderatorPassword && !await database.collection('users').findOne({ email: moderatorEmail })) {
         const hash = await bcrypt.hash(moderatorPassword, 10);
         await database.collection("users").updateOne(
           { email: moderatorEmail },
@@ -232,7 +250,7 @@ async function ensureSeed(database) {
 
 function publicUser(user) {
   if (!user) return null;
-  return { id: String(user._id), name: user.name, email: user.email, role: user.role || "customer", username: user.username || "", phone: user.phone || "", location: user.location || "", bio: user.bio || "", photo: user.photo || "" };
+  return { id: String(user._id), name: user.name, email: user.email, role: user.role || "customer", emailVerified: Boolean(user.emailVerifiedAt), phoneVerified: Boolean(user.phoneVerifiedAt), smsConsent: Boolean(user.smsConsent), birthDate: user.birthDate || '', username: user.username || "", phone: user.phone || "", location: user.location || "", bio: user.bio || "", photo: user.photo || "" };
 }
 
 function normalizeDoc(doc) {
@@ -241,11 +259,18 @@ function normalizeDoc(doc) {
 }
 
 function tokenFor(user) {
-  return jwt.sign({ sub: String(user._id), role: user.role || "customer" }, jwtSecret, { expiresIn: "7d" });
+  return jwt.sign({ sub: String(user._id), role: user.role || "customer", version: user.sessionVersion || 0 }, jwtSecret, { expiresIn: "7d" });
 }
 
 function paymentConfigured(settings) {
   return settings.paymentMode === 'demo' || realPaymentConfigured(settings);
+}
+
+function requireBookingEligibility(user) {
+  if (allowUnverified || ['admin', 'moderator'].includes(user.role)) return;
+  if (!user.emailVerifiedAt) throw Object.assign(new Error('Verify your email in your profile before booking online.'), { status: 403 });
+  const age = security.ageOn(user.birthDate);
+  if (age == null || age < 18) throw Object.assign(new Error('Online wallet bookings are for customers aged 18 or older under shop policy. Younger customers may join the walk-in queue or have a parent book using their own account.'), { status: 403 });
 }
 
 async function requireUser(req, database, adminOnly = false) {
@@ -256,9 +281,12 @@ async function requireUser(req, database, adminOnly = false) {
     error.status = 401;
     throw error;
   }
-  const payload = jwt.verify(token, jwtSecret);
+  let payload;
+  try { payload = jwt.verify(token, jwtSecret); }
+  catch { throw Object.assign(new Error('Your session expired. Please log in again.'), { status: 401 }); }
+  if (!ObjectId.isValid(payload.sub)) throw Object.assign(new Error('Invalid session. Please log in again.'), { status: 401 });
   const user = await database.collection("users").findOne({ _id: new ObjectId(payload.sub) });
-  if (!user || (adminOnly && user.role !== "admin")) {
+  if (!user || (payload.version || 0) !== (user.sessionVersion || 0) || (adminOnly && user.role !== "admin")) {
     const error = new Error("Admin access required");
     error.status = adminOnly ? 403 : 401;
     throw error;
@@ -289,6 +317,26 @@ async function nextQueueNumber(database) {
   return counter.value;
 }
 
+async function startServing(database, id = '') {
+  const leaseOwner = String(new ObjectId());
+  try {
+    await database.collection('counters').findOneAndUpdate({ _id: 'serving-transition', $or: [{ busy: { $ne: true } }, { lockedAt: { $lt: new Date(Date.now() - 60000) } }] }, { $set: { busy: true, leaseOwner, lockedAt: new Date() } }, { upsert: true, returnDocument: 'after' });
+  } catch (error) {
+    if (error.code === 11000) throw Object.assign(new Error('Another staff member is updating the queue. Please retry.'), { status: 409 });
+    throw error;
+  }
+  try {
+    const current = await database.collection('queue').findOne({ status: 'serving' });
+    if (current) {
+      if (id && String(current._id) === id) return current;
+      throw Object.assign(new Error('Finish the current customer before calling the next customer.'), { status: 409 });
+    }
+    const ticket = await database.collection('queue').findOneAndUpdate({ status: 'waiting', ...(id ? { _id: new ObjectId(id) } : {}) }, { $set: { status: 'serving', calledAt: new Date(), updatedAt: new Date() } }, { sort: { queueNumber: 1 }, returnDocument: 'after' });
+    if (id && !ticket) throw Object.assign(new Error('This customer is no longer waiting.'), { status: 409 });
+    return ticket;
+  } finally { await database.collection('counters').updateOne({ _id: 'serving-transition', leaseOwner }, { $set: { busy: false } }); }
+}
+
 async function handler(req, res) {
   if (req.method === "OPTIONS") return send(res, 200, { ok: true });
   const database = await db();
@@ -297,6 +345,29 @@ async function handler(req, res) {
   const body = ["POST", "PATCH", "DELETE"].includes(req.method) ? await readBody(req) : {};
 
   if (req.method === "GET" && path === "/health") return send(res, 200, { ok: true });
+  if (req.method === 'GET' && path === '/auth/capabilities') return send(res, 200, { email: security.emailReady(), sms: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM), verificationRequired: !allowUnverified });
+
+  if (req.method === 'POST' && ['/auth/forgot-password', '/auth/resend-verification'].includes(path)) {
+    if (!security.emailReady()) return send(res, 503, { error: 'Email delivery is not configured. Contact the shop for account assistance.' });
+    const email = String(body.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(res, 400, { error: 'Enter a valid email address.' });
+    const user = await database.collection('users').findOne({ email });
+    const purpose = path.endsWith('forgot-password') ? 'reset' : 'verify';
+    if (user && (purpose === 'reset' || !user.emailVerifiedAt)) await security.issueCode(database, email, purpose);
+    return send(res, 200, { message: 'If this account is eligible, a code has been emailed. Check your inbox and spam folder.' });
+  }
+  if (req.method === 'POST' && ['/auth/verify-email', '/auth/reset-password'].includes(path)) {
+    const email = String(body.email || '').trim().toLowerCase();
+    const reset = path.endsWith('reset-password');
+    if (reset && (String(body.password || '').length < 8 || body.password !== body.confirmPassword)) return send(res, 400, { error: 'Use a matching password and confirmation of at least 8 characters.' });
+    await security.consumeCode(database, email, reset ? 'reset' : 'verify', body.code);
+    const user = await database.collection('users').findOne({ email });
+    if (!user) return send(res, 400, { error: 'The code is invalid or expired.' });
+    const update = { emailVerifiedAt: new Date(), ...(reset ? { passwordHash: await bcrypt.hash(body.password, 10), sessionVersion: (user.sessionVersion || 0) + 1 } : {}) };
+    await database.collection('users').updateOne({ _id: user._id }, { $set: update });
+    await database.collection('loginAttempts').deleteOne({ _id: security.digest(String(user._id)) });
+    return send(res, 200, reset ? { message: 'Password changed. Sign in with your new password.' } : { user: publicUser({ ...user, ...update }), token: tokenFor({ ...user, ...update }) });
+  }
 
   if (req.method === "GET" && path === "/settings") {
     const settings = await database.collection("settings").findOne({ _id: "shop" });
@@ -316,6 +387,7 @@ async function handler(req, res) {
 
   if (req.method === "POST" && path === "/appointment-holds") {
     const user = await requireUser(req, database);
+    requireBookingEligibility(user);
     const date = String(body.date || "");
     const time = String(body.time || "");
     const serviceId = String(body.serviceId || "");
@@ -366,20 +438,25 @@ async function handler(req, res) {
     const name = String(body.name || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(res, 400, { error: 'Enter a valid email address.' });
+    if (!allowUnverified && (password.length < 8 || password !== body.confirmPassword || security.ageOn(body.birthDate) == null)) return send(res, 400, { error: 'Enter a valid birth date and matching passwords of at least 8 characters.' });
+    if (!allowUnverified && !security.emailReady()) return send(res, 503, { error: 'Email verification is temporarily unavailable. Contact the shop; no account has been created.' });
     if (name.length < 2 || !email || password.length < 6) return send(res, 400, { error: "Name, email, and a 6-character password are required." });
     const phone = await availablePhone(database, body.phone);
-    const user = { _id: new ObjectId(), name, email, passwordHash: await bcrypt.hash(password, 10), role: "customer", phone, ...(phone ? { phoneLogin: phone } : {}), createdAt: new Date() };
+    const user = { _id: new ObjectId(), name, email, birthDate: body.birthDate || '', passwordHash: await bcrypt.hash(password, 10), role: "customer", phone, ...(phone ? { phoneLogin: phone } : {}), verificationRequired: !allowUnverified, createdAt: new Date() };
     try {
       await database.collection("users").insertOne(user);
     } catch (error) {
       if (error?.code === 11000) return send(res, 409, { error: error.keyPattern?.phoneLogin ? 'An account with this mobile number already exists. Try logging in.' : "An account with this email already exists. Try logging in." });
       throw error;
     }
+    if (!allowUnverified) { await security.issueCode(database, email, 'verify'); return send(res, 201, { verificationRequired: true, email }); }
     return send(res, 201, { user: publicUser(user), token: tokenFor(user) });
   }
 
   if (req.method === "POST" && path === "/auth/login") {
     const identifier = String(body.identifier ?? body.phone ?? body.email ?? '').trim();
+    if ((body.method === 'phone' && identifier.includes('@')) || (body.method === 'email' && !identifier.includes('@'))) return send(res, 400, { error: 'Use the selected sign-in method.' });
     let user;
     if (identifier.includes('@')) {
       user = await database.collection('users').findOne({ email: identifier.toLowerCase() });
@@ -390,13 +467,49 @@ async function handler(req, res) {
       // Ambiguous legacy numbers must use email; never choose an arbitrary account.
       if (matches.length === 1) user = matches[0];
     }
-    if (!user || !(await bcrypt.compare(String(body.password || ""), user.passwordHash))) return send(res, 401, { error: "Incorrect login details. Try email if your account has no linked mobile number." });
+    const attemptKey = user ? String(user._id) : identifier.toLowerCase();
+    await security.checkLogin(database, attemptKey);
+    if (!user || !(await bcrypt.compare(String(body.password || ""), user.passwordHash))) { await security.failedLogin(database, attemptKey); return send(res, 401, { error: "Incorrect login details. Try email if your account has no linked mobile number." }); }
+    await database.collection('loginAttempts').deleteOne({ _id: security.digest(attemptKey) });
+    if (user.verificationRequired && !user.emailVerifiedAt) return send(res, 403, { error: 'Verify your email before signing in.', verificationRequired: true, email: user.email });
     return send(res, 200, { user: publicUser(user), token: tokenFor(user) });
   }
 
   if (req.method === "GET" && path === "/me") {
     const user = await requireUser(req, database);
     return send(res, 200, { user: publicUser(user) });
+  }
+  if (req.method === 'GET' && path === '/notifications/mine') {
+    const user = await requireUser(req, database);
+    return send(res, 200, { notifications: await database.collection('notifications').find({ userId: user._id }).sort({ createdAt: -1 }).limit(50).toArray() });
+  }
+  if (req.method === 'GET' && path === '/admin/notifications') {
+    await requireRole(req, database, ['admin']);
+    return send(res, 200, { emailConfigured: security.emailReady(), smsConfigured: messaging.smsReady(), smsVerificationConfigured: Boolean(process.env.TWILIO_VERIFY_SERVICE_SID), notifications: await database.collection('notifications').find().sort({ createdAt: -1 }).limit(50).toArray() });
+  }
+  if (req.method === 'POST' && path === '/admin/notifications/retry') {
+    await requireRole(req, database, ['admin']);
+    const record = await database.collection('notifications').findOne({ _id: String(body.id || '') });
+    if (!record) return send(res, 404, { error: 'Notification not found.' });
+    await messaging.deliver(database, record);
+    return send(res, 200, { message: 'Delivery attempt recorded. Accepted means the provider accepted the message, not confirmed delivery.' });
+  }
+  if (req.method === 'POST' && ['/me/phone/send-code', '/me/phone/verify'].includes(path)) {
+    const user = await requireUser(req, database);
+    const phone = normalizeMobile(user.phone);
+    if (!phone) return send(res, 400, { error: 'Save a mobile number in your profile first.' });
+    const key = security.digest(`phone-code:${user._id}`);
+    if (path.endsWith('send-code')) {
+      const previous = await database.collection('loginAttempts').findOne({ _id: key });
+      if (previous?.sentAt && Date.now() - new Date(previous.sentAt).getTime() < 60000) return send(res, 429, { error: 'Wait a minute before requesting another SMS code.' });
+      await messaging.verifyPhone(phone);
+      await database.collection('loginAttempts').updateOne({ _id: key }, { $set: { sentAt: new Date(), expiresAt: new Date(Date.now() + 600000) } }, { upsert: true });
+      return send(res, 200, { message: 'SMS verification requested. Enter the code you receive.' });
+    }
+    if (!/^\d{6}$/.test(String(body.code || ''))) return send(res, 400, { error: 'Enter the six-digit SMS code.' });
+    await messaging.verifyPhone(phone, body.code);
+    await database.collection('users').updateOne({ _id: user._id }, { $set: { phoneVerifiedAt: new Date(), smsConsent: body.smsConsent === true } });
+    return send(res, 200, { user: publicUser({ ...user, phoneVerifiedAt: new Date(), smsConsent: body.smsConsent === true }) });
   }
 
   if (req.method === "PATCH" && path === "/me") {
@@ -414,6 +527,12 @@ async function handler(req, res) {
       photo,
       updatedAt: new Date()
     };
+    if (body.birthDate != null) {
+      if (security.ageOn(body.birthDate) == null) return send(res, 400, { error: 'Enter a valid birth date.' });
+      update.birthDate = body.birthDate;
+    }
+    if (body.smsConsent != null) update.smsConsent = body.smsConsent === true;
+    if (phone !== user.phone) update.phoneVerifiedAt = null;
     if (body.phone != null && phone) update.phoneLogin = phone;
     try {
       await database.collection("users").updateOne({ _id: user._id }, { $set: update, ...(body.phone != null && !phone ? { $unset: { phoneLogin: '' } } : {}) });
@@ -465,6 +584,7 @@ async function handler(req, res) {
   if (path === "/admin/settings" && req.method === "PATCH") {
     await requireRole(req, database, ["admin"]);
     const paymentMode = body.paymentMode || 'live';
+    if (paymentMode === 'demo' && process.env.ALLOW_DEMO_PAYMENTS !== 'true') return send(res, 400, { error: 'Only real payment methods can be configured on this website.' });
     if (!['live', 'demo'].includes(paymentMode)) return send(res, 400, { error: 'Choose demo or real payments.' });
     if (paymentMode === 'live' && body.paymentDetailsConfirmed !== true) return send(res, 400, { error: 'Confirm that you checked the payment recipient in GCash/Maya before enabling real payments.' });
     const gcash = await sanitizeMethod(body.gcash, 'GCash', paymentMode);
@@ -555,6 +675,7 @@ async function handler(req, res) {
 
   if (req.method === "POST" && path === "/appointments") {
     const user = await requireUser(req, database);
+    requireBookingEligibility(user);
     const customer = String(body.customer || user.name || "").trim().slice(0, 120);
     if (customer.length < 2) return send(res, 400, { error: "Enter the name or nickname staff should call." });
     const date = String(body.date || "");
@@ -591,6 +712,7 @@ async function handler(req, res) {
       if (unavailable.includes(body.barberId)) return send(res, 409, { error: "That barber was just booked for this time. Choose another barber or time." });
     }
     const demoPayment = settings.paymentMode === 'demo';
+    if (!paymentConfigured(settings)) return send(res, 409, { error: 'Online payments are not configured. Please contact the shop.' });
     if (body.paymentMode && body.paymentMode !== settings.paymentMode) return send(res, 409, { error: 'Payment mode changed. Reload the payment page before proceeding.' });
     const methods = demoPayment ? settings.demoMethods : settings;
     const paymentMethod = ["GCash", "Maya"].find((name) => name === body.paymentMethod && methods[name.toLowerCase()]?.enabled) || "";
@@ -601,6 +723,7 @@ async function handler(req, res) {
     if (paymentProof.length > 2.8 * 1024 * 1024) {
       return send(res, 413, { error: "Payment proof must be 2 MB or smaller." });
     }
+    await validateReceipt(paymentProof);
     const queueNumber = await nextQueueNumber(database);
     const bookingFee = Math.max(0, Number(settings.bookingFee) || 0);
     const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId: body.barberId || "", date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof, demoPayment, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
@@ -625,7 +748,7 @@ async function handler(req, res) {
 
   if (req.method === "GET" && path === "/appointments/mine") {
     const user = await requireUser(req, database);
-    const appointments = await database.collection("appointments").find({ userId: user._id }).sort({ createdAt: -1 }).limit(50).toArray();
+    const appointments = await database.collection("appointments").find({ userId: user._id }, { projection: { paymentProof: 0 } }).sort({ createdAt: -1 }).limit(50).toArray();
     return send(res, 200, { appointments: appointments.map(normalizeDoc) });
   }
 
@@ -633,19 +756,64 @@ async function handler(req, res) {
     await requireRole(req, database, ["admin", "moderator"]);
     if (req.method === "GET") {
       const [appointments, holds, settings] = await Promise.all([
-        database.collection("appointments").find().sort({ createdAt: -1 }).toArray(),
+        database.collection("appointments").find({}, { projection: { paymentProof: 0 } }).sort({ createdAt: -1 }).toArray(),
         database.collection("appointmentHolds").find({ expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 }).toArray(),
         database.collection("settings").findOne({ _id: "shop" })
       ]);
       const owners = holds.length ? await database.collection("users").find({ _id: { $in: holds.map((hold) => hold.userId) } }, { projection: { name: 1 } }).toArray() : [];
       res.setHeader("Cache-Control", "no-store");
       return send(res, 200, {
-        appointments: appointments.map(normalizeDoc),
+        appointments: appointments.map((item) => ({ ...normalizeDoc(item), hasPaymentProof: item.hasPaymentProof !== false })),
         reservations: holds.map((hold) => ({ ...normalizeDoc(hold), customer: hold.customer || owners.find((user) => String(user._id) === String(hold.userId))?.name || "Customer", status: "awaiting-payment" })),
         paymentMode: mergedSettings(settings || {}).paymentMode,
         paymentConfigured: paymentConfigured(mergedSettings(settings || {}))
       });
     }
+  }
+
+  if (req.method === 'GET' && /^\/admin\/appointments\/[a-f0-9]{24}\/proof$/.test(path)) {
+    await requireRole(req, database, ['admin', 'moderator']);
+    const appointment = await database.collection('appointments').findOne({ _id: new ObjectId(path.split('/')[3]) });
+    if (!appointment?.paymentProof) return send(res, 404, { error: 'No payment proof is saved for this booking.' });
+    await validateReceipt(appointment.paymentProof);
+    return send(res, 200, { paymentProof: appointment.paymentProof });
+  }
+
+  if (req.method === 'PATCH' && /^\/admin\/appointments\/[a-f0-9]{24}\/reschedule$/.test(path)) {
+    await requireRole(req, database, ['admin', 'moderator']);
+    const id = path.split('/')[3];
+    const current = await database.collection('appointments').findOne({ _id: new ObjectId(id) });
+    if (!current || !['pending', 'confirmed'].includes(current.status)) return send(res, 409, { error: 'Only active appointments can be rescheduled.' });
+    const date = String(body.date || '');
+    const time = String(body.time || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time) || !(new Date(`${date}T${time}:00+08:00`).getTime() > Date.now())) return send(res, 400, { error: 'Choose a valid future date and time.' });
+    if (current.date === date && current.time === time) return send(res, 200, { appointment: normalizeDoc(current) });
+    const service = await database.collection('services').findOne({ $or: [{ slug: current.serviceId }, ...(ObjectId.isValid(current.serviceId) ? [{ _id: new ObjectId(current.serviceId) }] : [])] });
+    const settings = mergedSettings(await database.collection('settings').findOne({ _id: 'shop' }));
+    const duration = Math.max(30, Number.parseInt(service?.duration, 10) || 30);
+    const window = bookingWindow(date, time, settings, duration);
+    if (window.error) return send(res, 400, { error: window.error });
+    const unavailable = await unavailableBarbers(database, date, time, duration, '', id);
+    if (current.barberId && unavailable.includes(current.barberId)) return send(res, 409, { error: 'This barber is already reserved at that time.' });
+    const barber = current.barberId ? await database.collection('barbers').findOne({ $or: [{ slug: current.barberId }, ...(ObjectId.isValid(current.barberId) ? [{ _id: new ObjectId(current.barberId) }] : [])] }) : null;
+    const newSlots = barber ? appointmentSlotIds(date, String(barber._id), time, duration) : [];
+    const existing = await database.collection('appointmentSlots').find({ appointmentId: id }).toArray();
+    const retained = new Set(existing.map((slot) => slot._id));
+    const tempId = String(new ObjectId());
+    const extraSlots = newSlots.filter((slot) => !retained.has(slot)).map((_id) => ({ _id, appointmentId: tempId, createdAt: new Date(), expiresAt: new Date(Date.now() + 120000) }));
+    try {
+      if (extraSlots.length) await database.collection('appointmentSlots').insertMany(extraSlots, { ordered: true });
+      const changed = await database.collection('appointments').updateOne({ _id: current._id, date: current.date, time: current.time, status: current.status }, { $set: { date, time, updatedAt: new Date() } });
+      if (!changed.modifiedCount) throw Object.assign(new Error('This appointment changed. Refresh and try again.'), { status: 409 });
+      await database.collection('appointmentSlots').updateMany({ appointmentId: tempId }, { $set: { appointmentId: id }, $unset: { expiresAt: '' } });
+      await database.collection('appointmentSlots').deleteMany({ appointmentId: id, _id: { $nin: newSlots } });
+    } catch (error) {
+      await database.collection('appointmentSlots').deleteMany({ appointmentId: tempId });
+      if (error.code === 11000) return send(res, 409, { error: 'This barber was just reserved. Choose another time.' });
+      throw error;
+    }
+    await messaging.notify(database, current.userId, `Your Barber Co appointment was rescheduled to ${date} at ${time}. Contact the shop if this does not suit you.`, `appointment:${id}:rescheduled:${date}:${time}`);
+    return send(res, 200, { appointment: normalizeDoc({ ...current, date, time }) });
   }
 
   if (path.startsWith("/admin/appointments/") && req.method === "PATCH") {
@@ -656,19 +824,25 @@ async function handler(req, res) {
     const current = await database.collection('appointments').findOne({ _id: new ObjectId(id) });
     if (!current) return send(res, 404, { error: 'Appointment not found.' });
     const update = { status: body.status, updatedAt: new Date() };
+    if (current.status === body.status) return send(res, 200, { appointment: normalizeDoc(current) });
+    const transitions = { pending: ['confirmed', 'cancelled'], confirmed: ['completed', 'cancelled'], completed: [], cancelled: [] };
+    if (!transitions[current.status]?.includes(body.status)) return send(res, 409, { error: 'This appointment has already changed. Refresh before proceeding.' });
     if (["confirmed", "completed"].includes(body.status) && !current.demoPayment) {
       update.paid = true;
       if (!current.paid) update.paidAt = new Date();
     }
-    await database.collection("appointments").updateOne({ _id: new ObjectId(id) }, { $set: update });
+    const changed = await database.collection("appointments").updateOne({ _id: new ObjectId(id), status: current.status }, { $set: update });
+    if (changed?.modifiedCount === 0) return send(res, 409, { error: 'This appointment changed while you were reviewing it. Refresh and try again.' });
     if (["completed", "cancelled"].includes(body.status)) {
       await database.collection("appointmentSlots").deleteMany({ appointmentId: id });
     }
     const appointment = await database.collection("appointments").findOne({ _id: new ObjectId(id) });
+    await messaging.notify(database, current.userId, `Your Barber Co appointment on ${current.date} at ${current.time} is ${body.status === 'confirmed' ? 'accepted' : body.status}.`, `appointment:${id}:${body.status}`);
     return send(res, 200, { appointment: normalizeDoc(appointment) });
   }
 
   if (req.method === "POST" && path === "/queue/walkin") {
+    const account = req.headers.authorization ? await requireUser(req, database) : null;
     const customer = String(body.customer || "").trim().slice(0, 120);
     if (customer.length < 2) return send(res, 400, { error: "Enter the customer's name." });
     const service = body.serviceId ? await database.collection("services").findOne({ $or: [{ slug: body.serviceId }, ...(ObjectId.isValid(body.serviceId) ? [{ _id: new ObjectId(body.serviceId) }] : [])], active: { $ne: false } }) : null;
@@ -677,6 +851,7 @@ async function handler(req, res) {
     const queueNumber = await nextQueueNumber(database);
     const ticket = { _id: new ObjectId(), customer, phone: "", serviceId: service?.slug || "", barberId: "", cutName: service?.name || "To be assigned", price: Number(service?.price || 0), waitMinutes: waiting * 30, source: "shop-qr", queueNumber, status: "waiting", paid: false, createdAt: new Date() };
     await database.collection("queue").insertOne(ticket);
+    if (account) await database.collection('queue').updateOne({ _id: ticket._id }, { $set: { userId: account._id } });
     return send(res, 201, { ticket: normalizeDoc(ticket) });
   }
 
@@ -696,16 +871,15 @@ async function handler(req, res) {
 
   if (req.method === "POST" && path === "/admin/queue/next") {
     await requireRole(req, database, ["admin", "moderator"]);
-    const current = await database.collection("queue").findOne({ status: "serving" });
-    if (current) return send(res, 409, { error: "Finish the current customer before calling next.", ticket: normalizeDoc(current) });
-    const next = await database.collection("queue").findOneAndUpdate({ status: "waiting" }, { $set: { status: "serving", calledAt: new Date(), updatedAt: new Date() } }, { sort: { queueNumber: 1 }, returnDocument: "after" });
+    const next = await startServing(database);
+    if (next) await messaging.notify(database, next.userId, `It is your turn at The Barber Co. Queue #${next.queueNumber}. Please approach the counter.`, `queue:${next._id}:serving`);
     return send(res, 200, { ticket: normalizeDoc(next) });
   }
 
   if (path === "/admin/queue") {
     await requireRole(req, database, ["admin", "moderator"]);
     if (req.method === "GET") {
-      return send(res, 200, { queue: (await database.collection("queue").find().sort({ createdAt: -1 }).limit(250).toArray()).map(normalizeDoc) });
+      return send(res, 200, { queue: (await database.collection("queue").find().sort({ createdAt: -1 }).toArray()).map(normalizeDoc) });
     }
     if (req.method === "POST") {
       const customer = String(body.customer || "").trim().slice(0, 120);
@@ -726,6 +900,15 @@ async function handler(req, res) {
     await requireRole(req, database, ["admin", "moderator"]);
     const id = path.split("/").pop();
     if (!ObjectId.isValid(id)) return send(res, 404, { error: "Queue ticket not found." });
+    const ticket = await database.collection('queue').findOne({ _id: new ObjectId(id) });
+    if (!ticket) return send(res, 404, { error: 'Queue ticket not found.' });
+    if (body.status && ticket.status === body.status) return send(res, 200, { ok: true });
+    if (['done', 'cancelled'].includes(ticket.status) && body.status) return send(res, 409, { error: 'This customer has already left the active queue.' });
+    if (body.status === 'serving') {
+      const served = await startServing(database, id);
+      await messaging.notify(database, served.userId, `It is your turn at The Barber Co. Queue #${served.queueNumber}. Please approach the counter.`, `queue:${id}:serving`);
+      return send(res, 200, { ok: true });
+    }
     const allowed = ["waiting", "serving", "done", "cancelled"];
     const customer = body.customer == null ? null : String(body.customer).trim().slice(0, 120);
     if (body.status != null && !allowed.includes(body.status)) return send(res, 400, { error: "Choose a valid queue status." });
@@ -741,13 +924,20 @@ async function handler(req, res) {
     if (body.status === "serving") update.calledAt = new Date();
     if (body.status === "done") Object.assign(update, { paid: true, paidAt: new Date() });
     await database.collection("queue").updateOne({ _id: new ObjectId(id) }, { $set: update });
+    if (body.status === 'serving') await messaging.notify(database, ticket.userId, `It is your turn at The Barber Co. Queue #${ticket.queueNumber}. Please approach the counter.`, `queue:${id}:serving`);
+    if (body.status === 'cancelled') await messaging.notify(database, ticket.userId, `Your Barber Co queue ticket #${ticket.queueNumber} was cancelled. Contact the counter if this is unexpected.`, `queue:${id}:cancelled`);
     return send(res, 200, { ok: true });
   }
 
   if (req.method === "POST" && path.startsWith("/admin/queue/") && path.endsWith("/paid")) {
     await requireRole(req, database, ["admin", "moderator"]);
     const id = path.split("/")[3];
-    await database.collection("queue").updateOne({ _id: new ObjectId(id) }, { $set: { status: "done", paid: true, paidAt: new Date(), updatedAt: new Date() } });
+    if (!ObjectId.isValid(id)) return send(res, 404, { error: 'Queue ticket not found.' });
+    const ticket = await database.collection('queue').findOne({ _id: new ObjectId(id) });
+    if (!ticket) return send(res, 404, { error: 'Queue ticket not found.' });
+    if (ticket.status === 'done') return send(res, 200, { ok: true });
+    if (ticket.status === 'cancelled') return send(res, 409, { error: 'A cancelled queue ticket cannot be completed.' });
+    await database.collection("queue").updateOne({ _id: new ObjectId(id), status: ticket.status }, { $set: { status: "done", paid: true, paidAt: new Date(), updatedAt: new Date() } });
     return send(res, 200, { ok: true });
   }
 
@@ -755,7 +945,7 @@ async function handler(req, res) {
     await requireRole(req, database, ["admin"]);
     res.setHeader('Cache-Control', 'no-store');
     const [appointments, queue, users, services, barbers] = await Promise.all([
-      database.collection("appointments").find().toArray(),
+      database.collection("appointments").find({}, { projection: { paymentProof: 0 } }).toArray(),
       database.collection("queue").find().toArray(),
       database.collection("users").countDocuments({ role: "customer" }),
       database.collection("services").find().toArray(),
@@ -776,6 +966,7 @@ module.exports = async (req, res) => {
   try {
     await handler(req, res);
   } catch (error) {
+    if (error.retryAfter) res.setHeader('Retry-After', String(error.retryAfter));
     send(res, error.status || 500, { error: error.message || "Server error." });
   }
 };

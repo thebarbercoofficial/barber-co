@@ -26,10 +26,7 @@ const BarberCo = (() => {
     booking: null,
     reportDate: new Date().toISOString().slice(0, 10),
     queue: [],
-    accounts: [
-      { id: "admin", name: "The Barber Co Admin", email: "thebarberco.official@gmail.com", password: "BarberAdmin_2026_x7Qm92", role: "admin", phone: "" },
-      { id: "moderator", name: "Front Desk Staff", email: "staff@thebarberco.local", password: "Staff_2026_x7Qm92", role: "moderator", phone: "" }
-    ],
+    accounts: [],
     services: [
       { id: "basic", name: "Basic Haircut", price: 150, duration: "30 min", detail: "Clean haircut finished with pomade.", icon: "CUT" },
       { id: "shave", name: "Haircut + Shave", price: 200, duration: "45 min", detail: "Haircut paired with a sharp beard shave.", icon: "SHV" },
@@ -54,18 +51,7 @@ const BarberCo = (() => {
   if (!Array.isArray(state.queue)) state.queue = [];
   if (!Array.isArray(state.services)) state.services = structuredClone(defaults.services);
   if (!Array.isArray(state.appointments)) state.appointments = [];
-  if (!Array.isArray(state.accounts)) state.accounts = structuredClone(defaults.accounts);
-  const protectedAdmin = defaults.accounts[0];
-  const savedAdmin = state.accounts.find((account) => String(account.email).toLowerCase() === protectedAdmin.email);
-  if (savedAdmin) {
-    Object.assign(savedAdmin, { id: protectedAdmin.id, name: savedAdmin.name || protectedAdmin.name, email: protectedAdmin.email, password: savedAdmin.password || protectedAdmin.password, role: "admin" });
-  } else {
-    state.accounts.unshift(structuredClone(protectedAdmin));
-  }
-  if (String(state.user?.email || "").toLowerCase() === protectedAdmin.email) {
-    state.user.role = "admin";
-    state.user.name = state.user.name || protectedAdmin.name;
-  }
+  state.accounts = [];
   state.barbers = state.barbers.filter((barber) => !["michael", "james", "daniel"].includes(barber.id));
   state.appointments = (state.appointments || []).filter((item) => ![8, 9, 10, 11].includes(Number(item.id)));
   if (["michael", "james", "daniel"].includes(state.selectedBarberId)) state.selectedBarberId = "";
@@ -95,6 +81,7 @@ const BarberCo = (() => {
   }
 
   function canAccess(level = "moderator") {
+    if (!isAuthenticated()) return false;
     const role = currentRole();
     if (level === "admin") return role === "admin";
     if (level === "moderator") return role === "admin" || role === "moderator";
@@ -107,6 +94,20 @@ const BarberCo = (() => {
     save();
   }
 
+  if (/\/admin-[a-z-]+\.html$/.test(location.pathname)) {
+    const app = document.querySelector('#app');
+    if (app) app.hidden = true;
+    api('/me').then((payload) => {
+      setSession(payload);
+      const limited = /\/admin-(logbook|schedule)\.html$/.test(location.pathname);
+      if (payload.user.role !== 'admin' && !(limited && payload.user.role === 'moderator')) {
+        location.replace(payload.user.role === 'moderator' ? 'admin-logbook.html' : 'index.html');
+        return;
+      }
+      if (app) app.hidden = false;
+    }).catch(() => { clearSession(); location.replace('login.html'); });
+  }
+
   async function api(path, options = {}) {
     if (!resolvedApiBase) {
       const error = new Error("Backend is not connected.");
@@ -115,6 +116,8 @@ const BarberCo = (() => {
     }
     const token = authToken();
     const response = await fetch(`${resolvedApiBase}/api${path}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(20000),
       ...options,
       headers: {
         "Content-Type": "application/json",
@@ -126,6 +129,7 @@ const BarberCo = (() => {
     if (!response.ok) {
       const error = new Error(data.error || "Request failed.");
       error.status = response.status;
+      error.verificationRequired = data.verificationRequired;
       throw error;
     }
     return data;
@@ -153,7 +157,8 @@ const BarberCo = (() => {
   }
 
   function save() {
-    localStorage.setItem("barberCoState", JSON.stringify(state));
+    try { localStorage.setItem("barberCoState", JSON.stringify(state)); }
+    catch { /* Storage limits must not turn successful server actions into failures. */ }
   }
 
   function peso(value) {
@@ -229,16 +234,9 @@ const BarberCo = (() => {
     };
     window.addEventListener("scroll", updateScrollProgress, { passive: true });
     updateScrollProgress();
-    document.addEventListener("click", (event) => {
-      const link = event.target.closest?.("a[href]");
-      if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const href = link.getAttribute("href") || "";
-      if (!href || href.startsWith("#") || href.startsWith("http") || href.startsWith("mailto:") || link.target === "_blank" || link.hasAttribute("download")) return;
-      event.preventDefault();
-      document.body.classList.add("is-leaving");
-      window.setTimeout(() => { window.location.href = href; }, 180);
-    });
-    if (!staff) initMotion();
+    const transaction = /\/(login|register|booking|payment|user-profile)\.html$/.test(location.pathname);
+    document.body.classList.toggle('transaction-page', transaction);
+    if (!staff && !transaction) initMotion();
     requestAnimationFrame(() => document.body.classList.add("is-loaded"));
   }
 

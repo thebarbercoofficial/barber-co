@@ -34,8 +34,9 @@ function callNextLocal() {
 }
 
 async function render() {
+  const summaries = Promise.allSettled([api('/admin/queue'), api('/admin/appointments')]);
   const analytics = await getAnalytics();
-  const results = await Promise.allSettled([api('/admin/queue'), api('/admin/appointments')]);
+  const results = await summaries;
   const queue = results[0].status === 'fulfilled' ? results[0].value.queue.filter((item) => ['waiting', 'serving'].includes(item.status)) : [];
   const requests = results[1].status === 'fulfilled' ? results[1].value.appointments.filter((item) => item.status === 'pending') : [];
   const dateLabel = new Intl.DateTimeFormat('en-PH', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'Asia/Manila' }).format(new Date());
@@ -78,6 +79,40 @@ async function render() {
   });
   initHeader("admin");
   BarberAnalytics.mount(analytics);
+  const metricKeys = ['customers', 'bookings', 'revenue', 'waiting'];
+  document.querySelectorAll('.metric-grid .metric').forEach((node, index) => { node.dataset.metric = metricKeys[index]; });
+  document.querySelector('[data-metric="revenue"] small').textContent = 'All-time collected / paid only';
+  document.querySelector('.workspace-heading').insertAdjacentHTML('beforeend', '<small data-dashboard-sync role="status">Live updates connected</small>');
 }
 
 render();
+let dashboardBusy = false;
+async function refreshDashboard() {
+  if (dashboardBusy || document.hidden || !document.querySelector('[data-dashboard-sync]')) return;
+  dashboardBusy = true;
+  try {
+    const [analytics, line, schedule] = await Promise.all([api('/admin/analytics'), api('/admin/queue'), api('/admin/appointments')]);
+    ['customers', 'bookings', 'revenue', 'waiting'].forEach((key) => {
+      document.querySelector(`[data-metric="${key}"] strong`).textContent = key === 'revenue' ? peso(analytics.totals[key]) : analytics.totals[key];
+    });
+    BarberAnalytics.refresh?.(analytics);
+    const panels = document.querySelectorAll('.dashboard-layout > div:first-child > section');
+    const active = line.queue.filter((item) => ['waiting', 'serving'].includes(item.status));
+    const pending = schedule.appointments.filter((item) => item.status === 'pending');
+    for (const [index, items] of [[0, active], [1, pending]]) {
+      const panel = panels[index];
+      panel.querySelector('.count-badge').textContent = items.length;
+      panel.querySelectorAll('.compact-row,.staff-empty').forEach((node) => node.remove());
+      const markup = items.slice(0, 6).map((item) => `<div class="compact-row"><div class="row-main"><strong>${safeText(item.customer)}</strong><small>${index ? `${safeText(item.date)} / ${safeText(item.time)}` : `#${String(item.queueNumber).padStart(2, '0')} / ${item.status === 'serving' ? 'Serving' : 'Waiting'}`}</small></div><a class="text-action" href="${index ? 'admin-schedule.html' : 'admin-logbook.html'}">View</a></div>`).join('') || '<div class="staff-empty compact"><strong>No active records</strong></div>';
+      panel.querySelector('.panel-heading').insertAdjacentHTML('afterend', markup);
+    }
+    document.querySelector('[data-call-next]').disabled = !active.some((item) => item.status === 'waiting') || active.some((item) => item.status === 'serving');
+    document.querySelector('[data-dashboard-sync]').textContent = `Updated ${new Date().toLocaleTimeString()}`;
+  } catch (error) {
+    document.querySelector('[data-dashboard-sync]').textContent = 'Connection interrupted; showing last update';
+    if ([401, 403].includes(error.status)) location.replace('login.html');
+  } finally { dashboardBusy = false; }
+}
+setInterval(refreshDashboard, 5000);
+document.addEventListener('visibilitychange', refreshDashboard);
+window.addEventListener('focus', refreshDashboard);

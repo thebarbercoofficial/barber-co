@@ -73,11 +73,13 @@ async function render() {
     const date = dateInput.value;
     const time = timeInput.value;
     barberInput.querySelectorAll("option").forEach((option) => {
-      if (!option.value) return;
+      if (!option.value || option.value === "any") return;
       const barber = barbers.find((item) => item.id === option.value);
       option.disabled = barber?.status === "on-leave";
       option.textContent = `${barber?.name || option.textContent}${barber?.status === "on-leave" ? " - on leave" : ""}`;
     });
+    const anyOption = barberInput.querySelector('option[value="any"]');
+    if (anyOption) anyOption.textContent = "Any available barber";
     if (!date || !time) {
       barberHelp.textContent = "Select a date and time to check barber availability.";
       return;
@@ -87,18 +89,24 @@ async function render() {
       const payload = await api(`/availability?${query}`);
       if (request !== availabilityRequest) return;
       const unavailable = new Set(payload.unavailableBarberIds || []);
+      let availableCount = 0;
       barberInput.querySelectorAll("option").forEach((option) => {
-        if (!option.value) return;
+        if (!option.value || option.value === "any") return;
         const barber = barbers.find((item) => item.id === option.value);
         const busy = unavailable.has(option.value);
         option.disabled = busy || barber?.status === "on-leave";
         option.textContent = `${barber?.name || option.textContent}${busy ? " - unavailable" : barber?.status === "on-leave" ? " - on leave" : ""}`;
+        if (!option.disabled) availableCount += 1;
       });
-      if (barberInput.selectedOptions[0]?.disabled) {
-        barberInput.value = "";
-        toast("That barber is unavailable at this time. Choose another barber or assign later.");
+      if (anyOption) {
+        anyOption.disabled = availableCount === 0;
+        anyOption.textContent = availableCount ? `Any available barber (${availableCount} available)` : "Any available barber - none free";
       }
-      barberHelp.textContent = unavailable.size ? "Unavailable barbers are disabled for this timeslot." : "All active barbers are available for this timeslot.";
+      if (barberInput.selectedOptions[0]?.disabled) {
+        barberInput.value = availableCount ? "any" : "";
+        toast(availableCount ? "That barber is unavailable at this time. Any available barber is selected." : "No barber is available at this time. Choose another time.");
+      }
+      barberHelp.textContent = availableCount ? `${availableCount} barber${availableCount === 1 ? " is" : "s are"} available. Any available barber will be assigned and reserved automatically.` : "No barbers are available for this timeslot.";
     } catch (error) {
       if (request === availabilityRequest) barberHelp.textContent = error.message || "Availability could not be checked.";
     }
@@ -144,15 +152,16 @@ async function render() {
       return;
     }
     if (timeInput.disabled || !timeInput.value) return toast("Choose an available date and time during shop hours.");
+    if (hasBarbers && (!barberInput.value || barberInput.selectedOptions[0]?.disabled)) return toast("Choose a barber who is available at that time.");
     const service = byId(state.services, data.get("service"));
     const booking = { customer: state.user.name, serviceId: data.get("service"), barberId: data.get("barber"), date: data.get("date"), time: data.get("time"), request: data.get("request"), source: "online", bookingFee: onlineFee, total: Number(service.price) + onlineFee };
     submitButton.disabled = true;
     submitButton.textContent = "Reserving slot...";
     try {
       const payload = await api("/appointment-holds", { method: "POST", body: JSON.stringify(booking) });
-      state.booking = { ...booking, holdId: payload.hold.id, holdExpiresAt: payload.hold.expiresAt };
+      state.booking = { ...booking, barberId: payload.hold.barberId || booking.barberId, holdId: payload.hold.id, holdExpiresAt: payload.hold.expiresAt };
       state.selectedServiceId = booking.serviceId;
-      state.selectedBarberId = booking.barberId;
+      state.selectedBarberId = booking.barberId === "any" ? "any" : booking.barberId;
       save();
       location.href = "payment.html";
     } catch (error) {

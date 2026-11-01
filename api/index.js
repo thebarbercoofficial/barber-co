@@ -160,6 +160,24 @@ async function lockAppointmentSlots(database, appointmentId, date, barberId, tim
   }
 }
 
+async function reserveAnyBarber(database, appointmentId, date, time, durationMinutes, expiresAt) {
+  const candidates = await database.collection("barbers").find({ status: { $nin: ["fired", "on-leave"] } }).toArray();
+  const unavailable = new Set(await unavailableBarbers(database, date, time, durationMinutes));
+  for (const barber of candidates) {
+    const barberId = barber.slug || String(barber._id);
+    if (unavailable.has(barberId) || unavailable.has(String(barber._id))) continue;
+    try {
+      await lockAppointmentSlots(database, appointmentId, date, String(barber._id), time, durationMinutes, expiresAt);
+      return barber;
+    } catch (error) {
+      if (error.status !== 409) throw error;
+    }
+  }
+  const error = new Error("No barber is available at that time. Choose another time or a specific barber.");
+  error.status = 409;
+  throw error;
+}
+
 function send(res, status, data) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
@@ -446,7 +464,8 @@ async function handler(req, res) {
     const date = String(body.date || "");
     const time = String(body.time || "");
     const serviceId = String(body.serviceId || "");
-    const barberId = String(body.barberId || "");
+    let barberId = String(body.barberId || "");
+    const anyBarber = barberId === "any";
     const appointmentAt = new Date(`${date}T${time}:00+08:00`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time) || appointmentAt.getTime() <= Date.now()) {
       return send(res, 400, { error: "Choose a valid future appointment date and time." });
@@ -454,7 +473,7 @@ async function handler(req, res) {
     const service = await database.collection("services").findOne({ $or: [{ slug: serviceId }, ...(ObjectId.isValid(serviceId) ? [{ _id: new ObjectId(serviceId) }] : [])], active: { $ne: false } });
     if (!service) return send(res, 400, { error: "Choose an available service." });
     let selectedBarber = null;
-    if (barberId) {
+    if (barberId && !anyBarber) {
       selectedBarber = await database.collection("barbers").findOne({ $or: [{ slug: barberId }, ...(ObjectId.isValid(barberId) ? [{ _id: new ObjectId(barberId) }] : [])], status: { $nin: ["fired", "on-leave"] } });
       if (!selectedBarber) return send(res, 400, { error: "The selected barber is not available." });
     }
@@ -469,7 +488,7 @@ async function handler(req, res) {
       await database.collection("appointmentSlots").deleteMany({ appointmentId: { $in: previousIds } });
       await database.collection("appointmentHolds").deleteMany({ userId: user._id });
     }
-    if (barberId) {
+    if (barberId && !anyBarber) {
       const unavailable = await unavailableBarbers(database, date, time, durationMinutes);
       if (unavailable.includes(barberId)) return send(res, 409, { error: "That barber is already reserved for this time. Choose another barber or time." });
     }
@@ -479,7 +498,18 @@ async function handler(req, res) {
       demoPayment: settings.paymentMode === 'demo',
       expiresAt: new Date(Date.now() + 10 * 60 * 1000), createdAt: new Date()
     };
-    await lockAppointmentSlots(database, hold._id, date, selectedBarber ? String(selectedBarber._id) : "", time, durationMinutes, hold.expiresAt);
+    try {
+      if (anyBarber) {
+        selectedBarber = await reserveAnyBarber(database, hold._id, date, time, durationMinutes, hold.expiresAt);
+        barberId = selectedBarber.slug || String(selectedBarber._id);
+        hold.barberId = barberId;
+      } else {
+        await lockAppointmentSlots(database, hold._id, date, selectedBarber ? String(selectedBarber._id) : "", time, durationMinutes, hold.expiresAt);
+      }
+    } catch (error) {
+      await database.collection("appointmentSlots").deleteMany({ appointmentId: String(hold._id) });
+      throw error;
+    }
     try {
       await database.collection("appointmentHolds").insertOne(hold);
     } catch (error) {
@@ -747,11 +777,6 @@ async function handler(req, res) {
     }
     const service = await database.collection("services").findOne({ $or: [{ slug: body.serviceId }, ...(ObjectId.isValid(body.serviceId) ? [{ _id: new ObjectId(body.serviceId) }] : [])], active: { $ne: false } });
     if (!service) return send(res, 400, { error: "Choose an available service." });
-    let selectedBarber = null;
-    if (body.barberId) {
-      selectedBarber = await database.collection("barbers").findOne({ $or: [{ slug: body.barberId }, ...(ObjectId.isValid(body.barberId) ? [{ _id: new ObjectId(body.barberId) }] : [])], status: { $nin: ["fired", "on-leave"] } });
-      if (!selectedBarber) return send(res, 400, { error: "The selected barber is not available." });
-    }
     const settings = mergedSettings(await database.collection("settings").findOne({ _id: "shop" }));
     const durationMinutes = Math.max(30, Number.parseInt(service.duration, 10) || 30);
     const window = bookingWindow(date, time, settings, durationMinutes);
@@ -762,12 +787,19 @@ async function handler(req, res) {
       userId: user._id,
       expiresAt: { $gt: new Date() }
     }) : null;
-    if (holdId && (!hold || hold.serviceId !== body.serviceId || hold.barberId !== (body.barberId || "") || hold.date !== date || hold.time !== time)) {
+    const requestedBarberId = String(body.barberId || "");
+    const barberId = requestedBarberId === "any" && hold ? hold.barberId : requestedBarberId;
+    if (holdId && (!hold || hold.serviceId !== body.serviceId || (requestedBarberId !== "any" && hold.barberId !== requestedBarberId) || hold.date !== date || hold.time !== time)) {
       return send(res, 409, { error: "Your temporary reservation expired or changed. Return to booking and choose the slot again." });
     }
-    if (body.barberId) {
+    let selectedBarber = null;
+    if (barberId) {
+      selectedBarber = await database.collection("barbers").findOne({ $or: [{ slug: barberId }, ...(ObjectId.isValid(barberId) ? [{ _id: new ObjectId(barberId) }] : [])], status: { $nin: ["fired", "on-leave"] } });
+      if (!selectedBarber) return send(res, 400, { error: "The selected barber is not available." });
+    }
+    if (barberId) {
       const unavailable = await unavailableBarbers(database, date, time, durationMinutes, hold ? holdId : "");
-      if (unavailable.includes(body.barberId)) return send(res, 409, { error: "That barber was just booked for this time. Choose another barber or time." });
+      if (unavailable.includes(barberId)) return send(res, 409, { error: "That barber was just booked for this time. Choose another barber or time." });
     }
     const demoPayment = settings.paymentMode === 'demo';
     if (!paymentConfigured(settings)) return send(res, 409, { error: 'Online payments are not configured. Please contact the shop.' });
@@ -784,7 +816,7 @@ async function handler(req, res) {
     await validateReceipt(paymentProof);
     const queueNumber = await nextQueueNumber(database);
     const bookingFee = Math.max(0, Number(settings.bookingFee) || 0);
-    const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId: body.barberId || "", date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof, demoPayment, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
+    const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId, date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof, demoPayment, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
     if (hold && selectedBarber) {
       const transfer = await database.collection("appointmentSlots").updateMany(
         { appointmentId: holdId, expiresAt: { $gt: new Date() } },

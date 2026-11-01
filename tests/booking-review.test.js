@@ -12,8 +12,9 @@ const secret = 'isolated-booking-review-secret';
 const users = ['admin', 'moderator', 'customer'].map((role) => ({ _id: new ObjectId(), name: `Review ${role}`, email: `${role}@review.test`, role }));
 const service = { _id: new ObjectId(), slug: 'basic', name: 'Basic Haircut', price: 150, duration: '30 min', active: true };
 const barber = { _id: new ObjectId(), slug: 'review-barber', name: 'Review Barber', status: 'active' };
+const secondBarber = { _id: new ObjectId(), slug: 'review-barber-2', name: 'Second Review Barber', status: 'active' };
 const settings = { _id: 'shop', paymentMode: 'live', bookingFee: 100, gcash: { enabled: true, accountName: 'Test Shop', accountNumber: '09123456789' }, maya: { enabled: false } };
-const records = { users, services: [service], barbers: [barber], settings: [settings], appointments: [], appointmentHolds: [], appointmentSlots: [], counters: [{ _id: 'queue', value: 0 }] };
+const records = { users, services: [service], barbers: [barber, secondBarber], settings: [settings], appointments: [], appointmentHolds: [], appointmentSlots: [], counters: [{ _id: 'queue', value: 0 }] };
 const equal = (a, b) => String(a) === String(b);
 function matches(item, query = {}) {
   return Object.entries(query).every(([key, value]) => {
@@ -89,8 +90,9 @@ async function main() {
   try {
     assert.equal((await request('/admin/appointments', null)).status, 401);
     assert.equal((await request('/admin/appointments', 'customer')).status, 403);
-    const held = await request('/appointment-holds', 'admin', booking);
+    const held = await request('/appointment-holds', 'admin', { ...booking, barberId: 'any' });
     assert.equal(held.status, 201, JSON.stringify(held.data));
+    assert.equal(held.data.hold.barberId, 'review-barber', 'Any-barber holds should save the assigned barber, not the any sentinel');
     let list = await request('/admin/appointments');
     assert.equal(list.data.reservations.length, 1);
     assert.equal(list.data.reservations[0].customer, users[0].name);
@@ -100,8 +102,9 @@ async function main() {
     assert.equal((await request('/admin/appointments')).data.reservations[0].customer, users[0].name, 'Existing holds should show the account name too');
     assert.equal((await request(`/admin/appointments/${held.data.hold.id}`, 'admin', { status: 'confirmed' }, 'PATCH')).status, 404, 'Unpaid holds must not be accepted');
     assert.equal((await request('/appointment-holds', 'customer', booking)).status, 409, 'Held barber/time must remain reserved');
-    const submitted = await request('/appointments', 'admin', { ...booking, holdId: held.data.hold.id, paymentMethod: 'GCash', paymentProof: proof });
+    const submitted = await request('/appointments', 'admin', { ...booking, barberId: 'any', holdId: held.data.hold.id, paymentMethod: 'GCash', paymentProof: proof });
     assert.equal(submitted.status, 201, JSON.stringify(submitted.data));
+    assert.equal(submitted.data.appointment.barberId, 'review-barber', 'The assigned barber must remain attached when the hold becomes a booking');
     list = await request('/admin/appointments', 'moderator');
     assert.equal(list.data.reservations.length, 0);
     assert.equal(list.data.appointments[0].mongoId, submitted.data.appointment.id);
@@ -109,6 +112,18 @@ async function main() {
     assert.equal((await request('/appointments/mine')).data.appointments[0].id, submitted.data.appointment.id);
     assert.equal((await request(`/admin/appointments/${submitted.data.appointment.id}`, 'moderator', { status: 'confirmed' }, 'PATCH')).status, 200);
     assert.equal((await request('/appointments/mine')).data.appointments[0].status, 'confirmed');
+    const anyBooking = { ...booking, barberId: 'any', time: '15:00' };
+    const anyFirst = await request('/appointment-holds', 'admin', anyBooking);
+    const anySecond = await request('/appointment-holds', 'customer', anyBooking);
+    const anyThird = await request('/appointment-holds', 'moderator', anyBooking);
+    assert.equal(anyFirst.status, 201, JSON.stringify(anyFirst.data));
+    assert.equal(anySecond.status, 201, JSON.stringify(anySecond.data));
+    assert.notEqual(anyFirst.data.hold.barberId, anySecond.data.hold.barberId, 'Any-barber reservations must select a different available barber');
+    assert.equal(anyThird.status, 409, 'Any-barber reservation must fail when all barbers are reserved');
+    const anyHoldIds = [anyFirst.data.hold.id, anySecond.data.hold.id];
+    records.appointmentHolds = records.appointmentHolds.filter((hold) => !anyHoldIds.includes(String(hold._id)));
+    records.appointmentSlots = records.appointmentSlots.filter((slot) => !anyHoldIds.includes(slot.appointmentId));
+    records.barbers = [barber];
     records.appointmentHolds.push({ _id: new ObjectId(), userId: users[0]._id, expiresAt: new Date(Date.now() - 1000) });
     assert.equal((await request('/admin/appointments')).data.reservations.length, 0, 'Expired holds must not appear');
     settings.gcash.accountNumber = '';
@@ -163,9 +178,13 @@ async function main() {
       await page.locator('[name="date"]').fill(booking.date);
       await page.locator('[name="date"]').dispatchEvent('change');
       await page.locator('[name="time"]').selectOption(time);
-      await page.locator('[name="barber"]').selectOption('review-barber');
+      assert.ok(await page.locator('[name="barber"] option[value="any"]').count(), 'Booking form should offer automatic barber assignment');
+      assert.ok(await page.locator('[name="barber"] option[value="review-barber"]').count(), 'Booking form should offer specific barbers');
+      const chooseAnyBarber = (role === 'admin' && width === 1440) || (role === 'customer' && mode === 'demo');
+      await page.locator('[name="barber"]').selectOption(chooseAnyBarber ? 'any' : 'review-barber');
       await page.getByRole('button', { name: 'Proceed to payment' }).click();
       await page.waitForURL('**/payment.html');
+      await page.getByText('Review Barber', { exact: true }).waitFor();
       assert.equal(records.appointments.filter((item) => item.time === time).length, 0);
       const staff = await browser.newContext({ viewport: { width, height: 900 } });
       await staff.addInitScript(({ base, auth, user }) => {
@@ -204,6 +223,7 @@ async function main() {
       await page.waitForURL(role === 'admin' ? '**/admin-schedule.html' : '**/user-profile.html#bookings');
       const saved = records.appointments.find((item) => item.time === time);
       assert.ok(saved, 'The browser submission must reach the API database');
+      assert.equal(saved.barberId, 'review-barber', 'Online booking must store the actual barber assigned by the hold');
       assert.equal(saved.demoPayment, mode === 'demo');
       assert.ok(saved.paymentProof.startsWith('data:image/png;base64,'), 'Receipt must be stored in both modes');
       if (role === 'admin') await page.locator(`[data-status="${saved._id}:confirmed"]`).waitFor();

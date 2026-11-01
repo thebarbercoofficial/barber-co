@@ -352,9 +352,10 @@ const BarberCo = (() => {
   }
 
   function barberOptions(selectedId = state.selectedBarberId) {
-    const available = barbers.filter((barber) => barber.status !== "fired");
-    if (!available.length) return `<option value="">Assign later</option>`;
-    return `<option value="">Assign later</option>${available.map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""} ${barber.status === "on-leave" ? "disabled" : ""}>${barber.name}${barber.status === "on-leave" ? " - on leave" : ""}</option>`).join("")}`;
+    const active = barbers.filter((barber) => barber.status !== "fired" && barber.status !== "on-leave");
+    if (!active.length) return `<option value="">Assign later</option>${barbers.filter((barber) => barber.status === "on-leave").map((barber) => `<option value="${barber.id}" disabled>${barber.name} - on leave</option>`).join("")}`;
+    const anySelected = !selectedId || selectedId === "any";
+    return `<option value="any" ${anySelected ? "selected" : ""}>Any available barber</option>${barbers.filter((barber) => barber.status !== "fired").map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""} ${barber.status === "on-leave" ? "disabled" : ""}>${barber.name}${barber.status === "on-leave" ? " - on leave" : ""}</option>`).join("")}`;
   }
 
   return { state, barbers, save, peso, byId, initials, avatar, toast, initHeader, nav, shopEndcap, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, loadSettings, setSession, clearSession, authToken, isAuthenticated, currentRole, canAccess, icon, safeText };

@@ -384,9 +384,11 @@ async function main() {
     assert.equal(await signupPage.evaluate(() => JSON.parse(localStorage.getItem('barberCoState')).user.emailVerified), true);
     await signupPage.goto(`${base}/login.html`);
     await signupPage.getByRole('button', { name: 'Forgot password?' }).click();
+    assert.equal(await signupPage.locator('[data-forgot-email]').evaluate((element) => getComputedStyle(element).borderColor), 'rgb(145, 133, 114)');
     await signupPage.locator('[data-forgot-email]').fill('browser@isolated.test');
     await signupPage.getByRole('button', { name: 'Send code', exact: true }).click();
     await signupPage.locator('[data-reset-modal].show').waitFor();
+    assert.deepEqual(await signupPage.locator('[data-reset-modal] input').evaluateAll((elements) => elements.map((element) => getComputedStyle(element).borderColor)), Array(4).fill('rgb(145, 133, 114)'));
     await signupPage.locator('[data-reset-code]').fill(codeFor('browser@isolated.test'));
     await signupPage.locator('[data-reset-password]').fill('Browser-reset-password-2026');
     await signupPage.locator('[data-reset-confirm]').fill('Browser-reset-password-2026');

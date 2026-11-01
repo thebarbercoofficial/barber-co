@@ -1699,7 +1699,7 @@ body.is-loaded .grid-5 > *:nth-child(5) {
 .login-card input,
 .login-modal input {
   min-height: 46px;
-  border-color: rgba(255, 255, 255, 0.18);
+  border-color: #918572;
   background: rgba(255, 255, 255, 0.96);
   color: var(--ink);
 }

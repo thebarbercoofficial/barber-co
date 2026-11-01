@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 
 const site = 'https://thebarbercoofficial.github.io/barber-co/';
-const api = 'https://barber-co-seven.vercel.app/api';
+const api = 'https://barber-co-api.onrender.com/api';
 
 async function main() {
   const timings = [];
@@ -20,8 +20,11 @@ async function main() {
   assert.equal(settings.paymentMode, 'live');
   assert.equal(settings.allowDemoPayments, false);
   for (const path of ['/admin/analytics', '/admin/appointments', '/admin/queue', '/admin/notifications', '/admin/appointments/000000000000000000000000/proof']) await get(path, 401);
+  const shared = await (await fetch(`${site}js/shared.js?v=api-switch-20261101`)).text();
+  assert.match(shared, /https:\/\/barber-co-api\.onrender\.com/);
+  assert.doesNotMatch(shared, /barber-co-seven\.vercel\.app/);
   const html = await (await fetch(`${site}register.html`)).text();
-  assert.match(html, /production-20261029/);
+  assert.match(html, /api-switch-20261101/);
   const script = await (await fetch(`${site}js/pages/register.js?v=production-20261029`)).text();
   assert.match(script, /confirmPassword/);
   const browser = await chromium.launch({ channel: 'chrome', headless: true });

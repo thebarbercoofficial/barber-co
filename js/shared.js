@@ -56,7 +56,7 @@ const BarberCo = (() => {
   state.appointments = (state.appointments || []).filter((item) => ![8, 9, 10, 11].includes(Number(item.id)));
   if (["michael", "james", "daniel"].includes(state.selectedBarberId)) state.selectedBarberId = "";
   const barbers = state.barbers;
-  const productionApiBase = "https://barber-co-seven.vercel.app";
+  const productionApiBase = "https://barber-co-api.onrender.com";
   const configuredApiBase = localStorage.getItem("barberCoApiBase") || window.BARBER_CO_API_BASE || "";
   const apiBase = configuredApiBase || (location.protocol.startsWith("http") && !location.hostname.endsWith(".github.io") ? location.origin : "");
   const resolvedApiBase = apiBase || (location.hostname.endsWith(".github.io") ? productionApiBase : "");

@@ -251,7 +251,7 @@ async function main() {
     await setup.locator('[data-barber-rows] tr').waitFor();
     assert.equal(await setup.locator('[data-barber-rows] tr').count(), 1);
     const cells = await setup.locator('[data-barber-rows] tr').first().locator('td').allTextContents();
-    assert.deepEqual(cells, ['3', '0', '0', '0', '750.00', '2'], 'Reports must render actual API statistics, not catalog placeholders');
+    assert.deepEqual(cells, ['3', '0', '0', '0', '750.00'], 'Reports must render the five API performance metrics, not catalog placeholders');
     await setup.goto(`${base}/admin-profile.html`);
     await setup.locator('[name="demoPayments"]').waitFor();
     assert.equal(await setup.locator('[name="demoPayments"]').isChecked(), true);

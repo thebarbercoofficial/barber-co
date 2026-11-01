@@ -25,7 +25,7 @@ function queueRows() {
   return active.map((item) => `
     <div class="appointment-row" data-ticket-row="${item.mongoId || item.id}">
       <span>Queue #${String(item.queueNumber).padStart(2, "0")}<br><small class="muted">${item.waitMinutes || 0} min estimate</small></span>
-      <strong>${escapeHtml(item.customer)}<br><small class="muted">${escapeHtml(item.cutName || byId(state.services, item.serviceId).name)} - ${peso(item.price || byId(state.services, item.serviceId).price)} - ${item.source === "shop-qr" ? "Customer QR" : "Staff entry"}</small></strong>
+      <strong>${escapeHtml(item.customer)}<br><small class="muted">${escapeHtml(item.cutName || byId(state.services, item.serviceId).name)} - ${peso(item.price || byId(state.services, item.serviceId).price)} - ${item.source === "shop-qr" ? "Customer QR" : "Staff entry"}</small>${item.emailConsent && item.contactEmail ? `<br><small class="muted">Email updates: ${escapeHtml(item.contactEmail)}</small>` : ''}</strong>
       <span class="queue-barber">${escapeHtml(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned')}</span>
       <span class="status-pill ${item.status}">${statusText(item.status)}</span>
       <span class="button-row">${['done', 'cancelled'].includes(item.status) ? '' : `<button class="icon-button" type="button" data-rename="${item.mongoId || item.id}" aria-label="Edit customer name" title="Edit customer name">${icon('Pencil')}</button>${item.status === 'waiting' ? `<button class="button primary small" type="button" data-status="${item.mongoId || item.id}:serving">Serve</button>` : `<button class="button primary small" type="button" disabled>Serving</button>`}<button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:done">Paid / done</button><button class="icon-button danger-icon" type="button" data-status="${item.mongoId || item.id}:cancelled" aria-label="Cancel customer" title="Cancel customer">${icon('X')}</button>`}</span>
@@ -82,6 +82,8 @@ async function initialize() {
         <form class="panel" id="check-in-customer" data-logbook-form>
           <div class="panel-heading"><h3>Check in a customer</h3>${icon('UserRoundPlus')}</div>
           <label>Customer call name<input name="customer" required maxlength="120" placeholder="Name or nickname to call out"></label>
+          <label>Email for updates (optional)<input name="contactEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label>
+          <label class="terms-consent"><span><input name="emailConsent" type="checkbox"><span>Customer asked to receive email when called or if this ticket is cancelled.</span></span></label>
           <label>Cut / service<select name="serviceId" required>${serviceOptions()}</select></label>
           <div class="form-row"><label>Price<input type="number" name="price" min="0" required value="150"></label><label>Estimated wait minutes<input type="number" name="waitMinutes" min="0" required value="30"></label></div>
           <label>Barber<select name="barberId"><option value="">Assign later</option>${barbers.filter((barber) => !["fired", "on-leave"].includes(barber.status)).map((barber) => `<option value="${barber.id}">${barber.name}</option>`).join("")}</select></label>
@@ -95,6 +97,9 @@ async function initialize() {
   document.querySelector('[name="serviceId"]').addEventListener("change", (event) => {
     document.querySelector('[name="price"]').value = byId(state.services, event.target.value).price || 0;
   });
+  const guestEmail = document.querySelector('[data-logbook-form] [name="contactEmail"]');
+  const guestEmailConsent = document.querySelector('[data-logbook-form] [name="emailConsent"]');
+  guestEmailConsent.addEventListener("change", () => { guestEmail.required = guestEmailConsent.checked; });
   document.querySelector('[data-queue-search]').addEventListener('input', updateQueueUI);
   document.querySelector('[data-queue-filter]').addEventListener('change', updateQueueUI);
 
@@ -105,7 +110,7 @@ async function initialize() {
     const service = byId(state.services, data.get("serviceId"));
     button.disabled = true;
     try {
-      const payload = await api("/admin/queue", { method: "POST", body: JSON.stringify({ customer: data.get("customer"), serviceId: data.get("serviceId"), cutName: service.name, price: Number(data.get("price")), waitMinutes: Number(data.get("waitMinutes")), barberId: data.get("barberId"), notes: data.get("notes") }) });
+      const payload = await api("/admin/queue", { method: "POST", body: JSON.stringify({ customer: data.get("customer"), contactEmail: data.get("contactEmail"), emailConsent: data.get("emailConsent") === "on", serviceId: data.get("serviceId"), cutName: service.name, price: Number(data.get("price")), waitMinutes: Number(data.get("waitMinutes")), barberId: data.get("barberId"), notes: data.get("notes") }) });
       toast(`Queue #${String(payload.ticket.queueNumber).padStart(2, "0")} added.`);
       event.target.reset();
       document.querySelector('[name="price"]').value = byId(state.services, document.querySelector('[name="serviceId"]').value).price || 0;

@@ -258,6 +258,31 @@ function normalizeDoc(doc) {
   return { ...doc, id: doc.slug || String(doc._id), mongoId: String(doc._id), _id: undefined };
 }
 
+function queueContact(body) {
+  const contactEmail = String(body.contactEmail || '').trim().toLowerCase();
+  const emailConsent = body.emailConsent === true;
+  if (contactEmail && (contactEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail))) throw Object.assign(new Error('Enter a valid email address.'), { status: 400 });
+  if (emailConsent && !contactEmail) throw Object.assign(new Error('Enter an email address to receive updates.'), { status: 400 });
+  return { contactEmail: emailConsent ? contactEmail : '', emailConsent };
+}
+
+function publicQueueTicket(ticket) {
+  if (!ticket) return null;
+  return normalizeDoc({
+    _id: ticket._id,
+    slug: ticket.slug,
+    queueNumber: ticket.queueNumber,
+    customer: ticket.customer,
+    serviceId: ticket.serviceId,
+    barberId: ticket.barberId,
+    cutName: ticket.cutName,
+    status: ticket.status,
+    source: ticket.source,
+    waitMinutes: ticket.waitMinutes,
+    createdAt: ticket.createdAt
+  });
+}
+
 function tokenFor(user) {
   return jwt.sign({ sub: String(user._id), role: user.role || "customer", version: user.sessionVersion || 0 }, jwtSecret, { expiresIn: "7d" });
 }
@@ -868,14 +893,16 @@ async function handler(req, res) {
     const account = req.headers.authorization ? await requireUser(req, database) : null;
     const customer = String(body.customer || "").trim().slice(0, 120);
     if (customer.length < 2) return send(res, 400, { error: "Enter the customer's name." });
+    const contact = queueContact(body);
+    if (contact.emailConsent && !security.emailReady()) return send(res, 503, { error: 'Email updates are unavailable right now. Join the line without email updates.' });
     const service = body.serviceId ? await database.collection("services").findOne({ $or: [{ slug: body.serviceId }, ...(ObjectId.isValid(body.serviceId) ? [{ _id: new ObjectId(body.serviceId) }] : [])], active: { $ne: false } }) : null;
     if (body.serviceId && !service) return send(res, 400, { error: "Choose an available service." });
     const waiting = await database.collection("queue").countDocuments({ status: { $in: ["waiting", "serving"] } });
     const queueNumber = await nextQueueNumber(database);
-    const ticket = { _id: new ObjectId(), customer, phone: "", serviceId: service?.slug || "", barberId: "", cutName: service?.name || "To be assigned", price: Number(service?.price || 0), waitMinutes: waiting * 30, source: "shop-qr", queueNumber, status: "waiting", paid: false, createdAt: new Date() };
+    const ticket = { _id: new ObjectId(), customer, phone: "", ...contact, serviceId: service?.slug || "", barberId: "", cutName: service?.name || "To be assigned", price: Number(service?.price || 0), waitMinutes: waiting * 30, source: "shop-qr", queueNumber, status: "waiting", paid: false, createdAt: new Date() };
     await database.collection("queue").insertOne(ticket);
     if (account) await database.collection('queue').updateOne({ _id: ticket._id }, { $set: { userId: account._id } });
-    return send(res, 201, { ticket: normalizeDoc(ticket) });
+    return send(res, 201, { ticket: publicQueueTicket(ticket), emailUpdatesEnabled: contact.emailConsent });
   }
 
   if (req.method === "GET" && path.startsWith("/queue/ticket/")) {
@@ -884,18 +911,18 @@ async function handler(req, res) {
     const ticket = await database.collection("queue").findOne({ _id: new ObjectId(id) });
     if (!ticket) return send(res, 404, { error: "Ticket not found." });
     const waitingAhead = await database.collection("queue").countDocuments({ status: "waiting", queueNumber: { $lt: ticket.queueNumber } });
-    return send(res, 200, { ticket: normalizeDoc(ticket), position: ticket.status === "waiting" ? waitingAhead + 1 : ticket.status === 'serving' ? 0 : null, waitingAhead: ticket.status === 'waiting' ? waitingAhead : 0 });
+    return send(res, 200, { ticket: publicQueueTicket(ticket), position: ticket.status === "waiting" ? waitingAhead + 1 : ticket.status === 'serving' ? 0 : null, waitingAhead: ticket.status === 'waiting' ? waitingAhead : 0 });
   }
 
   if (req.method === "GET" && path === "/queue") {
     res.setHeader('Cache-Control', 'no-store');
-    return send(res, 200, { queue: (await database.collection("queue").find({ status: { $in: ["waiting", "serving"] } }).sort({ queueNumber: 1 }).toArray()).map(normalizeDoc) });
+    return send(res, 200, { queue: (await database.collection("queue").find({ status: { $in: ["waiting", "serving"] } }).sort({ queueNumber: 1 }).toArray()).map(publicQueueTicket) });
   }
 
   if (req.method === "POST" && path === "/admin/queue/next") {
     await requireRole(req, database, ["admin", "moderator"]);
     const next = await startServing(database);
-    if (next) await messaging.notify(database, next.userId, `It is your turn at The Barber Co. Queue #${next.queueNumber}. Please approach the counter.`, `queue:${next._id}:serving`);
+    if (next) await messaging.notify(database, next.userId, `It is your turn at The Barber Co. Queue #${next.queueNumber}. Please approach the counter.`, `queue:${next._id}:serving`, { queueTicketId: next._id });
     return send(res, 200, { ticket: normalizeDoc(next) });
   }
 
@@ -907,9 +934,11 @@ async function handler(req, res) {
     if (req.method === "POST") {
       const customer = String(body.customer || "").trim().slice(0, 120);
       if (customer.length < 2) return send(res, 400, { error: "Enter the customer's name." });
+      const contact = queueContact(body);
+      if (contact.emailConsent && !security.emailReady()) return send(res, 503, { error: 'Email updates are unavailable right now. Add the customer without email updates.' });
       const queueNumber = await nextQueueNumber(database);
       const ticket = {
-        _id: new ObjectId(), customer, phone: "", serviceId: String(body.serviceId || ""),
+        _id: new ObjectId(), customer, phone: "", ...contact, serviceId: String(body.serviceId || ""),
         barberId: String(body.barberId || ""), cutName: String(body.cutName || "To be assigned").slice(0, 120),
         price: Math.max(0, Number(body.price) || 0), waitMinutes: Math.max(0, Number(body.waitMinutes) || 0),
         notes: String(body.notes || "").slice(0, 500), source: "staff", queueNumber, status: "waiting", paid: false, createdAt: new Date()
@@ -929,7 +958,7 @@ async function handler(req, res) {
     if (['done', 'cancelled'].includes(ticket.status) && body.status) return send(res, 409, { error: 'This customer has already left the active queue.' });
     if (body.status === 'serving') {
       const served = await startServing(database, id);
-      await messaging.notify(database, served.userId, `It is your turn at The Barber Co. Queue #${served.queueNumber}. Please approach the counter.`, `queue:${id}:serving`);
+      await messaging.notify(database, served.userId, `It is your turn at The Barber Co. Queue #${served.queueNumber}. Please approach the counter.`, `queue:${id}:serving`, { queueTicketId: served._id });
       return send(res, 200, { ok: true });
     }
     const allowed = ["waiting", "serving", "done", "cancelled"];
@@ -947,8 +976,8 @@ async function handler(req, res) {
     if (body.status === "serving") update.calledAt = new Date();
     if (body.status === "done") Object.assign(update, { paid: true, paidAt: new Date() });
     await database.collection("queue").updateOne({ _id: new ObjectId(id) }, { $set: update });
-    if (body.status === 'serving') await messaging.notify(database, ticket.userId, `It is your turn at The Barber Co. Queue #${ticket.queueNumber}. Please approach the counter.`, `queue:${id}:serving`);
-    if (body.status === 'cancelled') await messaging.notify(database, ticket.userId, `Your Barber Co queue ticket #${ticket.queueNumber} was cancelled. Contact the counter if this is unexpected.`, `queue:${id}:cancelled`);
+    if (body.status === 'serving') await messaging.notify(database, ticket.userId, `It is your turn at The Barber Co. Queue #${ticket.queueNumber}. Please approach the counter.`, `queue:${id}:serving`, { queueTicketId: ticket._id });
+    if (body.status === 'cancelled') await messaging.notify(database, ticket.userId, `Your Barber Co queue ticket #${ticket.queueNumber} was cancelled. Contact the counter if this is unexpected.`, `queue:${id}:cancelled`, { queueTicketId: ticket._id });
     return send(res, 200, { ok: true });
   }
 

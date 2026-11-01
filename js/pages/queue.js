@@ -58,6 +58,8 @@ async function render() {
           <p class="eyebrow">Walk-in QR</p><h2>Join the line</h2>
           <label>Name<input name="customer" required placeholder="Your name"></label>
           <label>Service<select name="serviceId" required>${serviceOptions()}</select></label>
+          <label>Email for updates (optional)<input name="contactEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label>
+          <label class="terms-consent"><span><input name="emailConsent" type="checkbox"><span>Email me when staff calls my number or cancels my ticket. This is optional and only used for queue updates.</span></span></label>
           <p class="muted">For customers already at the shop. No account needed. Choose a cut, get a number, and wait for your name to be called.</p>
           <button class="button primary full" type="submit">Get queue number</button>
           <button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>
@@ -80,14 +82,19 @@ async function render() {
     try {
       const payload = await api("/queue/walkin", {
         method: "POST",
-        body: JSON.stringify({ customer: data.get("customer"), serviceId: data.get("serviceId") })
+        body: JSON.stringify({ customer: data.get("customer"), serviceId: data.get("serviceId"), contactEmail: data.get("contactEmail"), emailConsent: data.get("emailConsent") === "on" })
       });
       localStorage.setItem("barberCoQueueTicketId", payload.ticket.id);
+      if (payload.emailUpdatesEnabled) localStorage.setItem(`barberCoQueueEmailUpdates:${payload.ticket.id}`, "true");
       location.href = `queue.html?ticket=${payload.ticket.id}`;
     } catch (error) {
       toast(error.message || "The queue could not be reached. Please ask the front desk for help.");
     }
   });
+
+  const guestEmail = document.querySelector('[data-walkin] [name="contactEmail"]');
+  const guestEmailConsent = document.querySelector('[data-walkin] [name="emailConsent"]');
+  guestEmailConsent.addEventListener("change", () => { guestEmail.required = guestEmailConsent.checked; });
 
   document.addEventListener("click", (event) => {
     if (!event.target.closest("[data-enable-alerts]")) return;
@@ -108,7 +115,8 @@ async function updateTicket(ticketId) {
     if (!panel) return;
     const status = data.ticket.status;
     const position = status === 'serving' ? 'Now serving' : status === 'waiting' ? `#${data.position} in line` : status === 'done' ? 'Completed' : status === 'cancelled' ? 'Cancelled' : 'Not in line';
-    panel.innerHTML = `<p class="eyebrow">Your Status</p><h2>Queue #${String(data.ticket.queueNumber).padStart(2, "0")}</h2><div class="summary-list"><div><span>Status</span><strong>${escapeHtml(status === 'done' ? 'Completed' : status)}</strong></div><div><span>Position</span><strong>${position}</strong></div><div><span>People ahead</span><strong>${status === 'waiting' ? data.waitingAhead : '-'}</strong></div></div>${['waiting', 'serving'].includes(status) ? '<button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>' : ''}`;
+    const emailUpdates = localStorage.getItem(`barberCoQueueEmailUpdates:${ticketId}`) === "true";
+    panel.innerHTML = `<p class="eyebrow">Your Status</p><h2>Queue #${String(data.ticket.queueNumber).padStart(2, "0")}</h2><div class="summary-list"><div><span>Status</span><strong>${escapeHtml(status === 'done' ? 'Completed' : status)}</strong></div><div><span>Position</span><strong>${position}</strong></div><div><span>People ahead</span><strong>${status === 'waiting' ? data.waitingAhead : '-'}</strong></div></div>${emailUpdates ? '<p class="muted">Email queue updates are enabled.</p>' : ''}${['waiting', 'serving'].includes(status) ? '<button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>' : ''}`;
     if (lastTicketStatus && lastTicketStatus !== "serving" && data.ticket.status === "serving") ringDevice();
     lastTicketStatus = data.ticket.status;
   } catch {

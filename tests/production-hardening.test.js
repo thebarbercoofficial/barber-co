@@ -12,7 +12,7 @@ const { memoryDb } = require('./helpers/memory-db');
 const { digest } = require('../lib/account-security');
 const root = path.resolve(__dirname, '..');
 const secret = 'isolated-production-test-secret-not-a-live-credential';
-const database = memoryDb({ users: [], services: [{ _id: new ObjectId(), slug: 'basic', name: 'Basic Haircut', price: 150, duration: '30 min', active: true }], barbers: [{ _id: new ObjectId(), slug: 'alex', name: 'Alex', status: 'active' }], settings: [{ _id: 'shop', paymentMode: 'demo', bookingFee: 100, gcash: { enabled: true, accountName: 'Isolated Shop', accountNumber: '09123456789' }, maya: { enabled: false } }], counters: [{ _id: 'queue', value: 0 }] });
+const database = memoryDb({ users: [], services: [{ _id: new ObjectId(), slug: 'basic', name: 'Basic Haircut', price: 150, duration: '30 min', active: true }], barbers: [{ _id: new ObjectId(), slug: 'alex', name: 'Alex', status: 'active' }], settings: [{ _id: 'shop', paymentMode: 'live', bookingFee: 100, gcash: { enabled: true, accountName: 'Isolated Shop', accountNumber: '09123456789' }, maya: { enabled: false } }], counters: [{ _id: 'queue', value: 0 }] });
 const rows = database.records;
 const context = { require: require('node:module').createRequire(path.join(root, 'api/index.js')), module: { exports: {} }, process: { env: { JWT_SECRET: secret } }, URL, console, fixtureDatabase: database };
 vm.runInNewContext(`${fs.readFileSync(path.join(root, 'api/index.js'), 'utf8')}\ndb = async () => fixtureDatabase;`, context);
@@ -64,8 +64,13 @@ async function main() {
     assert.equal((await request('/queue/walkin', { customer: 'Email provider unavailable', serviceId: 'basic', contactEmail: 'guest@isolated.test', emailConsent: true })).status, 503);
     passed('Missing email configuration fails honestly without creating an account or pretending to reset a password');
     assert.equal((await request('/settings')).data.settings.paymentMode, 'live');
-    assert.equal((await request('/admin/settings', { paymentMode: 'demo' }, adminToken, 'PATCH')).status, 400);
-    passed('Production overrides legacy demo settings and rejects enabling demo payments');
+    rows.settings[0].gcash.accountNumber = '';
+    assert.equal((await request('/settings')).data.settings.paymentMode, 'demo', 'Without a real wallet, the server must expose only clearly labeled demo payment options');
+    assert.equal((await request('/admin/settings', { paymentMode: 'demo' }, adminToken, 'PATCH')).status, 200);
+    const realPayment = { paymentMode: 'live', paymentDetailsConfirmed: true, bookingFee: 100, gcash: { enabled: true, accountName: 'Isolated Shop', accountNumber: '09123456789' }, maya: { enabled: false } };
+    assert.equal((await request('/admin/settings', realPayment, adminToken, 'PATCH')).status, 200);
+    assert.equal((await request('/settings')).data.settings.paymentMode, 'live', 'Admin can switch from demo to real only with a valid recipient and confirmation');
+    passed('Missing real payment falls back to non-payable demo; admin can enable real payments with validated recipient confirmation');
 
     process.env.EMAIL_PROVIDER = 'resend';
     process.env.RESEND_API_KEY = 'isolated-fake-provider-key';

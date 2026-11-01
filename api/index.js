@@ -51,6 +51,13 @@ function minutes(value) {
 
 function mergedSettings(settings = {}) {
   const operatingHours = { ...defaultSettings.operatingHours, ...(settings.operatingHours || {}) };
+  const gcash = { ...defaultSettings.gcash, ...(settings.gcash || {}) };
+  const maya = { ...defaultSettings.maya, ...(settings.maya || {}) };
+  const allowDemoPayments = process.env.ALLOW_DEMO_PAYMENTS !== 'false';
+  const hasRealPayment = realPaymentConfigured({ gcash, maya });
+  let paymentMode = settings.paymentMode || (hasRealPayment ? 'live' : 'demo');
+  if (!hasRealPayment && allowDemoPayments) paymentMode = 'demo';
+  if (!allowDemoPayments) paymentMode = 'live';
   for (const day of dayNames) {
     const hours = operatingHours[day] || defaultSettings.operatingHours[day];
     operatingHours[day] = {
@@ -61,10 +68,10 @@ function mergedSettings(settings = {}) {
   return {
     ...defaultSettings,
     ...settings,
-    gcash: { ...defaultSettings.gcash, ...(settings.gcash || {}) },
-    maya: { ...defaultSettings.maya, ...(settings.maya || {}) },
-    paymentMode: process.env.ALLOW_DEMO_PAYMENTS === 'true' ? settings.paymentMode || 'live' : 'live',
-    allowDemoPayments: process.env.ALLOW_DEMO_PAYMENTS === 'true',
+    gcash,
+    maya,
+    paymentMode,
+    allowDemoPayments,
     demoMethods,
     operatingHours,
     closedDates: Array.isArray(settings.closedDates) ? settings.closedDates : []
@@ -635,7 +642,7 @@ async function handler(req, res) {
   if (path === "/admin/settings" && req.method === "PATCH") {
     await requireRole(req, database, ["admin"]);
     const paymentMode = body.paymentMode || 'live';
-    if (paymentMode === 'demo' && process.env.ALLOW_DEMO_PAYMENTS !== 'true') return send(res, 400, { error: 'Only real payment methods can be configured on this website.' });
+    if (paymentMode === 'demo' && process.env.ALLOW_DEMO_PAYMENTS === 'false') return send(res, 400, { error: 'Demo payments are disabled on this website.' });
     if (!['live', 'demo'].includes(paymentMode)) return send(res, 400, { error: 'Choose demo or real payments.' });
     if (paymentMode === 'live' && body.paymentDetailsConfirmed !== true) return send(res, 400, { error: 'Confirm that you checked the payment recipient in GCash/Maya before enabling real payments.' });
     const gcash = await sanitizeMethod(body.gcash, 'GCash', paymentMode);

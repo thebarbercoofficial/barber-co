@@ -64,7 +64,7 @@ const database = { collection(name) {
     async deleteMany(query) { records[name] = records[name].filter((record) => !matches(record, query)); }
   };
 } };
-const context = { require: require('node:module').createRequire(path.join(root, 'api/index.js')), module: { exports: {} }, process: { env: { JWT_SECRET: secret, ALLOW_UNVERIFIED_ACCOUNTS: 'true', ALLOW_DEMO_PAYMENTS: 'true' } }, URL, console, fixtureDatabase: database };
+const context = { require: require('node:module').createRequire(path.join(root, 'api/index.js')), module: { exports: {} }, process: { env: { JWT_SECRET: secret, ALLOW_UNVERIFIED_ACCOUNTS: 'true' } }, URL, console, fixtureDatabase: database };
 vm.runInNewContext(`${fs.readFileSync(path.join(root, 'api/index.js'), 'utf8')}\ndb = async () => fixtureDatabase;`, context);
 const handler = context.module.exports;
 const token = (role) => jwt.sign({ sub: String(users.find((user) => user.role === role)._id), role }, secret);
@@ -112,8 +112,15 @@ async function main() {
     records.appointmentHolds.push({ _id: new ObjectId(), userId: users[0]._id, expiresAt: new Date(Date.now() - 1000) });
     assert.equal((await request('/admin/appointments')).data.reservations.length, 0, 'Expired holds must not appear');
     settings.gcash.accountNumber = '';
-    assert.equal((await request('/appointment-holds', 'admin', { ...booking, time: '16:00' })).status, 409);
-    assert.equal((await request('/admin/appointments')).data.paymentConfigured, false);
+    const demoHold = await request('/appointment-holds', 'admin', { ...booking, time: '16:00' });
+    assert.equal(demoHold.status, 201, 'Bookings should remain usable with the non-payable demo methods when no real wallet is set up');
+    assert.equal(demoHold.data.hold.demoPayment, true);
+    const settingsView = await request('/settings', null);
+    assert.equal(settingsView.data.settings.paymentMode, 'demo');
+    assert.equal(settingsView.data.settings.allowDemoPayments, true);
+    assert.equal((await request('/admin/appointments')).data.paymentConfigured, true);
+    records.appointmentSlots = records.appointmentSlots.filter((slot) => slot.appointmentId !== demoHold.data.hold.id);
+    records.appointmentHolds = records.appointmentHolds.filter((hold) => String(hold._id) !== demoHold.data.hold.id);
     settings.gcash.accountNumber = '09123456789';
     const config = { paymentMode: 'live', paymentDetailsConfirmed: true, gcash: { enabled: true, accountName: 'Test Shop', accountNumber: '+639123456789' }, maya: { enabled: false }, bookingFee: 100 };
     assert.equal((await request('/admin/settings', 'moderator', config, 'PATCH')).status, 403);
@@ -134,7 +141,7 @@ async function main() {
     assert.equal((await request('/appointments', 'admin', { ...booking, time: '15:00', paymentMethod: 'GCash' })).status, 400, 'Demo bookings also require a receipt');
     assert.equal((await request('/appointments', 'admin', { ...booking, time: '15:00', paymentMethod: 'Maya', paymentProof: 'data:text/html;base64,abcd' })).status, 400);
     assert.equal((await request('/appointments', 'admin', { ...booking, time: '15:00', paymentMethod: 'Maya', paymentProof: `data:image/png;base64,${'a'.repeat(3 * 1024 * 1024)}` })).status, 413);
-    console.log('API: admin booking, payment hold visibility, submission, moderator approval, own status, access, expiry, and missing payment setup passed');
+    console.log('API: admin booking, payment hold visibility, demo fallback, submission, moderator approval, own status, access, and expiry passed');
 
     browser = await chromium.launch({ headless: true, channel: 'chrome' });
     for (const [role, width, time, mode] of [['admin', 1440, '16:00', 'live'], ['customer', 390, '17:00', 'live'], ['admin', 1440, '18:00', 'demo'], ['customer', 390, '19:00', 'demo']]) {
@@ -219,11 +226,8 @@ async function main() {
       await review.screenshot({ path: path.join(root, `booking-review-${width}-check.png`), fullPage: true });
       settings.gcash.accountNumber = '';
       await page.goto(`${base}/booking.html`);
-      if (mode === 'live') {
-        await page.getByRole('heading', { name: 'Payment setup is incomplete.' }).waitFor();
-        assert.equal(await page.locator('[data-booking]').count(), 0);
-        if (role === 'admin') assert.equal(await page.getByRole('link', { name: 'Set up payments', exact: true }).count(), 1);
-      } else await page.locator('[data-booking]').waitFor();
+      await page.locator('[data-booking]').waitFor();
+      await page.getByText('Demo mode: no money is transferred.', { exact: false }).waitFor();
       await review.reload();
       await review.locator('[data-payment-warning]').waitFor({ state: 'visible' });
       settings.gcash.accountNumber = '09123456789';

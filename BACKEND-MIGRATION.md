@@ -21,9 +21,11 @@ The server exposes API routes only, never repository files or environment files.
 - Render Free (Singapore) runs the API; MongoDB Atlas Free M0 (Hong Kong) stores data.
 - Gmail API uses send-only OAuth credentials configured in Render. Google shows
   the OAuth app as In production, but it is not Google-verified. SMS is not configured.
-- The new database seeds five services but has no barber profiles yet. The GCash
-  and Maya destinations are unconfigured; online booking is intentionally gated
-  until the owner adds and verifies a real payment number or QR in Shop Settings.
+- The new database seeds five services but has no barber profiles yet. Until a
+  real GCash/Maya destination is configured, online bookings use clearly labeled
+  non-payable demo methods so the booking and staff-review workflow can be tested.
+  Demo bookings are excluded from collected revenue. The admin can switch to real
+  payments only after configuring a valid number or QR and confirming its recipient.
 - Existing customers must register again because old accounts were not migrated.
 - Render Free may sleep while idle and has no production performance guarantee.
 
@@ -31,7 +33,8 @@ Copy secrets through the hosting environment settings, never Git or frontend cod
 On 2026-10-30 the owner authorized a fresh start under the Senzen account.
 The new BarberCo Free M0 cluster uses the `barber_co` database. Old accounts,
 bookings and settings are not migrated. Keep the old backend and database intact.
-Do not set demo or unverified-account bypass flags in production.
+Do not enable unverified-account bypasses in production. Demo payments must remain
+clearly labeled and may not be presented as real or collected revenue.
 
 ## Cutover And Remaining Setup
 

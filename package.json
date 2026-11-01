@@ -6,7 +6,7 @@
     "start": "node server.js",
     "test:server": "node tests/portable-server.test.js",
     "check": "node --check api/index.js && node --check js/shared.js && node --check js/pages/booking.js && node --check js/pages/payment.js && node --check js/pages/admin-schedule.js",
-    "test": "node tests/booking-hold.test.js && node tests/analytics.test.js && node tests/analytics-api.test.js && node tests/payment-settings.test.js",
+    "test": "node tests/booking-hold.test.js && node tests/analytics.test.js && node tests/analytics-api.test.js && node tests/payment-settings.test.js && node tests/gmail-delivery.test.js",
     "test:ui": "node tests/staff-ui.test.js",
     "test:booking": "node tests/booking-review.test.js",
     "test:phone": "node tests/phone-login.test.js",
@@ -16,10 +16,12 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "chart.js": "4.5.1",
+    "google-auth-library": "^11.3.2",
     "jsonwebtoken": "^9.0.2",
     "jsqr": "^1.4.0",
     "lucide": "1.52.0",
     "mongodb": "^6.8.0",
+    "nodemailer": "^10.3.1",
     "qrcode": "^1.5.4",
     "sharp": "^0.35.5"
   },

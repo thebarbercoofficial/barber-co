@@ -46,3 +46,25 @@ Do not set demo or unverified-account bypass flags in production.
 Portable-server tests cover routing, health checks, query strings, CORS preflight
 through the actual handler, and denying access to private repository files.
 They do not prove database connectivity, email delivery, or successful deployment.
+
+## Gmail API Sender Option
+
+Render Free blocks SMTP ports, so Gmail uses the HTTPS Gmail API instead.
+Set `EMAIL_PROVIDER=gmail`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`,
+`GMAIL_REFRESH_TOKEN`, and `GMAIL_SENDER` in the backend environment only.
+The sender must be the Gmail account that authorized the token. The mailer asks
+for `gmail.send` only, not permission to read the inbox. Resend remains the
+default when `EMAIL_PROVIDER` is not `gmail`.
+
+The Windows operator utility `node scripts/authorize-gmail.js` loads the
+DPAPI-encrypted OAuth client from `%LOCALAPPDATA%\BarberCo\Secrets`, starts a
+one-time loopback callback, and prints the Google consent URL. It validates
+OAuth state and PKCE, then encrypts the refresh-token configuration as
+`gmail-sender-senzen.xml` in the same directory. No token is printed.
+The operator must review and grant Google's consent themselves.
+
+Do not call a Testing-mode OAuth setup production-ready: Google can expire
+its refresh tokens after seven days. Resolve publishing requirements before
+launch, and test actual inbox delivery, verification and password resets after
+configuring the hosted environment. Adapter unit tests mock Google and cannot
+prove real delivery. Gmail is subject to account sending limits.

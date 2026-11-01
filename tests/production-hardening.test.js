@@ -319,10 +319,15 @@ async function main() {
     await walkinPage.goto(`${base}/queue.html`);
     const guestEmail = walkinPage.locator('[data-walkin] [name="contactEmail"]');
     const guestConsent = walkinPage.locator('[data-walkin] [name="emailConsent"]');
+    assert.equal(await guestConsent.isChecked(), false);
+    assert.equal(await walkinPage.locator('[data-walkin-email-label]').innerText(), 'Email for updates (optional)');
     await guestConsent.check();
     assert.equal(await guestEmail.evaluate((input) => input.required), true);
+    assert.equal(await walkinPage.locator('[data-walkin-email-label]').innerText(), 'Email for updates (required)');
+    assert.match(await walkinPage.locator('[data-walkin-email-help]').innerText(), /required to send/i);
     await guestConsent.uncheck();
     assert.equal(await guestEmail.evaluate((input) => input.required), false);
+    assert.equal(await walkinPage.locator('[data-walkin-email-label]').innerText(), 'Email for updates (optional)');
     await walkinPage.locator('[data-walkin] [name="customer"]').fill('Browser Name Only Guest');
     await walkinPage.locator('[data-walkin] button[type="submit"]').click();
     await walkinPage.locator('[data-ticket-panel]').filter({ hasText: 'Queue #' }).waitFor();

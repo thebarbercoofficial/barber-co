@@ -58,8 +58,9 @@ async function render() {
           <p class="eyebrow">Walk-in QR</p><h2>Join the line</h2>
           <label>Name<input name="customer" required placeholder="Your name"></label>
           <label>Service<select name="serviceId" required>${serviceOptions()}</select></label>
-          <label>Email for updates (optional)<input name="contactEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label>
-          <label class="terms-consent"><span><input name="emailConsent" type="checkbox"><span>Email me when staff calls my number or cancels my ticket. This is optional and only used for queue updates.</span></span></label>
+          <label><span data-walkin-email-label>Email for updates (optional)</span><input name="contactEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label>
+          <p class="muted" data-walkin-email-help>Email is optional. Enable updates below only if you want email notifications.</p>
+          <label class="terms-consent"><span><input name="emailConsent" type="checkbox"><span>Email me when staff calls or cancels my ticket.</span></span></label>
           <p class="muted">For customers already at the shop. No account needed. Choose a cut, get a number, and wait for your name to be called.</p>
           <button class="button primary full" type="submit">Get queue number</button>
           <button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>
@@ -94,7 +95,18 @@ async function render() {
 
   const guestEmail = document.querySelector('[data-walkin] [name="contactEmail"]');
   const guestEmailConsent = document.querySelector('[data-walkin] [name="emailConsent"]');
-  guestEmailConsent.addEventListener("change", () => { guestEmail.required = guestEmailConsent.checked; });
+  const guestEmailLabel = document.querySelector('[data-walkin-email-label]');
+  const guestEmailHelp = document.querySelector('[data-walkin-email-help]');
+  const updateGuestEmailRequirement = () => {
+    const enabled = guestEmailConsent.checked;
+    guestEmail.required = enabled;
+    guestEmailLabel.textContent = `Email for updates (${enabled ? 'required' : 'optional'})`;
+    guestEmailHelp.textContent = enabled
+      ? 'An email address is required to send your queue updates.'
+      : 'Email is optional. Enable updates below only if you want email notifications.';
+  };
+  guestEmailConsent.addEventListener("change", updateGuestEmailRequirement);
+  updateGuestEmailRequirement();
 
   document.addEventListener("click", (event) => {
     if (!event.target.closest("[data-enable-alerts]")) return;

@@ -82,3 +82,21 @@ The deployed `/auth/capabilities` returned `email: false`, `sms: false`, and `ve
 The deployed settings contain **no GCash/Maya recipient number or QR image**. The payment mode is `live`, and demo mode is disabled. Online booking correctly cannot proceed until the administrator supplies real wallet details in Shop Settings. No real receipt/transfer was created to conceal this missing configuration.
 
 **Conclusion:** application repairs are deployed and the listed automated checks pass. This is not a claim that every production dependency is ready. Real end-to-end email/SMS delivery, wallet payment and a live customer booking acceptance remain unproven until those external dependencies are configured. Isolated integration tests prove the application flows, not those external services.
+
+## 2026-11-01 Production Recheck
+
+The October 29 deployment findings above are historical. Since then, the website API was switched to Render and the Gmail send-only provider was configured. Current public site: https://thebarbercoofficial.github.io/barber-co/ . Current API: https://barber-co-api.onrender.com/api . Old Vercel API/database remain intact for rollback.
+
+| Tester concern | Current evidence | Status / limitation |
+| --- | --- | --- |
+| Slow response | Frontend/API round trips were optimized earlier; Render Free sleeps while idle and can have a cold start. Warm calls were responsive in prior checks. | Partly addressed; free-tier cold starts cannot be eliminated without changing hosting/plan. |
+| Collected revenue mismatch | The single paid-ledger analytics path reconciles all-time revenue to daily and barber sums. Latest live all-time and daily totals are zero; there are no barber rows yet. Revenue fixture (PHP 250 online + PHP 150 walk-in) and repeated-completion cases pass. | Code and reconciliation tests pass; no live transactions exist yet to compare. |
+| Payment proof | Proof is excluded from list responses and fetched via the staff-authorized proof endpoint. Isolated browser tests verify display/download and unauthorized denial. | Code verified; no live receipt exists in the empty replacement database. |
+| Dashboard data stale | Incremental polling and focus refresh are covered by browser tests that mutate booking/revenue/queue data while preserving drafts. | Test verified; live production has no bookings or queue records to watch. |
+| Staff logbook stale | Waiting/serving/completed updates are covered by dashboard/logbook browser and API tests. | Test verified; no live shop activity exists yet. |
+| Gmail verification/recovery | Real Gmail delivery was tested: customer registration email arrived and verified; reset email arrived, code was accepted, and the customer could log in after reset. | Operational for verified email accounts. SMS verification is not configured. |
+| Demo wording/mode | Production API reports live payment mode and rejects enabling demo payments. Admin Reports no longer shows the demo-only column/wording (commit 7c07c17). | Addressed. Real bookings still require real payment recipient settings. |
+| Customer notices | API sends email notices on appointment acceptance/cancellation/reschedule and on a linked queue ticket's turn; staff-delivery tests cover outcomes/retries. | Email adapter verified, but those customer-event notices were not live-tested because no booking is currently possible. SMS requires Twilio credentials, consent, and phone verification; anonymous name-only walk-ins can use on-page sound/vibration alerts only. |
+| Registration/login/security | Confirm password, mobile terms layout, clearing password when switching method, email-vs-phone validation, escalating five-attempt lockout, and server-side admin role checks passed production/browser tests. Admin login on the live API returns the admin role; anonymous privileged routes return 401. | Addressed and tested. |
+
+Current production readiness blocker: the replacement database has 5 services, 0 barber profiles, and no real GCash/Maya number or QR. Online booking correctly refuses to create a hold until the administrator configures a valid payment destination and adds the actual barber roster. No test booking or payment was inserted into production.

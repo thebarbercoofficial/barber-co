@@ -1,10 +1,12 @@
 # Backend Migration
 
-Status: prepared, not deployed or switched over.
+Status: Render backend deployed and public frontend switched on 2026-11-01.
 
-The frontend remains on GitHub Pages. The existing Vercel backend stays intact
-until a replacement has passed live testing. No accounts or bookings have been
-copied, removed, or reset.
+The frontend remains on GitHub Pages and now uses the Render API. The previous
+Vercel backend and database are intact for rollback. Existing accounts and
+bookings were not migrated. New customer email verification and password reset
+were tested end to end against Render. The shop still needs real payment details
+and actual barber profiles before online bookings can be accepted.
 
 ## Replacement Runtime
 
@@ -14,15 +16,16 @@ to `/healthz`. This is a process liveness check, not database readiness.
 Use `/api/health` to verify the database connection and initialization.
 The server exposes API routes only, never repository files or environment files.
 
-## Required Access
+## Current Operations
 
-- A hosting account controlled by the owner. Railway was checked and is signed out.
-- The current MongoDB connection string, database name and network access.
-  No working database credentials are configured in this checkout.
-- A JWT secret of at least 32 characters. Preserving the old secret preserves
-  existing session signatures; using a new secret requires everyone to log in again.
-- A real email provider API key and verified sender for verification and resets.
-  SMS additionally requires the Twilio settings listed in `.env.example`.
+- Render Free (Singapore) runs the API; MongoDB Atlas Free M0 (Hong Kong) stores data.
+- Gmail API uses send-only OAuth credentials configured in Render. Google shows
+  the OAuth app as In production, but it is not Google-verified. SMS is not configured.
+- The new database seeds five services but has no barber profiles yet. The GCash
+  and Maya destinations are unconfigured; online booking is intentionally gated
+  until the owner adds and verifies a real payment number or QR in Shop Settings.
+- Existing customers must register again because old accounts were not migrated.
+- Render Free may sleep while idle and has no production performance guarantee.
 
 Copy secrets through the hosting environment settings, never Git or frontend code.
 On 2026-10-30 the owner authorized a fresh start under the Senzen account.
@@ -30,18 +33,17 @@ The new BarberCo Free M0 cluster uses the `barber_co` database. Old accounts,
 bookings and settings are not migrated. Keep the old backend and database intact.
 Do not set demo or unverified-account bypass flags in production.
 
-## Cutover Checklist
+## Cutover And Remaining Setup
 
-1. Retain the old backend/database unchanged; obtain an owner-accessible backup
-   if access is recovered. Do not claim that old data has been migrated.
-2. Deploy this source to the replacement host with the authorized fresh database.
-   Configure bootstrap ADMIN credentials securely before enabling staff access.
-3. Test database health, real email verification/reset, customer login, admin/moderator
-   permissions, payment receipt viewing, booking conflicts, queue updates and ledger totals.
-4. Update `productionApiBase` in `js/shared.js` to the verified HTTPS replacement URL.
-   Refresh the shared script cache version in HTML and publish GitHub Pages.
-5. Test the public website again from a clean browser and an authenticated staff session.
-6. Keep the old Vercel endpoint available for rollback until cutover is confirmed.
+1. Done: deploy the replacement backend with the authorized fresh database and admin.
+2. Done: test email verification, password reset, customer login, health, and anonymous
+   admin denial against Render.
+3. Done: set `productionApiBase` in `js/shared.js` to Render, refresh the shared script
+   cache key, and publish the GitHub Pages frontend (commit 93a9d4a).
+4. Pending: configure real GCash/Maya details and add the actual barber roster in Admin.
+5. Pending: test a real booking, payment-proof review, staff approval, queue transitions,
+   and revenue reconciliation using owner-provided payment/staff configuration.
+6. Keep the old Vercel endpoint and database intact for rollback until migration is accepted.
 
 Portable-server tests cover routing, health checks, query strings, CORS preflight
 through the actual handler, and denying access to private repository files.

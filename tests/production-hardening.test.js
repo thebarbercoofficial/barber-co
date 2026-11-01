@@ -128,18 +128,24 @@ async function main() {
 
     assert.equal((await request('/auth/login', { identifier: registration.email, method: 'phone', password: registration.password })).status, 400);
     assert.equal((await request('/auth/login', { identifier: registration.phone, method: 'email', password: registration.password })).status, 400);
-    for (let i = 0; i < 4; i++) assert.equal((await request('/auth/login', { email: registration.email, password: 'incorrect' })).status, 401);
+    rows.loginAttempts.push({ _id: digest(String(user._id)), failures: 3, level: 0, policyVersion: 1, expiresAt: new Date(Date.now() + 86400000) });
+    for (let i = 0; i < 5; i++) {
+      const failed = await request('/auth/login', { email: registration.email, password: 'incorrect' });
+      assert.equal(failed.status, 401);
+      assert.equal(failed.data.attemptsRemaining, 5 - i);
+    }
     let locked = await request('/auth/login', { email: registration.email, password: 'incorrect' });
     assert.equal(locked.status, 429);
     assert.equal(locked.headers.get('retry-after'), '300');
     assert.equal((await request('/auth/login', { phone: registration.phone, password: registration.password })).status, 429, 'Changing login method cannot bypass account lockout');
-    rows.loginAttempts[0].blockedUntil = new Date(0);
-    for (let i = 0; i < 4; i++) await request('/auth/login', { email: registration.email, password: 'incorrect' });
+    const attempts = rows.loginAttempts.find((item) => item._id === digest(String(user._id)));
+    attempts.blockedUntil = new Date(0);
+    for (let i = 0; i < 5; i++) assert.equal((await request('/auth/login', { email: registration.email, password: 'incorrect' })).status, 401);
     locked = await request('/auth/login', { email: registration.email, password: 'incorrect' });
     assert.equal(locked.headers.get('retry-after'), '600');
-    rows.loginAttempts[0].blockedUntil = new Date(0);
+    attempts.blockedUntil = new Date(0);
     assert.equal((await request('/auth/login', { phone: registration.phone, password: registration.password })).status, 200);
-    passed('Five incorrect attempts trigger persistent 5-minute then 10-minute lockouts shared by phone and email');
+    passed('Six incorrect attempts trigger persistent 5-minute then 10-minute lockouts; response counts remaining attempts and resets legacy counts while preserving active locks');
 
     await request('/auth/forgot-password', { email: registration.email });
     const resetCode = codeFor(registration.email);

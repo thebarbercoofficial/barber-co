@@ -517,7 +517,10 @@ async function handler(req, res) {
     }
     const attemptKey = user ? String(user._id) : identifier.toLowerCase();
     await security.checkLogin(database, attemptKey);
-    if (!user || !(await bcrypt.compare(String(body.password || ""), user.passwordHash))) { await security.failedLogin(database, attemptKey); return send(res, 401, { error: "Incorrect login details. Try email if your account has no linked mobile number." }); }
+    if (!user || !(await bcrypt.compare(String(body.password || ""), user.passwordHash))) {
+      const attemptsRemaining = await security.failedLogin(database, attemptKey);
+      return send(res, 401, { error: `Incorrect login details. ${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} remaining before a temporary lock.`, attemptsRemaining });
+    }
     await database.collection('loginAttempts').deleteOne({ _id: security.digest(attemptKey) });
     if (user.verificationRequired && !user.emailVerifiedAt) return send(res, 403, { error: 'Verify your email before signing in.', verificationRequired: true, email: user.email });
     return send(res, 200, { user: publicUser(user), token: tokenFor(user) });

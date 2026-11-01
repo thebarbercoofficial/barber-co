@@ -65,14 +65,36 @@ document.querySelectorAll('[data-login-method]').forEach((button) => button.addE
   input.focus();
 }));
 
-function showLoginAlert(title, message, isSuccess = false) {
+function showLoginAlert(title, message, isSuccess = false, duration = 3200) {
   const alert = document.querySelector("[data-login-alert]");
   alert.querySelector("strong").textContent = title;
   alert.querySelector("span").textContent = message;
   alert.classList.toggle("success", isSuccess);
   alert.classList.add("show");
   window.clearTimeout(showLoginAlert.timer);
-  showLoginAlert.timer = window.setTimeout(() => alert.classList.remove("show"), 3200);
+  if (duration > 0) showLoginAlert.timer = window.setTimeout(() => alert.classList.remove("show"), duration);
+}
+
+function startLoginCooldown(seconds) {
+  const form = document.querySelector('[data-login]');
+  const controls = [...form.querySelectorAll('input, button'), ...document.querySelectorAll('[data-login-method]')];
+  const expiresAt = Date.now() + seconds * 1000;
+  controls.forEach((control) => { control.disabled = true; });
+  window.clearInterval(startLoginCooldown.timer);
+  const update = () => {
+    const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+    if (remaining <= 0) {
+      window.clearInterval(startLoginCooldown.timer);
+      controls.forEach((control) => { control.disabled = false; });
+      showLoginAlert('You can try again', 'The temporary sign-in lock has ended.');
+      return;
+    }
+    const minutes = Math.floor(remaining / 60);
+    const secondsLeft = String(remaining % 60).padStart(2, '0');
+    showLoginAlert('Sign-in temporarily locked', `Too many incorrect attempts. Try again in ${minutes}:${secondsLeft}.`, false, 0);
+  };
+  update();
+  startLoginCooldown.timer = window.setInterval(update, 1000);
 }
 
 document.querySelector("[data-login]").addEventListener("submit", async (event) => {
@@ -98,8 +120,12 @@ document.querySelector("[data-login]").addEventListener("submit", async (event) 
   } catch (error) {
     if (error.verificationRequired) location.href = `register.html?verify=${encodeURIComponent(identifier)}`;
     const offline = error.code === "BACKEND_UNAVAILABLE" || /fetch|network/i.test(error.message || "");
-    showLoginAlert(offline ? "Service unavailable" : "Sign in failed", offline ? "The account service is not connected. Please try again shortly." : error.message || "Check your mobile number or email and password.");
-    button.disabled = false;
+    if (error.status === 429 && error.retryAfter > 0) {
+      startLoginCooldown(error.retryAfter);
+    } else {
+      showLoginAlert(offline ? "Service unavailable" : "Sign in failed", offline ? "The account service is not connected. Please try again shortly." : error.message || "Check your mobile number or email and password.", false, error.status === 401 ? 0 : 3200);
+      button.disabled = false;
+    }
   }
 });
 

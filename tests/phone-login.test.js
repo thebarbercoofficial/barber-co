@@ -108,6 +108,22 @@ async function main() {
       const errors = [];
       page.on('pageerror', (error) => errors.push(error.message));
       await page.goto(`${base}/login.html`);
+      if (width === 1440) {
+        const lockAccount = { name: 'Lockout UI Customer', phone: '09221234567', email: 'lockout@phone.test', password: 'Isolated-test-password' };
+        assert.equal((await request('/auth/register', lockAccount)).status, 201);
+        await page.locator('[data-login-method="email"]').click();
+        await page.locator('[name="identifier"]').fill(lockAccount.email);
+        for (let attempt = 1; attempt <= 6; attempt++) {
+          await page.locator('[name="password"]').fill('wrong-password');
+          await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+          if (attempt < 6) await page.getByText(`${6 - attempt} attempt${6 - attempt === 1 ? '' : 's'} remaining before a temporary lock.`).waitFor();
+        }
+        await page.getByText('Try again in 5:00.').waitFor();
+        assert.equal(await page.locator('[name="password"]').isDisabled(), true);
+        assert.equal(await page.locator('[name="identifier"]').isDisabled(), true);
+        assert.equal(await page.locator('[data-login-method="phone"]').isDisabled(), true);
+        await page.goto(`${base}/login.html`);
+      }
       assert.equal(await page.locator('[name="identifier"]').getAttribute('type'), 'tel');
       assert.equal(await page.locator('[data-login-method="phone"]').getAttribute('aria-pressed'), 'true');
       await page.locator('[name="identifier"]').fill('09181234567');

@@ -129,6 +129,7 @@ const BarberCo = (() => {
     if (!response.ok) {
       const error = new Error(data.error || "Request failed.");
       error.status = response.status;
+      error.retryAfter = Number(response.headers.get('retry-after')) || 0;
       error.verificationRequired = data.verificationRequired;
       throw error;
     }

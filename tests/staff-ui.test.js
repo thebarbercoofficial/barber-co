@@ -153,7 +153,8 @@ async function main() {
       const barberDownload = await barberDownloadEvent;
       const barberCsv = fs.readFileSync(await barberDownload.path(), 'utf8');
       assert.ok(barberCsv.includes('Luis Reyes') && !barberCsv.includes('Alex Santos'));
-      assert.ok(barberCsv.includes('Completed cuts') && barberCsv.includes('Demo bookings'));
+      assert.ok(barberCsv.includes('Completed cuts') && !barberCsv.includes('Demo bookings'));
+      assert.doesNotMatch(await page.locator('.workspace').innerText(), /demo/i);
       await page.locator('[data-barber-search]').fill('missing');
       assert.ok((await page.locator('[data-barber-rows]').innerText()).includes('No barbers match'));
       await page.locator('[data-barber-search]').fill('');

@@ -1,4 +1,4 @@
-.account-layout { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.account-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
 .account-column { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; min-width: 0; }
 .account-column > *, .account-column .profile-head > *, .account-column .form-card > * { min-width: 0; max-width: 100%; }
 .account-column .profile-head, .account-column .form-card, .account-column label { grid-template-columns: minmax(0, 1fr); }
@@ -18,9 +18,40 @@
 .booking-column .appointment-row { display: grid; grid-template-columns: minmax(110px, .7fr) minmax(0, 1.3fr); gap: 16px; padding: 20px; align-items: start; overflow-wrap: anywhere; }
 .booking-column .appointment-row .status-pill { grid-column: 1 / -1; justify-self: start; white-space: normal; }
 .booking-column [data-account-notifications] p { padding: 12px 0; border-bottom: 1px solid #ded5c7; }
-@media (max-width: 760px) {
+.section.top:has(.account-layout) { padding-top: 126px; padding-bottom: 24px; }
+.account-details { border: 1px solid #d5cbbb; border-radius: 8px; background: rgba(255,255,255,.7); }
+.account-details > summary { scroll-margin-top: 110px; }
+.account-details .form-card { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; border: 0; background: transparent; box-shadow: none; }
+.account-details .form-card > .eyebrow, .account-details .form-card > h2 { display: none; }
+.account-column label { margin: 0; gap: 6px; font-size: 13px; }
+.account-column input, .account-column textarea, .account-column select { padding: 10px 12px; }
+.account-column textarea { min-height: 64px; height: 64px; }
+.account-column label:has([name="bio"]), .account-column [type="submit"], .account-security { grid-column: 1 / -1; }
+.account-security > summary { padding: 10px 0; font-weight: 700; cursor: pointer; }
+.account-security p { margin: 10px 0; }
+.account-security label { margin: 12px 0; }
+.booking-column { padding: 20px; }
+.booking-column .profile-head { display: grid; grid-template-columns: 64px minmax(0, 1fr) minmax(160px, 220px); gap: 14px; align-items: center; justify-items: start; text-align: left; padding: 0 0 18px; margin-bottom: 20px; border: 0; border-bottom: 1px solid #d5cbbb; border-radius: 0; background: transparent; box-shadow: none; }
+.booking-column .profile-photo { width: 64px; height: 64px; font-size: 24px; }
+.booking-column .profile-head h2 { margin: 0; font-size: 24px; overflow-wrap: anywhere; }
+.booking-column .profile-head p { margin: 4px 0 0; font-size: 13px; }
+.booking-column .upload-box { min-width: 0; max-width: 100%; margin: 0; padding: 10px; font-size: 12px; }
+.booking-column input[type="file"] { width: 100%; min-width: 0; max-width: 100%; padding: 6px; font-size: 11px; }
+.booking-column .section-heading { margin-bottom: 18px; }
+.booking-column h2 { font-size: 30px; }
+.booking-column .section-heading p { margin-bottom: 12px; }
+.booking-column .appointment-row { padding: 16px; gap: 12px; }
+.booking-column [data-account-notifications] p { padding: 10px 0; margin: 0; font-size: 14px; }
+@media (max-width: 900px) {
   .account-layout { grid-template-columns: minmax(0, 1fr); }
   .booking-column { grid-row: 1; padding: 20px; }
   .booking-column h2 { font-size: 30px; }
   .booking-column .appointment-row { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 1100px) {
+  .booking-column .profile-head { grid-template-columns: 64px minmax(0, 1fr); }
+  .booking-column .upload-box { grid-column: 1 / -1; width: 100%; }
+}
+@media (max-width: 520px) {
+  .account-details .form-card { grid-template-columns: minmax(0, 1fr); }
 }

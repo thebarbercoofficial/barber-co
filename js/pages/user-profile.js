@@ -39,14 +39,16 @@ function draw() {
   profileGrid.classList.add("account-layout");
   const accountColumn = document.createElement("div");
   accountColumn.className = "account-column";
-  accountColumn.append(document.querySelector(".profile-head"));
+  const identity = document.querySelector(".profile-head");
   const accountDetails = document.createElement("details");
   accountDetails.className = "account-details";
+  accountDetails.open = true;
   accountDetails.innerHTML = '<summary>Edit account details</summary>';
   accountDetails.append(document.querySelector("[data-profile]"));
   accountColumn.append(accountDetails);
-  profileGrid.append(accountColumn, bookingSection);
+  profileGrid.append(bookingSection, accountColumn);
   bookingSection.className = "booking-column";
+  bookingSection.prepend(identity);
   bookingSection.querySelector(".section-heading").innerHTML = '<p class="eyebrow">Your appointments</p><h2>My bookings</h2><p class="muted">Submitted bookings wait for staff approval. Your latest status appears here automatically.</p><a class="button secondary" href="booking.html">Book another appointment</a>';
 
   document.querySelector("[data-profile]").addEventListener("submit", async (event) => {
@@ -63,6 +65,17 @@ function draw() {
 
   document.querySelector('[data-profile] [name="phone"]').closest('label').insertAdjacentHTML('afterend', `<label>Date of birth<input type="date" name="birthDate" value="${escapeValue(user.birthDate || '')}" max="${new Date().toLocaleDateString('en-CA')}"></label>`);
   document.querySelector('[data-profile]').insertAdjacentHTML('beforeend', `<p>${user.emailVerified ? 'Email verified' : 'Email not yet verified'}</p>${user.emailVerified ? '' : '<button class="button secondary" type="button" data-verify-email>Verify email</button>'}<p>${user.phoneVerified ? 'Mobile number verified' : 'Mobile number not verified'}</p><button class="button secondary" type="button" data-phone-code>Send SMS verification</button><label>SMS code<input data-phone-code-value inputmode="numeric" autocomplete="one-time-code" maxlength="6"></label><label class="check-row"><input type="checkbox" data-sms-consent ${user.smsConsent ? 'checked' : ''}> Send appointment and queue updates to my verified number</label><button class="button secondary" type="button" data-verify-phone>Verify number and save SMS preference</button>`);
+  const profileForm = document.querySelector('[data-profile]');
+  const security = document.createElement('details');
+  security.className = 'account-security';
+  security.innerHTML = '<summary>Account verification</summary>';
+  let securityNode = profileForm.querySelector('[type="submit"]').nextElementSibling;
+  while (securityNode) {
+    const next = securityNode.nextElementSibling;
+    security.append(securityNode);
+    securityNode = next;
+  }
+  profileForm.append(security);
   document.querySelector('[data-verify-email]')?.addEventListener('click', async () => {
     try { await api('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email: user.email }) }); location.href = `register.html?verify=${encodeURIComponent(user.email)}`; }
     catch (error) { toast(error.message); }

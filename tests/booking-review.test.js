@@ -323,11 +323,11 @@ async function main() {
     assert.equal(settings.paymentMode, 'live');
     assert.equal(settings.gcash.accountNumber, '09123456789');
     await setup.goto(`${base}/user-profile.html`);
-    await setup.locator('.account-details summary').waitFor();
+    await setup.locator('.account-details > summary').waitFor();
     for (const width of [390, 768, 1024, 1860]) {
-      await setup.setViewportSize({ width, height: 1000 });
+      await setup.setViewportSize({ width, height: 900 });
       for (const open of [true, false]) {
-        if (await setup.locator('.account-details').evaluate((node) => node.open) !== open) await setup.locator('.account-details summary').click();
+        if (await setup.locator('.account-details').evaluate((node) => node.open) !== open) await setup.locator('.account-details > summary').click();
         const layout = await setup.evaluate(() => {
           const account = document.querySelector('.account-column').getBoundingClientRect();
           const bookings = document.querySelector('.booking-column').getBoundingClientRect();
@@ -335,6 +335,10 @@ async function main() {
           return { overflow, pageOverflow: document.documentElement.scrollWidth > innerWidth + 1, intersects: account.left < bookings.right && account.right > bookings.left && account.top < bookings.bottom && account.bottom > bookings.top };
         });
         assert.deepEqual(layout, { overflow: [], pageOverflow: false, intersects: false }, `Profile panels must not overlap at ${width}px, account open=${open}`);
+        if (width > 900) {
+          assert.ok(await setup.evaluate(() => document.querySelector('.booking-column').getBoundingClientRect().right <= document.querySelector('.account-column').getBoundingClientRect().left), 'Bookings must be left of account editing');
+          assert.ok(await setup.evaluate(() => document.querySelector('.account-column').getBoundingClientRect().bottom <= innerHeight), 'Account editor must fit the desktop viewport');
+        }
       }
     }
     await adminContext.close();

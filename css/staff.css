@@ -112,6 +112,8 @@ body.staff-page .site-header.staff-header { position: fixed; inset: 0 0 auto; he
 .staff-page .list-toolbar > select { width: 142px; flex: none; }
 .staff-page .appointment-row { display: grid; align-items: center; gap: 14px; margin: 0; padding: 16px; background: #fff; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; font-size: 12px; min-width: 0; box-shadow: none; }
 .staff-page .appointment-row small { display: block; color: var(--muted); font-size: 10px; line-height: 1.5; margin-top: 4px; }
+.staff-page .appointment-request { color: var(--ink); overflow-wrap: anywhere; }
+.staff-page .appointment-request strong { color: var(--copper); }
 .staff-page .appointment-row strong, .staff-page .appointment-row span { min-width: 0; overflow-wrap: anywhere; }
 .queue-list, .record-list { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; }
 .appointment-row:last-child { border-bottom: 0; }

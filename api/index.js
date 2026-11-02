@@ -493,7 +493,7 @@ async function handler(req, res) {
       if (unavailable.includes(barberId)) return send(res, 409, { error: "That barber is already reserved for this time. Choose another barber or time." });
     }
     const hold = {
-      _id: new ObjectId(), userId: user._id, customer: user.name, serviceId, barberId, date, time, durationMinutes,
+      _id: new ObjectId(), userId: user._id, customer: user.name, serviceId, barberId, date, time, request: String(body.request || "").trim().slice(0, 1000), durationMinutes,
       total: Number(service.price) + Math.max(0, Number(settings.bookingFee) || 0),
       demoPayment: settings.paymentMode === 'demo',
       expiresAt: new Date(Date.now() + 10 * 60 * 1000), createdAt: new Date()

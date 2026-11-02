@@ -69,7 +69,7 @@ const context = { require: require('node:module').createRequire(path.join(root, 
 vm.runInNewContext(`${fs.readFileSync(path.join(root, 'api/index.js'), 'utf8')}\ndb = async () => fixtureDatabase;`, context);
 const handler = context.module.exports;
 const token = (role) => jwt.sign({ sub: String(users.find((user) => user.role === role)._id), role }, secret);
-const booking = { serviceId: 'basic', barberId: 'review-barber', date: '2100-03-03', time: '14:00', customer: 'Review admin' };
+const booking = { serviceId: 'basic', barberId: 'review-barber', date: '2100-03-03', time: '14:00', customer: 'Review admin', request: 'Please leave a little length on top.' };
 const proof = `data:image/png;base64,${fs.readFileSync(path.join(root, 'images/logo.png')).toString('base64')}`;
 
 async function main() {
@@ -93,6 +93,7 @@ async function main() {
     const held = await request('/appointment-holds', 'admin', { ...booking, barberId: 'any' });
     assert.equal(held.status, 201, JSON.stringify(held.data));
     assert.equal(held.data.hold.barberId, 'review-barber', 'Any-barber holds should save the assigned barber, not the any sentinel');
+    assert.equal(held.data.hold.request, booking.request, 'Special requests should be visible while a payment hold is active');
     let list = await request('/admin/appointments');
     assert.equal(list.data.reservations.length, 1);
     assert.equal(list.data.reservations[0].customer, users[0].name);
@@ -105,6 +106,7 @@ async function main() {
     const submitted = await request('/appointments', 'admin', { ...booking, barberId: 'any', holdId: held.data.hold.id, paymentMethod: 'GCash', paymentProof: proof });
     assert.equal(submitted.status, 201, JSON.stringify(submitted.data));
     assert.equal(submitted.data.appointment.barberId, 'review-barber', 'The assigned barber must remain attached when the hold becomes a booking');
+    assert.equal(submitted.data.appointment.request, booking.request, 'The customer request must survive payment submission');
     list = await request('/admin/appointments', 'moderator');
     assert.equal(list.data.reservations.length, 0);
     assert.equal(list.data.appointments[0].mongoId, submitted.data.appointment.id);
@@ -178,6 +180,7 @@ async function main() {
       await page.locator('[name="date"]').fill(booking.date);
       await page.locator('[name="date"]').dispatchEvent('change');
       await page.locator('[name="time"]').selectOption(time);
+      await page.locator('[name="request"]').fill(booking.request);
       assert.ok(await page.locator('[name="barber"] option[value="any"]').count(), 'Booking form should offer automatic barber assignment');
       assert.ok(await page.locator('[name="barber"] option[value="review-barber"]').count(), 'Booking form should offer specific barbers');
       const chooseAnyBarber = (role === 'admin' && width === 1440) || (role === 'customer' && mode === 'demo');
@@ -205,7 +208,11 @@ async function main() {
       await review.locator('[data-filter="awaiting-payment"]').click();
       assert.equal(await review.locator('[data-payment-warning]').isVisible(), mode === 'demo');
       assert.ok((await review.locator('[data-appointment-panel]').innerText()).includes(user.name));
+      assert.ok((await review.locator('[data-appointment-panel]').innerText()).includes(booking.request), 'Staff should see the request on the live payment hold');
       assert.equal(await review.locator('[data-status]').count(), 0);
+      const dashboard = await staff.newPage();
+      await dashboard.goto(`${base}/admin-dashboard.html`);
+      await dashboard.locator('[data-dashboard-sync]').waitFor();
       await page.locator('[data-payment-proof]').waitFor();
       await page.locator('[data-confirm-payment]').click();
       await page.locator('[data-toast]').filter({ hasText: 'Upload your payment proof' }).waitFor();
@@ -224,11 +231,14 @@ async function main() {
       const saved = records.appointments.find((item) => item.time === time);
       assert.ok(saved, 'The browser submission must reach the API database');
       assert.equal(saved.barberId, 'review-barber', 'Online booking must store the actual barber assigned by the hold');
+      assert.equal(saved.request, booking.request);
       assert.equal(saved.demoPayment, mode === 'demo');
       assert.ok(saved.paymentProof.startsWith('data:image/png;base64,'), 'Receipt must be stored in both modes');
       if (role === 'admin') await page.locator(`[data-status="${saved._id}:confirmed"]`).waitFor();
-      await review.reload();
       await review.locator('[data-filter="pending"]').click();
+      await review.locator('.appointment-record').filter({ hasText: booking.request }).waitFor({ state: 'visible', timeout: 10000 });
+      assert.ok((await review.locator('.appointment-record').filter({ hasText: booking.request }).innerText()).includes('Customer request:'), 'Open staff screen should show the new booking and request without reloading');
+      await dashboard.locator('.dashboard-layout > div:first-child > section:nth-of-type(2) .compact-row').filter({ hasText: booking.request }).waitFor({ state: 'visible', timeout: 10000 });
       await review.locator(`.appointment-record:has([data-status="${saved._id}:confirmed"]) a.text-action`).click();
       await review.locator('.receipt-dialog img').waitFor();
       await review.waitForFunction(() => document.querySelector('.receipt-dialog img')?.naturalWidth > 0);

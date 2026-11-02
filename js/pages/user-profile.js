@@ -34,6 +34,21 @@ function draw() {
   const user = state.user;
   document.querySelector("#app").innerHTML = `${nav("login")}<section class="section top"><div class="grid-2"><div class="panel profile-head">${avatar(user.name || user.email, user.photo || "")}<div><h2>${escapeValue(user.name || "Customer")}</h2><p class="muted">${escapeValue(user.location || "Profile details")}</p></div><label class="upload-box">Change display photo<input type="file" accept="image/jpeg,image/png,image/webp" data-photo></label></div><form class="form-card" data-profile><p class="eyebrow">User Profile</p><h2>Manage account</h2><label>Name<input name="name" required value="${escapeValue(user.name)}"></label><label>Email<input type="email" value="${escapeValue(user.email)}" readonly></label><label>Username<input name="username" value="${escapeValue(user.username)}"></label><label>Phone<input name="phone" value="${escapeValue(user.phone)}"></label><label>Location<input name="location" value="${escapeValue(user.location)}"></label><label>Bio<textarea name="bio" rows="4">${escapeValue(user.bio)}</textarea></label><button class="button primary full" type="submit">Save changes</button></form></div><div class="section" id="bookings"><div class="section-heading"><p class="eyebrow">Booking updates</p><h2>My bookings</h2><p class="muted">This list updates automatically when staff accepts, completes, or cancels a booking.</p></div><div class="panel" data-my-bookings>${bookingRows()}</div></div></section>`;
 
+  const profileGrid = document.querySelector(".grid-2");
+  const bookingSection = document.querySelector("#bookings");
+  profileGrid.classList.add("account-layout");
+  const accountColumn = document.createElement("div");
+  accountColumn.className = "account-column";
+  accountColumn.append(document.querySelector(".profile-head"));
+  const accountDetails = document.createElement("details");
+  accountDetails.className = "account-details";
+  accountDetails.innerHTML = '<summary>Edit account details</summary>';
+  accountDetails.append(document.querySelector("[data-profile]"));
+  accountColumn.append(accountDetails);
+  profileGrid.append(accountColumn, bookingSection);
+  bookingSection.className = "booking-column";
+  bookingSection.querySelector(".section-heading").innerHTML = '<p class="eyebrow">Your appointments</p><h2>My bookings</h2><p class="muted">Submitted bookings wait for staff approval. Your latest status appears here automatically.</p><a class="button secondary" href="booking.html">Book another appointment</a>';
+
   document.querySelector("[data-profile]").addEventListener("submit", async (event) => {
     event.preventDefault();
     const button = event.submitter;

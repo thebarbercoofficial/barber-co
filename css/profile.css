@@ -1,0 +1,22 @@
+.account-layout { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.account-column { display: grid; gap: 20px; min-width: 0; }
+.account-column .profile-head { padding: 28px 20px; gap: 18px; }
+.account-column .profile-head h2 { font-size: 32px; overflow-wrap: anywhere; }
+.account-column .upload-box { width: 100%; min-width: 0; margin: 0; }
+.account-column input[type="file"] { max-width: 100%; min-width: 0; }
+.account-details > summary { padding: 18px 20px; cursor: pointer; font-weight: 700; border-bottom: 1px solid #cdbb9e; }
+.account-details .form-card { padding: 20px; }
+.account-details .form-card h2 { font-size: 28px; }
+.booking-column { min-width: 0; padding: 24px; border: 1px solid #d5cbbb; border-radius: 8px; background: rgba(255,255,255,.7); }
+.booking-column .section-heading { margin-bottom: 24px; }
+.booking-column h2 { font-size: 36px; }
+.booking-column [data-my-bookings] { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.booking-column .appointment-row { display: grid; grid-template-columns: minmax(110px, .7fr) minmax(0, 1.3fr); gap: 16px; padding: 20px 0; align-items: start; overflow-wrap: anywhere; }
+.booking-column .appointment-row .status-pill { grid-column: 1 / -1; justify-self: start; white-space: normal; }
+.booking-column [data-account-notifications] p { padding: 12px 0; border-bottom: 1px solid #ded5c7; }
+@media (max-width: 760px) {
+  .account-layout { grid-template-columns: minmax(0, 1fr); }
+  .booking-column { grid-row: 1; padding: 20px; }
+  .booking-column h2 { font-size: 30px; }
+  .booking-column .appointment-row { grid-template-columns: minmax(0, 1fr); }
+}

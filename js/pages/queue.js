@@ -97,13 +97,17 @@ async function render() {
   const guestEmailConsent = document.querySelector('[data-walkin] [name="emailConsent"]');
   const guestEmailLabel = document.querySelector('[data-walkin-email-label]');
   const guestEmailHelp = document.querySelector('[data-walkin-email-help]');
+  guestEmail.closest('label').before(guestEmailConsent.closest('label'));
   const updateGuestEmailRequirement = () => {
     const enabled = guestEmailConsent.checked;
     guestEmail.required = enabled;
+    guestEmail.disabled = !enabled;
+    guestEmail.closest('label').hidden = !enabled;
+    guestEmail.closest('label').style.display = enabled ? '' : 'none';
     guestEmailLabel.textContent = `Email for updates (${enabled ? 'required' : 'optional'})`;
     guestEmailHelp.textContent = enabled
       ? 'An email address is required to send your queue updates.'
-      : 'Email is optional. Enable updates below only if you want email notifications.';
+      : 'No email needed to join. Leave email updates off if you do not have an email address.';
   };
   guestEmailConsent.addEventListener("change", updateGuestEmailRequirement);
   updateGuestEmailRequirement();

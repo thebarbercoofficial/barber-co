@@ -77,6 +77,36 @@ async function render() {
   const barberInput = document.querySelector('[name="barber"]');
   const barberHelp = document.querySelector("[data-barber-help]");
   let availabilityRequest = 0;
+  let timesRequest = 0;
+  const refreshTimeAvailability = async () => {
+    const request = ++timesRequest;
+    const date = dateInput.value;
+    const serviceId = serviceInput.value;
+    const selectedBarber = barberInput.value;
+    const options = [...timeInput.options].filter((option) => option.value);
+    if (!date || !options.length) return;
+    try {
+      const results = await Promise.all(options.map(async (option) => {
+        const payload = await api(`/availability?${new URLSearchParams({ date, time: option.value, serviceId })}`);
+        const busy = new Set(payload.unavailableBarberIds || []);
+        const active = barbers.filter((barber) => !['fired', 'on-leave'].includes(barber.status));
+        const unavailable = selectedBarber && selectedBarber !== 'any' ? busy.has(selectedBarber) : !active.some((barber) => !busy.has(barber.id));
+        return { option, unavailable };
+      }));
+      if (request !== timesRequest) return;
+      for (const { option, unavailable } of results) {
+        option.disabled = unavailable;
+        option.textContent = `${timeLabel(option.value)}${unavailable ? ' - unavailable' : ''}`;
+        option.style.color = unavailable ? '#777' : '';
+      }
+      if (timeInput.selectedOptions[0]?.disabled) {
+        timeInput.value = '';
+        toast('That time is no longer available. Choose another time.');
+      }
+    } catch {
+      if (request === timesRequest) scheduleHelp.textContent = 'Time availability could not refresh. Availability is checked again before reserving.';
+    }
+  };
   const updateBarberAvailability = async () => {
     const request = ++availabilityRequest;
     const date = dateInput.value;
@@ -121,6 +151,7 @@ async function render() {
     }
   };
   const updateTimes = () => {
+    ++timesRequest;
     const date = dateInput.value;
     const shopHours = date ? hours[dayFor(date)] : null;
     const holiday = date && (fixedHolidays.has(date.slice(5)) || closedDates.has(date));
@@ -145,11 +176,15 @@ async function render() {
     timeInput.innerHTML = slots.length ? `<option value="">Choose a time</option>${slots.join("")}` : `<option value="">No remaining times</option>`;
     timeInput.disabled = !slots.length;
     scheduleHelp.textContent = slots.length ? `Open ${timeLabel(shopHours.open)} to ${timeLabel(shopHours.close)}. Times fit the selected service duration.` : "No appointment times remain for this date.";
+    refreshTimeAvailability();
     updateBarberAvailability();
   };
   dateInput.addEventListener("change", updateTimes);
   serviceInput.addEventListener("change", updateTimes);
   timeInput.addEventListener("change", updateBarberAvailability);
+  barberInput.addEventListener("change", refreshTimeAvailability);
+  const timesTimer = window.setInterval(() => { if (!document.hidden) refreshTimeAvailability(); }, 15000);
+  window.addEventListener('pagehide', () => window.clearInterval(timesTimer), { once: true });
   let availabilityRefreshing = false;
   const refreshAvailability = async () => {
     if (document.hidden || availabilityRefreshing || !dateInput.value || !timeInput.value) return;
@@ -171,7 +206,7 @@ async function render() {
       toast("Choose a date and time that has not already passed.");
       return;
     }
-    if (timeInput.disabled || !timeInput.value) return toast("Choose an available date and time during shop hours.");
+    if (timeInput.disabled || !timeInput.value || timeInput.selectedOptions[0]?.disabled) return toast("Choose an available date and time during shop hours.");
     if (hasBarbers && (!barberInput.value || barberInput.selectedOptions[0]?.disabled)) return toast("Choose a barber who is available at that time.");
     const service = byId(state.services, data.get("service"));
     const booking = { customer: state.user.name, serviceId: data.get("service"), barberId: data.get("barber"), date: data.get("date"), time: data.get("time"), request: data.get("request"), source: "online", bookingFee: onlineFee, total: Number(service.price) + onlineFee };

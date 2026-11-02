@@ -45,7 +45,8 @@ const BarberAnalytics = (() => {
       slider.setAttribute('aria-valuetext', `${dateLabel(day.date)}: ${day.bookings} bookings, ${day.walkins} walk-ins, ${peso(day.revenue)}`);
       root.querySelector('[data-chart-readout]').textContent = `${dateLabel(day.date)} / ${day.bookings} bookings / ${day.walkins} walk-ins / ${peso(day.revenue)}`;
     };
-    function update() {
+    function update({ preserveSelection = false, animate = true } = {}) {
+      const selectedDate = preserveSelection ? days[Number(slider.value)]?.date : null;
       days = daily.slice(-Number(root.querySelector('[data-chart-range]').value));
       const selected = series[metric];
       const totals = days.reduce((sum, day) => ({ bookings: sum.bookings + day.bookings, walkins: sum.walkins + day.walkins, revenue: sum.revenue + day.revenue }), { bookings: 0, walkins: 0, revenue: 0 });
@@ -54,9 +55,10 @@ const BarberAnalytics = (() => {
       root.querySelector('[data-chart-footer]').innerHTML = `<tr><th scope="row">Period total</th><td>${totals.bookings}</td><td>${totals.walkins}</td><td>${totals.revenue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td></tr>`;
       root.querySelector('[data-data-period]').textContent = `${dateLabel(days[0].date)} - ${dateLabel(days.at(-1).date)}`;
       slider.max = days.length - 1;
-      inspect(days.length - 1);
+      const selectedIndex = days.findIndex((day) => day.date === selectedDate);
+      inspect(selectedIndex >= 0 ? selectedIndex : days.length - 1);
       const data = { labels: days.map((day) => dateLabel(day.date)), datasets: [{ label: selected.label, data: days.map((day) => day[metric]), borderColor: selected.color, backgroundColor: `${selected.color}14`, borderWidth: 2, fill: true, tension: 0.15, pointRadius: days.length <= 7 ? 3 : 0, pointHoverRadius: 5, pointHitRadius: 15 }] };
-      if (chart) { chart.data = data; chart.options.scales.y.ticks.precision = selected.money ? 2 : 0; chart.update(); }
+      if (chart) { chart.data = data; chart.options.scales.y.ticks.precision = selected.money ? 2 : 0; chart.update(animate ? undefined : 'none'); }
       else chart = currentChart = new Chart(canvas, {
         type: 'line', data,
         options: {
@@ -105,9 +107,19 @@ const BarberAnalytics = (() => {
     const explainCounts = () => {
       const note = root.querySelector('[data-analytics-note]');
       note.hidden = false;
-      note.textContent = `Booking activity uses the submission date, not the scheduled appointment date. Counts include ${analytics.totals?.demoBookings || 0} test bookings (all time); test payments never count as collected revenue.${analytics.legacyPayments ? ` ${analytics.legacyPayments} older payments use their last recorded update date.` : ''}`;
+      note.textContent = `Bookings and walk-ins use their entry date, not the scheduled appointment date. Revenue uses the recorded payment date. Counts include ${analytics.totals?.demoBookings || 0} test bookings (all time); test payments never count as revenue. Collections reflect payments recorded by staff, not automatic wallet reconciliation.${analytics.legacyPayments ? ` ${analytics.legacyPayments} older payments use their last recorded update date.` : ''}`;
     };
-    refreshData = (next) => { daily.splice(0, daily.length, ...next.daily); analytics = next; update(); explainCounts(); };
+    const signature = (data) => JSON.stringify([data.daily, data.totals, data.legacyPayments]);
+    let previous = signature(analytics);
+    refreshData = (next) => {
+      const current = signature(next);
+      if (current === previous) return;
+      previous = current;
+      daily.splice(0, daily.length, ...next.daily);
+      analytics = next;
+      update({ preserveSelection: true, animate: false });
+      explainCounts();
+    };
     update();
     explainCounts();
   }

@@ -39,6 +39,9 @@ async function render() {
   let performance = analytics.barberPerformance || [];
   const metricKeys = ['bookings', 'customers', 'waiting', 'revenue'];
   document.querySelectorAll('.metric-grid .metric').forEach((node, index) => { node.dataset.metric = metricKeys[index]; });
+  document.querySelector('[data-metric="revenue"] small').textContent = 'All time / recorded paid / excludes tests';
+  document.querySelector('[data-metric="waiting"] small').textContent = 'Waiting walk-ins / excludes now serving';
+  document.querySelector('[data-metric="customers"] small').textContent = 'Customer accounts / excludes staff';
   const countNote = () => {
     document.querySelector('[data-metric="bookings"] small').textContent = `All appointments / ${analytics.totals.demoBookings || 0} test bookings`;
   };

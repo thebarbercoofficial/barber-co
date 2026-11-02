@@ -225,6 +225,8 @@ async function main() {
       const reports = await staff.newPage();
       await reports.goto(`${base}/admin-reports.html`);
       await reports.locator('[data-metric="bookings"]').waitFor();
+      await reports.locator('[data-chart-day]').fill('0');
+      const inspectedDay = await reports.locator('[data-chart-readout]').innerText();
       await page.locator('[data-payment-proof]').waitFor();
       await page.locator('[data-confirm-payment]').click();
       await page.locator('[data-toast]').filter({ hasText: 'Upload your payment proof' }).waitFor();
@@ -256,6 +258,8 @@ async function main() {
         assert.ok((await screen.locator('[data-metric="bookings"] small').innerText()).includes(`${records.appointments.filter((item) => item.demoPayment).length} test bookings`));
       }
       await reports.waitForFunction((count) => [...document.querySelectorAll('.report-bars .bar b')].some((node) => node.textContent === String(count)), records.appointments.length, { timeout: 10000 });
+      assert.equal(await reports.locator('[data-chart-day]').inputValue(), '0', 'Live analytics refresh must preserve the day being inspected');
+      assert.equal(await reports.locator('[data-chart-readout]').innerText(), inspectedDay);
       await review.locator(`.appointment-record:has([data-status="${saved._id}:confirmed"]) a.text-action`).click();
       await review.locator('.receipt-dialog img').waitFor();
       await review.waitForFunction(() => document.querySelector('.receipt-dialog img')?.naturalWidth > 0);

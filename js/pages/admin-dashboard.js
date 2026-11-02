@@ -96,7 +96,10 @@ async function render() {
   const metricKeys = ['customers', 'bookings', 'revenue', 'waiting'];
   document.querySelectorAll('.metric-grid .metric').forEach((node, index) => { node.dataset.metric = metricKeys[index]; });
   if (results[1].status === 'fulfilled') updateBookingMetric(schedule.appointments);
-  document.querySelector('[data-metric="revenue"] small').textContent = 'All-time collected / paid only';
+  document.querySelector('[data-metric="revenue"] small').textContent = 'All time / recorded paid / excludes tests';
+  document.querySelector('[data-metric="customers"] small').textContent = 'Customer accounts / excludes staff';
+  document.querySelector('[data-metric="waiting"] .metric-label').firstChild.textContent = 'Waiting walk-ins';
+  document.querySelector('[data-metric="waiting"] small').textContent = 'Waiting only / excludes now serving';
   document.querySelector('.workspace-heading').insertAdjacentHTML('beforeend', '<small data-dashboard-sync role="status">Live updates connected</small>');
 }
 

@@ -72,7 +72,7 @@ async function main() {
       BarberCo.state.user.role = originalRole;
       return { adminHasContact, moderatorHasContact, customerHasContact };
     });
-    assert.deepEqual(roleNavigation, { adminHasContact: false, moderatorHasContact: true, customerHasContact: true });
+    assert.deepEqual(roleNavigation, { adminHasContact: false, moderatorHasContact: false, customerHasContact: true });
     console.log('PASS: bookings left, account right, desktop fit, fixed-header clearance, and mobile stacking at five widths');
   } finally {
     await browser?.close();

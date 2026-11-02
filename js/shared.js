@@ -281,7 +281,7 @@ const BarberCo = (() => {
       ["services.html", "services", "Services"],
       ["barbers.html", "barbers", "Barbers"],
       ["queue.html", "queue", "Queue"],
-      ...(role === "admin" ? [] : [["contact.html", "contact", "Contact"]]),
+      ...(["admin", "moderator"].includes(role) ? [] : [["contact.html", "contact", "Contact"]]),
       [accountHref, "login", accountLabel]
     ];
     return `

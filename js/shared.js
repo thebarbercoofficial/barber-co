@@ -101,7 +101,7 @@ const BarberCo = (() => {
     if (app) app.hidden = true;
     api('/me').then((payload) => {
       setSession(payload);
-      const limited = /\/admin-(logbook|schedule)\.html$/.test(location.pathname);
+      const limited = /\/admin-(logbook|schedule|contacts)\.html$/.test(location.pathname);
       if (payload.user.role !== 'admin' && !(limited && payload.user.role === 'moderator')) {
         location.replace(payload.user.role === 'moderator' ? 'admin-logbook.html' : 'index.html');
         return;
@@ -319,6 +319,7 @@ const BarberCo = (() => {
     const adminLinks = [
       ["admin-dashboard.html", "dashboard", "Dashboard"],
       ["admin-logbook.html", "logbook", "Staff Logbook"],
+      ["admin-contacts.html", "contacts", "Contact Inbox"],
       ["admin-users.html", "users", "Users & Permissions"],
       ["admin-profile.html", "profile", "Shop Settings"],
       ["admin-services.html", "services", "Services"],
@@ -330,12 +331,13 @@ const BarberCo = (() => {
     const moderatorLinks = [
       ["admin-logbook.html", "logbook", "Staff Logbook"],
       ["admin-schedule.html", "schedule", "Appointments"],
+      ["admin-contacts.html", "contacts", "Contact Inbox"],
       ["index.html", "public", "Public Site"]
     ];
     const links = currentRole() === "moderator" ? moderatorLinks : adminLinks;
-    const icons = { dashboard: 'LayoutDashboard', logbook: 'ListOrdered', users: 'Users', profile: 'Settings2', services: 'Scissors', barbers: 'ContactRound', reports: 'ChartNoAxesCombined', schedule: 'CalendarDays', public: 'ExternalLink' };
-    const operations = links.filter(([, key]) => ['dashboard', 'logbook', 'schedule'].includes(key));
-    const management = links.filter(([, key]) => !['dashboard', 'logbook', 'schedule', 'public'].includes(key));
+    const icons = { dashboard: 'LayoutDashboard', logbook: 'ListOrdered', contacts: 'Mail', users: 'Users', profile: 'Settings2', services: 'Scissors', barbers: 'ContactRound', reports: 'ChartNoAxesCombined', schedule: 'CalendarDays', public: 'ExternalLink' };
+    const operations = links.filter(([, key]) => ['dashboard', 'logbook', 'schedule', 'contacts'].includes(key));
+    const management = links.filter(([, key]) => !['dashboard', 'logbook', 'schedule', 'contacts', 'public'].includes(key));
     const group = (title, items) => items.length ? `<div class="sidebar-group"><p>${title}</p>${items.map(([href, key, label]) => `<a class="${active === key ? 'active' : ''}" href="${href}" ${active === key ? 'aria-current="page"' : ''}>${icon(icons[key])}<span>${label}</span></a>`).join('')}</div>` : '';
     return `<button class="sidebar-backdrop" type="button" data-sidebar-dismiss aria-label="Close staff navigation"></button><aside class="sidebar" id="staff-sidebar"><div class="sidebar-shop"><img src="images/logo.png" alt=""><div>Carmona shop<small>${currentRole() === 'moderator' ? 'Front desk' : 'Administration'}</small></div><span class="shop-indicator" title="Staff workspace"></span></div>${group('DAILY OPERATIONS', operations)}${group('SHOP MANAGEMENT', management)}<div class="sidebar-footer"><a href="index.html">${icon('ExternalLink')}<span>Public website</span></a><small>The Barber Co / Since 2022</small></div></aside>`;
   }

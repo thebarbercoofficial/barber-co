@@ -54,6 +54,7 @@ async function fixtures(context, role) {
     else if (endpoint.includes('/users/')) data = { user: { ...accounts.find((item) => item.id === endpoint.split('/').pop()), role: req.postDataJSON().role } };
     else if (endpoint.endsWith('/barbers')) data = { barbers };
     else if (endpoint.endsWith('/services')) data = { services };
+    else if (endpoint.endsWith('/admin/contacts')) data = { contacts: [{ _id: 'contact-1', name: 'Web visitor', email: 'visitor@example.test', message: 'Can I book a Saturday appointment?', createdAt: '2026-11-02T04:00:00.000Z' }] };
     else if (endpoint.endsWith('/queue')) data = { queue };
     else if (endpoint.includes('/queue/')) {
       const id = endpoint.split('/').pop();
@@ -83,7 +84,7 @@ async function main() {
   let browser;
   try {
     browser = await chromium.launch({ headless: true, channel: 'chrome' });
-    const pages = ['dashboard', 'logbook', 'schedule', 'users', 'barbers', 'services', 'reports', 'profile'];
+    const pages = ['dashboard', 'logbook', 'schedule', 'contacts', 'users', 'barbers', 'services', 'reports', 'profile'];
     for (const width of [1920, 1440, 768, 390]) {
       const context = await browser.newContext({ viewport: { width, height: 900 } });
       await fixtures(context, 'admin');
@@ -113,6 +114,11 @@ async function main() {
           }
         }
         assert.equal(await page.locator('.site-header').evaluate((el) => getComputedStyle(el).backgroundColor), 'rgb(43, 26, 18)', 'Staff header must match the oak theme');
+        if (name === 'contacts') {
+          assert.equal(await page.locator('.contact-inbox-item').count(), 1);
+          assert.ok((await page.locator('.contact-inbox-item').innerText()).includes('Can I book a Saturday appointment?'));
+          assert.equal(await page.locator('.contact-inbox-item a[href^="mailto:"]').count(), 2);
+        }
         if (['dashboard', 'reports'].includes(name)) {
           await page.waitForFunction(() => Boolean(Chart.getChart(document.querySelector('[data-trend-chart]'))));
           const pixels = await page.locator('canvas').evaluate((canvas) => {
@@ -228,6 +234,10 @@ async function main() {
     const page = await mod.newPage();
     await page.goto(`${base}/admin-logbook.html`);
     await page.waitForSelector('.workspace');
+    assert.equal(await page.locator('.sidebar a[href="admin-contacts.html"]').count(), 1);
+    await page.goto(`${base}/admin-contacts.html`);
+    await page.waitForSelector('.contact-inbox-item');
+    assert.equal(await page.locator('.contact-inbox-item').count(), 1);
     assert.equal(await page.locator('.sidebar a[href="admin-users.html"]').count(), 0);
     assert.equal(await page.locator('.sidebar a[href="admin-profile.html"]').count(), 0);
     assert.equal(await page.locator('.sidebar a[href="admin-reports.html"]').count(), 0);

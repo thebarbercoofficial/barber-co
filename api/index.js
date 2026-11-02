@@ -402,7 +402,6 @@ async function handler(req, res) {
     const email = String(body.email || '').trim().toLowerCase();
     const message = String(body.message || '').trim();
     if (name.length < 2 || name.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || message.length < 5 || message.length > 5000) return send(res, 400, { error: 'Enter your name, a valid email and a message of 5-5000 characters.' });
-    if (!security.emailReady()) return send(res, 503, { error: 'The email service is unavailable. Your message was not sent. Please message the shop on Facebook or call instead.' });
     const key = security.digest(`contact:${email}`);
     const attempts = database.collection('loginAttempts');
     try {
@@ -411,13 +410,22 @@ async function handler(req, res) {
       if (error.code === 11000) return send(res, 429, { error: 'Wait a minute before sending another message.' });
       throw error;
     }
-    try {
-      await security.sendEmail(process.env.ADMIN_EMAIL || 'thebarberco.official@gmail.com', 'The Barber Co website enquiry', `From: ${name}\nReply to: ${email}\n\n${message}`, `contact-${new ObjectId()}`);
-    } catch (error) {
-      await attempts.deleteOne({ _id: key });
-      return send(res, 503, { error: 'The email service could not accept your message. Your draft has been kept. Please use Facebook or call the shop.' });
+    const contact = { _id: new ObjectId(), name, email, message, status: 'new', createdAt: new Date() };
+    await database.collection('contactMessages').insertOne(contact);
+    let emailAccepted = false;
+    if (security.emailReady()) {
+      try {
+        await security.sendEmail(process.env.ADMIN_EMAIL || 'thebarberco.official@gmail.com', 'The Barber Co website enquiry', `From: ${name}\nReply to: ${email}\n\n${message}`, `contact-${contact._id}`);
+        emailAccepted = true;
+      } catch { /* The saved staff inbox remains the source of truth. */ }
     }
-    return send(res, 200, { message: 'The email provider accepted your message for the shop. This does not guarantee inbox delivery.' });
+    return send(res, 201, { message: emailAccepted ? 'Your message was saved to the staff inbox. An email alert was also accepted by the provider.' : 'Your message was saved to the staff inbox. The email alert is unavailable, but staff can still read it on the website.' });
+  }
+
+  if (req.method === 'GET' && path === '/admin/contacts') {
+    await requireRole(req, database, ['admin', 'moderator']);
+    const contacts = await database.collection('contactMessages').find({}, { projection: { name: 1, email: 1, message: 1, status: 1, createdAt: 1 } }).sort({ createdAt: -1 }).limit(100).toArray();
+    return send(res, 200, { contacts });
   }
 
   if (req.method === 'POST' && ['/auth/forgot-password', '/auth/resend-verification'].includes(path)) {

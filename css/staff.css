@@ -163,6 +163,15 @@ body.staff-page .site-header.staff-header { position: fixed; inset: 0 0 auto; he
 .staff-page .bar span { font-size: 11px; margin-bottom: 6px; }
 .staff-page .bar i { background: var(--gold); height: 7px; border-radius: 2px; }
 .staff-page .connection-error { padding: 12px 15px; border: 1px solid #e8c6b8; border-radius: 5px; background: #fff3ed; color: #975839; font-size: 12px; margin-bottom: 18px; }
+.contact-inbox-meta { margin: -8px 0 12px; font-size: 11px; }
+.contact-inbox-list { display: grid; gap: 10px; }
+.contact-inbox-item { min-width: 0; padding: 16px 18px; background: #fff; border: 1px solid var(--line); border-radius: 5px; }
+.contact-inbox-item > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.contact-inbox-item h2 { margin: 0 0 4px; font-size: 14px; }
+.contact-inbox-item header a { color: var(--copper); font-size: 11px; overflow-wrap: anywhere; }
+.contact-inbox-item time { color: var(--muted); font-size: 10px; text-align: right; }
+.contact-inbox-item > p { margin: 14px 0; font-size: 12px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 680px) { .contact-inbox-item > header { flex-direction: column; } .contact-inbox-item time { text-align: left; } }
 .staff-page.is-loaded .workspace h1, .staff-page.is-loaded .panel, .staff-page.is-loaded .metric, .staff-page.is-loaded .appointment-row { animation: staff-enter .2s ease both; }
 @media (min-width: 1360px) and (max-width: 1749px) { .staff-page .queue-list .appointment-row { grid-template-columns: 78px minmax(150px,1fr) auto auto; } .queue-list .queue-barber { grid-column: 2; grid-row: 2; } .queue-list .status-pill { grid-column: 3; grid-row: 1 / 3; } .queue-list .button-row { grid-column: 4; grid-row: 1 / 3; } }
 @keyframes staff-enter { from { opacity: .5; } to { opacity: 1; } }

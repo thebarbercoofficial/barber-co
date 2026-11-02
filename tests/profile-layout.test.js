@@ -55,7 +55,11 @@ async function main() {
       assert.ok(scrollTopBefore > 0, `Booking frame must scroll independently at ${width}px`);
       await page.locator('.account-details > summary').click();
       await page.locator('.account-details > summary').click();
-      if (width === 1860) await page.screenshot({ path: path.join(root, '..', 'profile-swapped-layout-test.png') });
+      if (width === 1860) {
+        await page.locator('.booking-column').evaluate((frame) => { frame.scrollTop = 0; });
+        await page.waitForTimeout(700);
+        await page.screenshot({ path: path.join(root, '..', 'profile-swapped-layout-test.png') });
+      }
     }
     console.log('PASS: bookings left, account right, desktop fit, fixed-header clearance, and mobile stacking at five widths');
   } finally {

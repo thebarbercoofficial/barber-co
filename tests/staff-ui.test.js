@@ -24,6 +24,13 @@ const barberPerformance = barbers.map((barber, index) => ({ ...barber, bookings:
 async function fixtures(context, role) {
   let queue = structuredClone(initialQueue);
   let appointments = structuredClone(initialAppointments);
+  let reservations = [];
+  let analyticsUnavailable = false;
+  context.bookingTestData = {
+    addAppointment: (appointment) => appointments.push(appointment),
+    addReservation: (reservation) => reservations.push(reservation),
+    failAnalytics: () => { analyticsUnavailable = true; }
+  };
   await context.addInitScript(({ role }) => {
     localStorage.setItem('barberCoState', JSON.stringify({ user: { id: 'test-user', name: role === 'admin' ? 'Shop Owner' : 'Front Desk', email: 'qa@example.test', role } }));
     localStorage.setItem('barberCoToken', 'qa-isolated-token');
@@ -39,7 +46,8 @@ async function fixtures(context, role) {
     if (endpoint.endsWith('/me')) data = { user: { id: 'test-user', role, name: role === 'admin' ? 'Shop Owner' : 'Front Desk', email: 'qa@example.test' } };
     else if (endpoint.endsWith('/notifications')) data = { notifications: [], emailConfigured: false, smsConfigured: false };
     else if (endpoint.endsWith('/catalog')) data = { services, barbers };
-    else if (endpoint.endsWith('/analytics')) data = { totals: { customers: 24, ...dailyTotals, waiting: 8 }, daily, services, barbers, barberPerformance };
+    else if (endpoint.endsWith('/analytics') && analyticsUnavailable) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Analytics unavailable in this fixture.' }) });
+    else if (endpoint.endsWith('/analytics')) data = { totals: { customers: 24, ...dailyTotals, bookings: appointments.filter((item) => !item.demoPayment).length, waiting: queue.filter((item) => item.status === 'waiting').length }, daily, services, barbers, barberPerformance };
     else if (endpoint.endsWith('/settings')) data = { settings };
     else if (endpoint.endsWith('/payment-qr/validate')) data = { validation: { format: 'QRPh', recipient: 'Isolated UI fixture', ownershipVerified: false } };
     else if (endpoint.endsWith('/users')) data = { users: accounts };
@@ -52,7 +60,7 @@ async function fixtures(context, role) {
       const body = req.postDataJSON() || {};
       queue = queue.map((item) => item.id === id ? { ...item, ...body } : item);
       data = { ticket: queue.find((item) => item.id === id) };
-    } else if (endpoint.endsWith('/appointments')) data = { appointments };
+    } else if (endpoint.endsWith('/appointments')) data = { appointments, reservations };
     else if (endpoint.includes('/appointments/')) {
       const id = endpoint.split('/').pop();
       appointments = appointments.map((item) => item.mongoId === id ? { ...item, ...req.postDataJSON() } : item);
@@ -197,6 +205,21 @@ async function main() {
       await page.locator('[data-qr="gcash"]').setInputFiles({ name: 'qr.png', mimeType: 'image/png', buffer: fs.readFileSync(path.join(root, 'images/logo.png')) });
       await page.waitForSelector('[data-qr-preview="gcash"] img');
       assert.equal(await page.locator('[name="gcashName"]').inputValue(), 'Unsaved account name');
+      await page.goto(`${base}/admin-dashboard.html`);
+      await page.locator('[data-online-activity]').waitFor();
+      context.bookingTestData.failAnalytics();
+      context.bookingTestData.addReservation({ customer: 'Live checkout hold', serviceId: 'basic', date: today, time: '16:30', request: 'Please keep the sides short.', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 600000).toISOString() });
+      const activity = page.locator('[data-online-activity]');
+      const liveHold = activity.locator('.compact-row').filter({ hasText: 'Live checkout hold' });
+      await liveHold.waitFor({ timeout: 10000 });
+      assert.ok((await liveHold.innerText()).includes('Awaiting payment'));
+      assert.ok((await liveHold.innerText()).includes('Please keep the sides short.'));
+      context.bookingTestData.addAppointment({ mongoId: 'live-booking', customer: 'Live submitted booking', serviceId: 'basic', date: today, time: '17:00', request: 'Same barber please.', total: 250, status: 'pending', queueNumber: 99, createdAt: new Date().toISOString() });
+      const liveBooking = activity.locator('.compact-row').filter({ hasText: 'Live submitted booking' });
+      await liveBooking.waitFor({ timeout: 10000 });
+      assert.ok((await liveBooking.innerText()).includes('Needs review'));
+      assert.equal(await page.locator('[data-metric="bookings"] strong').textContent(), '4', 'Booking count should refresh from appointments even when analytics fails');
+      await page.locator('[data-dashboard-sync]').filter({ hasText: 'Partially updated' }).waitFor({ timeout: 2000 });
       await context.close();
       console.log(`Admin screens and interactions passed at ${width}px`);
     }

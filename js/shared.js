@@ -58,8 +58,10 @@ const BarberCo = (() => {
   const barbers = state.barbers;
   const productionApiBase = "https://barber-co-api.onrender.com";
   const configuredApiBase = localStorage.getItem("barberCoApiBase") || window.BARBER_CO_API_BASE || "";
-  const apiBase = configuredApiBase || (location.protocol.startsWith("http") && !location.hostname.endsWith(".github.io") ? location.origin : "");
-  const resolvedApiBase = apiBase || (location.hostname.endsWith(".github.io") ? productionApiBase : "");
+  const isGitHubPages = location.hostname.endsWith(".github.io");
+  if (isGitHubPages) localStorage.removeItem("barberCoApiBase");
+  const apiBase = isGitHubPages ? productionApiBase : configuredApiBase || (location.protocol.startsWith("http") ? location.origin : "");
+  const resolvedApiBase = apiBase || productionApiBase;
 
   function authToken() {
     return localStorage.getItem("barberCoToken") || "";

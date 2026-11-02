@@ -322,7 +322,23 @@ async function main() {
     await setup.locator('[data-toast]').filter({ hasText: 'live on every device' }).waitFor();
     assert.equal(settings.paymentMode, 'live');
     assert.equal(settings.gcash.accountNumber, '09123456789');
+    await setup.goto(`${base}/user-profile.html`);
+    await setup.locator('.account-details summary').waitFor();
+    for (const width of [390, 768, 1024, 1860]) {
+      await setup.setViewportSize({ width, height: 1000 });
+      for (const open of [true, false]) {
+        if (await setup.locator('.account-details').evaluate((node) => node.open) !== open) await setup.locator('.account-details summary').click();
+        const layout = await setup.evaluate(() => {
+          const account = document.querySelector('.account-column').getBoundingClientRect();
+          const bookings = document.querySelector('.booking-column').getBoundingClientRect();
+          const overflow = [...document.querySelectorAll('.account-column input, .account-column button, .account-column .form-card, .account-column .profile-head, .account-details')].filter((node) => node.getClientRects().length && node.getBoundingClientRect().right > account.right + 1).map((node) => node.tagName);
+          return { overflow, pageOverflow: document.documentElement.scrollWidth > innerWidth + 1, intersects: account.left < bookings.right && account.right > bookings.left && account.top < bookings.bottom && account.bottom > bookings.top };
+        });
+        assert.deepEqual(layout, { overflow: [], pageOverflow: false, intersects: false }, `Profile panels must not overlap at ${width}px, account open=${open}`);
+      }
+    }
     await adminContext.close();
+    console.log('Profile panel sizing passed expanded/collapsed at 390, 768, 1024, and 1860px');
     console.log('Admin-only settings/QR checks, real-payment spoof protection, demo GCash/Maya submission, and exclusion from real analytics passed');
   } finally {
     await browser?.close();

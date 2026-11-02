@@ -1,5 +1,9 @@
 .account-layout { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 24px; align-items: start; }
-.account-column { display: grid; gap: 20px; min-width: 0; }
+.account-column { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; min-width: 0; }
+.account-column > *, .account-column .profile-head > *, .account-column .form-card > * { min-width: 0; max-width: 100%; }
+.account-column .profile-head, .account-column .form-card, .account-column label { grid-template-columns: minmax(0, 1fr); }
+.account-column input, .account-column textarea, .account-column select { min-width: 0; max-width: 100%; }
+.account-column .button { white-space: normal; overflow-wrap: anywhere; }
 .account-column .profile-head { padding: 28px 20px; gap: 18px; }
 .account-column .profile-head h2 { font-size: 32px; overflow-wrap: anywhere; }
 .account-column .upload-box { width: 100%; min-width: 0; margin: 0; }
@@ -11,7 +15,7 @@
 .booking-column .section-heading { margin-bottom: 24px; }
 .booking-column h2 { font-size: 36px; }
 .booking-column [data-my-bookings] { padding: 0; border: 0; background: transparent; box-shadow: none; }
-.booking-column .appointment-row { display: grid; grid-template-columns: minmax(110px, .7fr) minmax(0, 1.3fr); gap: 16px; padding: 20px 0; align-items: start; overflow-wrap: anywhere; }
+.booking-column .appointment-row { display: grid; grid-template-columns: minmax(110px, .7fr) minmax(0, 1.3fr); gap: 16px; padding: 20px; align-items: start; overflow-wrap: anywhere; }
 .booking-column .appointment-row .status-pill { grid-column: 1 / -1; justify-self: start; white-space: normal; }
 .booking-column [data-account-notifications] p { padding: 12px 0; border-bottom: 1px solid #ded5c7; }
 @media (max-width: 760px) {

@@ -65,6 +65,15 @@ async function render() {
   const timeInput = document.querySelector('[name="time"]');
   const scheduleHelp = document.querySelector("[data-schedule-help]");
   const serviceInput = document.querySelector('[name="service"]');
+  const updateSummary = () => {
+    const service = byId(state.services, serviceInput.value);
+    const values = [service.name, peso(service.price), peso(onlineFee), peso(Number(service.price) + onlineFee), service.duration];
+    document.querySelectorAll('.booking-layout .summary-list strong').forEach((node, index) => { node.textContent = values[index]; });
+    state.selectedServiceId = serviceInput.value;
+    save();
+  };
+  serviceInput.addEventListener('change', updateSummary);
+  updateSummary();
   const barberInput = document.querySelector('[name="barber"]');
   const barberHelp = document.querySelector("[data-barber-help]");
   let availabilityRequest = 0;

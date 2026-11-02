@@ -179,6 +179,10 @@ async function main() {
       page.on('request', (request) => { if (new URL(request.url()).pathname.endsWith('/availability')) availabilityChecks += 1; });
       page.on('pageerror', (error) => errors.push(error.message));
       await page.goto(`${base}/booking.html`);
+      await page.locator('.booking-layout .summary-list strong').first().evaluate((node) => { node.textContent = 'Stale previous service'; });
+      await page.locator('[name="service"]').dispatchEvent('change');
+      assert.equal(await page.locator('.booking-layout .summary-list strong').first().textContent(), 'Basic Haircut');
+      assert.ok((await page.locator('.booking-layout .summary-list').innerText()).includes('150'));
       await page.locator('[name="date"]').fill(booking.date);
       await page.locator('[name="date"]').dispatchEvent('change');
       await page.locator('[name="time"]').selectOption(time);
@@ -192,6 +196,7 @@ async function main() {
       await page.getByRole('button', { name: 'Proceed to payment' }).click();
       await page.waitForURL('**/payment.html');
       await page.getByText('Review Barber', { exact: true }).waitFor();
+      assert.ok((await page.locator('.form-card .summary-list').innerText()).includes(booking.request), 'Customer must see the special request before payment submission');
       assert.equal(records.appointments.filter((item) => item.time === time).length, 0);
       const staff = await browser.newContext({ viewport: { width, height: 900 } });
       await staff.addInitScript(({ base, auth, user }) => {

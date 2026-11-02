@@ -44,6 +44,15 @@ async function render() {
       <div class="panel"><p class="eyebrow">${demo ? 'DEMO ONLY' : 'Pay with'} ${selectedMethod.id}</p><h2>${demo ? 'Sample payment details' : 'Scan or transfer'}</h2>${demo ? '<p class="field-help">This QR cannot receive money. Do not send a real payment.</p>' : ''}<div class="summary-list"><div><span>Account name</span><strong>${selectedMethod.accountName || "The Barber Co"}</strong></div><div><span>${demo ? 'Demo reference' : 'Number'}</span><strong>${selectedMethod.accountNumber || "Not provided"}</strong></div></div>${selectedMethod.qrImage ? `<img class="qr-preview" src="${selectedMethod.qrImage}" alt="${demo ? 'Non-payable demo' : 'The Barber Co'} ${selectedMethod.id} QR code">` : `<div class="empty-state">Use the account number above.</div>`}</div>
     </div></section>`;
 
+  if (booking.request) {
+    const row = document.createElement('div');
+    const label = document.createElement('span');
+    label.textContent = 'Special request';
+    const value = document.createElement('strong');
+    value.textContent = booking.request;
+    row.append(label, value);
+    document.querySelector('.form-card .summary-list').append(row);
+  }
   const proofInput = document.querySelector('[data-payment-proof]');
   if (receiptFile) {
     const transfer = new DataTransfer();

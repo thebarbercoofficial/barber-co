@@ -1,4 +1,14 @@
 .account-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.profile-booking-stack { display: grid; gap: 20px; min-width: 0; }
+.profile-booking-stack > .profile-head { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; justify-items: start; gap: 16px; padding: 20px; text-align: left; }
+.profile-booking-stack > .profile-head h2 { margin: 0; font-size: 24px; overflow-wrap: anywhere; }
+.profile-booking-stack > .profile-head p { margin: 4px 0 0; font-size: 13px; }
+.profile-photo-edit { position: relative; display: block; width: 64px; height: 64px; padding: 0; border: 0; border-radius: 50%; background: #111; cursor: pointer; }
+.profile-photo-edit .profile-photo { width: 64px; height: 64px; margin: 0; font-size: 24px; }
+.profile-photo-pencil { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 50%; background: rgba(0,0,0,.66); color: #fff; opacity: 0; transition: opacity .15s ease; pointer-events: none; }
+.profile-photo-edit:hover .profile-photo-pencil, .profile-photo-edit:focus-visible .profile-photo-pencil { opacity: 1; }
+.profile-photo-edit:focus-visible { outline: 3px solid #c99236; outline-offset: 4px; }
+@media (hover: none) { .profile-photo-pencil { inset: auto 0 0 auto; width: 26px; height: 26px; opacity: 1; background: #111; border: 1px solid #c99236; } }
 .account-column { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; min-width: 0; }
 .account-column > *, .account-column .profile-head > *, .account-column .form-card > * { min-width: 0; max-width: 100%; }
 .account-column .profile-head, .account-column .form-card, .account-column label { grid-template-columns: minmax(0, 1fr); }

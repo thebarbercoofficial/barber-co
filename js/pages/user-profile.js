@@ -46,9 +46,23 @@ function draw() {
   accountDetails.innerHTML = '<summary>Edit account details</summary>';
   accountDetails.append(document.querySelector("[data-profile]"));
   accountColumn.append(accountDetails);
-  profileGrid.append(bookingSection, accountColumn);
+  const bookingColumn = document.createElement("div");
+  bookingColumn.className = "profile-booking-stack";
+  bookingColumn.append(identity, bookingSection);
+  profileGrid.append(bookingColumn, accountColumn);
   bookingSection.className = "booking-column";
-  bookingSection.prepend(identity);
+  const photoInput = identity.querySelector('[data-photo]');
+  const photoButton = document.createElement('button');
+  photoButton.type = 'button';
+  photoButton.className = 'profile-photo-edit';
+  photoButton.setAttribute('aria-label', 'Change profile photo');
+  photoButton.title = 'Change profile photo';
+  photoButton.innerHTML = `${avatar(user.name || user.email, user.photo || '')}<span class="profile-photo-pencil" aria-hidden="true">${BarberCo.icon('Pencil')}</span>`;
+  identity.querySelector('.profile-photo').replaceWith(photoButton);
+  identity.querySelector('.upload-box').remove();
+  photoInput.hidden = true;
+  identity.append(photoInput);
+  photoButton.addEventListener('click', () => photoInput.click());
   bookingSection.querySelector(".section-heading").innerHTML = '<p class="eyebrow">Your appointments</p><h2>My bookings</h2><p class="muted">Submitted bookings wait for staff approval. Your latest status appears here automatically.</p><a class="button secondary" href="booking.html">Book another appointment</a>';
 
   document.querySelector("[data-profile]").addEventListener("submit", async (event) => {
@@ -92,6 +106,7 @@ function draw() {
   document.querySelector("[data-photo]").addEventListener("change", (event) => {
     const file = event.target.files[0];
     if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) return toast("Choose a JPEG, PNG, or WebP photo.");
     if (file.size > 2 * 1024 * 1024) return toast("Profile photo must be 2 MB or smaller.");
     const reader = new FileReader();
     reader.addEventListener("load", async () => {

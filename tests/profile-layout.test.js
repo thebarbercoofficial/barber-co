@@ -37,6 +37,13 @@ async function main() {
       await page.goto(`${base}/user-profile.html`);
       await page.locator('.account-details[open]').waitFor();
       await page.getByText('Demo booking accepted', { exact: true }).waitFor();
+      assert.equal(await page.locator('.profile-booking-stack > .profile-head').count(), 1);
+      assert.equal(await page.locator('.booking-column .profile-head').count(), 0);
+      assert.equal(await page.locator('.upload-box').count(), 0);
+      assert.equal(await page.locator('.profile-photo-pencil svg').count(), 1);
+      const chooser = page.waitForEvent('filechooser');
+      await page.getByRole('button', { name: 'Change profile photo', exact: true }).click();
+      assert.equal((await chooser).isMultiple(), false);
       const bounds = await page.evaluate(() => {
         const left = document.querySelector('.booking-column').getBoundingClientRect();
         const right = document.querySelector('.account-column').getBoundingClientRect();

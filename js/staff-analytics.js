@@ -102,8 +102,14 @@ const BarberAnalytics = (() => {
       note.hidden = false;
       note.textContent = `${analytics.legacyPayments} older payment records use their last recorded update date.`;
     }
-    refreshData = (next) => { daily.splice(0, daily.length, ...next.daily); analytics = next; update(); };
+    const explainCounts = () => {
+      const note = root.querySelector('[data-analytics-note]');
+      note.hidden = false;
+      note.textContent = `Booking activity uses the submission date, not the scheduled appointment date. Counts include ${analytics.totals?.demoBookings || 0} test bookings (all time); test payments never count as collected revenue.${analytics.legacyPayments ? ` ${analytics.legacyPayments} older payments use their last recorded update date.` : ''}`;
+    };
+    refreshData = (next) => { daily.splice(0, daily.length, ...next.daily); analytics = next; update(); explainCounts(); };
     update();
+    explainCounts();
   }
 
   return { markup, mount, refresh: (analytics) => window.Chart?.getChart(document.querySelector('[data-trend-chart]')) ? refreshData(analytics) : mount(analytics) };

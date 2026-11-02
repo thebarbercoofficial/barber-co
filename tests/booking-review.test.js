@@ -222,6 +222,9 @@ async function main() {
       const dashboard = await staff.newPage();
       await dashboard.goto(`${base}/admin-dashboard.html`);
       await dashboard.locator('[data-dashboard-sync]').waitFor();
+      const reports = await staff.newPage();
+      await reports.goto(`${base}/admin-reports.html`);
+      await reports.locator('[data-metric="bookings"]').waitFor();
       await page.locator('[data-payment-proof]').waitFor();
       await page.locator('[data-confirm-payment]').click();
       await page.locator('[data-toast]').filter({ hasText: 'Upload your payment proof' }).waitFor();
@@ -247,7 +250,12 @@ async function main() {
       await review.locator('[data-filter="pending"]').click();
       await review.locator('.appointment-record').filter({ hasText: booking.request }).waitFor({ state: 'visible', timeout: 10000 });
       assert.ok((await review.locator('.appointment-record').filter({ hasText: booking.request }).innerText()).includes('Customer request:'), 'Open staff screen should show the new booking and request without reloading');
-      await dashboard.locator('.dashboard-layout > div:first-child > section:nth-of-type(2) .compact-row').filter({ hasText: booking.request }).waitFor({ state: 'visible', timeout: 10000 });
+      await dashboard.locator('.dashboard-layout > div:first-child > section:nth-of-type(2) .compact-row').filter({ hasText: booking.request }).filter({ hasText: time }).waitFor({ state: 'visible', timeout: 10000 });
+      for (const screen of [dashboard, reports]) {
+        await screen.waitForFunction((count) => document.querySelector('[data-metric="bookings"] strong')?.textContent === String(count), records.appointments.length, { timeout: 10000 });
+        assert.ok((await screen.locator('[data-metric="bookings"] small').innerText()).includes(`${records.appointments.filter((item) => item.demoPayment).length} test bookings`));
+      }
+      await reports.waitForFunction((count) => [...document.querySelectorAll('.report-bars .bar b')].some((node) => node.textContent === String(count)), records.appointments.length, { timeout: 10000 });
       await review.locator(`.appointment-record:has([data-status="${saved._id}:confirmed"]) a.text-action`).click();
       await review.locator('.receipt-dialog img').waitFor();
       await review.waitForFunction(() => document.querySelector('.receipt-dialog img')?.naturalWidth > 0);
@@ -276,9 +284,10 @@ async function main() {
     }
     const analytics = await request('/admin/analytics');
     assert.equal(analytics.status, 200);
-    assert.equal(analytics.data.totals.bookings, 3, 'Demo records must not inflate real bookings');
+    assert.equal(analytics.data.totals.bookings, 5, 'All submitted appointments must remain visible in booking counts');
+    assert.equal(analytics.data.totals.demoBookings, 2, 'Test bookings must be identified separately');
     assert.equal(analytics.data.totals.revenue, 750, 'Accepting demos must not inflate collected revenue');
-    assert.equal(analytics.data.barberPerformance[0].bookings, 3);
+    assert.equal(analytics.data.barberPerformance[0].bookings, 5);
     assert.equal(analytics.data.barberPerformance[0].demoBookings, 2);
     assert.equal(analytics.data.barberPerformance[0].revenue, 750);
     const adminContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -294,7 +303,7 @@ async function main() {
     await setup.locator('[data-barber-rows] tr').waitFor();
     assert.equal(await setup.locator('[data-barber-rows] tr').count(), 1);
     const cells = await setup.locator('[data-barber-rows] tr').first().locator('td').allTextContents();
-    assert.deepEqual(cells, ['3', '0', '0', '0', '750.00'], 'Reports must render the five API performance metrics, not catalog placeholders');
+    assert.deepEqual(cells, ['5', '0', '0', '0', '750.00'], 'Reports must count test appointments without inflating real collected payments');
     await setup.goto(`${base}/admin-profile.html`);
     await setup.locator('[name="demoPayments"]').waitFor();
     assert.equal(await setup.locator('[name="demoPayments"]').isChecked(), true);

@@ -16,7 +16,7 @@ const queue = [
 const data = buildAnalytics(appointments, queue, 7, services, now);
 assert.equal(data.daily.length, 365);
 assert.equal(data.daily.at(-1).date, '2026-10-04');
-assert.deepEqual(data.totals, { customers: 7, bookings: 5, walkins: 2, revenue: 600, waiting: 1 });
+assert.deepEqual(data.totals, { customers: 7, bookings: 5, demoBookings: 0, walkins: 2, revenue: 600, waiting: 1 });
 assert.deepEqual(data.daily.at(-1), { date: '2026-10-04', bookings: 1, walkins: 2, revenue: 400 });
 assert.equal(data.daily.at(-2).bookings, 2);
 assert.equal(data.daily.at(-3).revenue, 200);
@@ -37,10 +37,15 @@ const performance = buildBarberPerformance([
   { barberId: 'alex', status: 'waiting', paid: false, price: 150 },
   { barberId: 'alex', status: 'cancelled', paid: false, price: 150 }
 ], [{ _id: 'id-alex', slug: 'alex', name: 'Alex', status: 'active' }, { _id: 'id-luis', name: 'Luis', status: 'on-leave' }], services);
-assert.deepEqual(performance[0], { id: 'id-alex', name: 'Alex', status: 'active', bookings: 3, walkins: 3, completed: 2, cancelled: 2, revenue: 700, demoBookings: 1 });
+assert.deepEqual(performance[0], { id: 'id-alex', name: 'Alex', status: 'active', bookings: 4, walkins: 3, completed: 3, cancelled: 2, revenue: 700, demoBookings: 1 });
 assert.equal(performance[1].completed, 0, 'Barbers with no work still appear');
 assert.equal(performance.find((row) => row.id === 'unassigned').bookings, 1);
 assert.equal(performance.find((row) => row.id === 'deleted-id').revenue, 200, 'Historical work is not dropped if a barber is removed');
 assert.equal(performance.reduce((sum, row) => sum + row.revenue, 0), 900);
 assert.deepEqual(buildBarberPerformance([], [], [], []), []);
 console.log('Per-barber online/walk-in performance, aliases, completion, cancellations, demo separation, and historical records passed');
+const withDemo = buildAnalytics([...appointments, { demoPayment: true, paid: true, total: 9999, createdAt: now }], queue, 7, services, now);
+assert.equal(withDemo.totals.bookings, 6, 'Test bookings must remain visible in operational counts');
+assert.equal(withDemo.totals.demoBookings, 1);
+assert.equal(withDemo.daily.at(-1).bookings, 2);
+assert.equal(withDemo.totals.revenue, data.totals.revenue, 'Test payments must never inflate collected revenue');

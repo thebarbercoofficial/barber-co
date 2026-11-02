@@ -1049,7 +1049,7 @@ async function handler(req, res) {
       ...buildAnalytics(appointments, queue, users, services),
       barberPerformance: buildBarberPerformance(appointments, queue, barbers, services),
       barbers: barbers.map(normalizeDoc),
-      services: services.map((service) => ({ ...normalizeDoc(service), bookings: appointments.filter((item) => !item.demoPayment && (item.serviceId === String(service._id) || item.serviceId === service.slug)).length }))
+      services: services.map((service) => ({ ...normalizeDoc(service), bookings: appointments.filter((item) => item.serviceId === String(service._id) || item.serviceId === service.slug).length }))
     });
   }
 

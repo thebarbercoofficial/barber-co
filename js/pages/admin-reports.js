@@ -36,7 +36,13 @@ async function render() {
   `;
   initHeader("admin");
   BarberAnalytics.mount(analytics);
-  const performance = analytics.barberPerformance || [];
+  let performance = analytics.barberPerformance || [];
+  const metricKeys = ['bookings', 'customers', 'waiting', 'revenue'];
+  document.querySelectorAll('.metric-grid .metric').forEach((node, index) => { node.dataset.metric = metricKeys[index]; });
+  const countNote = () => {
+    document.querySelector('[data-metric="bookings"] small').textContent = `All appointments / ${analytics.totals.demoBookings || 0} test bookings`;
+  };
+  countNote();
   const metrics = ['bookings', 'walkins', 'completed', 'cancelled', 'revenue'];
   function filteredRows() {
     const query = document.querySelector('[data-barber-search]').value.trim().toLowerCase();
@@ -62,6 +68,38 @@ async function render() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
   updatePerformance();
+  const sync = document.createElement('small');
+  sync.setAttribute('role', 'status');
+  sync.textContent = connectionError ? 'Reports unavailable; retrying automatically' : 'Live reports connected';
+  document.querySelector('.workspace-heading').append(sync);
+  let busy = false;
+  async function refreshReports() {
+    if (busy || document.hidden) return;
+    busy = true;
+    try {
+      analytics = await api('/admin/analytics');
+      connectionError = '';
+      document.querySelector('.connection-error')?.remove();
+      metricKeys.forEach((key) => {
+        document.querySelector(`[data-metric="${key}"] strong`).textContent = key === 'revenue' ? peso(analytics.totals[key]) : analytics.totals[key];
+      });
+      countNote();
+      performance = analytics.barberPerformance || [];
+      updatePerformance();
+      document.querySelector('[data-barber-export]').disabled = false;
+      const maximum = Math.max(1, ...analytics.services.map((item) => item.bookings || 0));
+      document.querySelector('.report-bars').innerHTML = analytics.services.map((item) => `<div class="bar"><span><b>${safeText(item.name)}</b><b>${item.bookings || 0}</b></span><i style="width:${Math.min(100, (item.bookings || 0) / maximum * 100)}%"></i></div>`).join('');
+      document.querySelector('.summary-list').innerHTML = analytics.services.map((item) => `<div><span>${safeText(item.name)}</span><strong>${item.bookings || 0} bookings</strong></div>`).join('');
+      BarberAnalytics.refresh(analytics);
+      sync.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+    } catch (error) {
+      if ([401, 403].includes(error.status)) location.replace('login.html');
+      sync.textContent = 'Connection interrupted; showing last update';
+    } finally { busy = false; }
+  }
+  setInterval(refreshReports, 3000);
+  window.addEventListener('focus', refreshReports);
+  document.addEventListener('visibilitychange', refreshReports);
 }
 
 render();

@@ -36,7 +36,7 @@ function callNextLocal() {
 function onlineBookingRows(appointments = [], reservations = []) {
   const activity = [
     ...reservations.map((item) => ({ ...item, activityStatus: 'Awaiting payment' })),
-    ...appointments.filter((item) => item.status === 'pending').map((item) => ({ ...item, activityStatus: 'Needs review' }))
+    ...appointments.filter((item) => ['pending', 'confirmed'].includes(item.status)).map((item) => ({ ...item, activityStatus: `${item.demoPayment ? 'Test / ' : ''}${item.status === 'confirmed' ? 'Accepted' : 'Needs review'}` }))
   ].sort((a, b) => new Date(b.createdAt || b.expiresAt || 0) - new Date(a.createdAt || a.expiresAt || 0));
 
   return activity.slice(0, 6).map((item) => `<div class="compact-row"><div class="row-main"><strong>${safeText(item.customer)}</strong><small>${safeText(item.date)} / ${safeText(item.time)}</small>${item.request ? `<small><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}</div><span class="status-pill ${item.status === 'pending' ? 'pending' : 'waiting'}">${item.activityStatus}</span><a class="button secondary small" href="admin-schedule.html">Review</a></div>`).join('') || `<div class="staff-empty compact">${icon('CalendarCheck')}<strong>No active online bookings</strong></div>`;
@@ -70,7 +70,7 @@ async function render() {
   `;
   const onlinePanel = document.querySelector('.dashboard-layout > div:first-child > section:nth-of-type(2)');
   onlinePanel.dataset.onlineActivity = '';
-  onlinePanel.innerHTML = `<div class="panel-heading"><h3>Online bookings <span class="count-badge">${requests.length + reservations.length}</span></h3><a class="text-action" href="admin-schedule.html">Review ${icon('ArrowUpRight')}</a></div>${onlineBookingRows(requests, reservations)}`;
+  onlinePanel.innerHTML = `<div class="panel-heading"><h3>Online bookings <span class="count-badge">${schedule.appointments.filter((item) => ['pending', 'confirmed'].includes(item.status)).length + reservations.length}</span></h3><a class="text-action" href="admin-schedule.html">Review ${icon('ArrowUpRight')}</a></div>${onlineBookingRows(schedule.appointments, reservations)}`;
   document.querySelector("[data-call-next]").addEventListener("click", async () => {
     try {
       const payload = await api("/admin/queue/next", { method: "POST", body: "{}" });
@@ -95,11 +95,18 @@ async function render() {
   BarberAnalytics.mount(analytics);
   const metricKeys = ['customers', 'bookings', 'revenue', 'waiting'];
   document.querySelectorAll('.metric-grid .metric').forEach((node, index) => { node.dataset.metric = metricKeys[index]; });
+  if (results[1].status === 'fulfilled') updateBookingMetric(schedule.appointments);
   document.querySelector('[data-metric="revenue"] small').textContent = 'All-time collected / paid only';
   document.querySelector('.workspace-heading').insertAdjacentHTML('beforeend', '<small data-dashboard-sync role="status">Live updates connected</small>');
 }
 
 render();
+function updateBookingMetric(appointments) {
+  const target = document.querySelector('[data-metric="bookings"]');
+  const demos = appointments.filter((item) => item.demoPayment).length;
+  target.querySelector('strong').textContent = appointments.length;
+  target.querySelector('small').textContent = `All appointments / ${demos} test bookings`;
+}
 let dashboardBusy = false;
 async function refreshDashboard() {
   if (dashboardBusy || document.hidden || !document.querySelector('[data-dashboard-sync]')) return;
@@ -131,9 +138,9 @@ async function refreshDashboard() {
       const schedule = scheduleResult.value;
       const appointments = schedule.appointments || [];
       const reservations = schedule.reservations || [];
-      document.querySelector('[data-metric="bookings"] strong').textContent = appointments.filter((item) => !item.demoPayment).length;
+      updateBookingMetric(appointments);
       const panel = document.querySelector('[data-online-activity]');
-      panel.querySelector('.count-badge').textContent = appointments.filter((item) => item.status === 'pending').length + reservations.length;
+      panel.querySelector('.count-badge').textContent = appointments.filter((item) => ['pending', 'confirmed'].includes(item.status)).length + reservations.length;
       panel.querySelectorAll('.compact-row,.staff-empty').forEach((node) => node.remove());
       panel.querySelector('.panel-heading').insertAdjacentHTML('afterend', onlineBookingRows(appointments, reservations));
       receivedUpdate = true;

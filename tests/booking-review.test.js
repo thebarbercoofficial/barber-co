@@ -175,12 +175,16 @@ async function main() {
       await browserContext.route('**/images/demo-*-qr.png', (route) => route.fulfill({ path: path.join(root, new URL(route.request().url()).pathname.split('/').slice(-2).join('/')) }));
       const page = await browserContext.newPage();
       const errors = [];
+      let availabilityChecks = 0;
+      page.on('request', (request) => { if (new URL(request.url()).pathname.endsWith('/availability')) availabilityChecks += 1; });
       page.on('pageerror', (error) => errors.push(error.message));
       await page.goto(`${base}/booking.html`);
       await page.locator('[name="date"]').fill(booking.date);
       await page.locator('[name="date"]').dispatchEvent('change');
       await page.locator('[name="time"]').selectOption(time);
       await page.locator('[name="request"]').fill(booking.request);
+      await page.waitForTimeout(3500);
+      assert.ok(availabilityChecks >= 2, 'An open booking form must refresh availability without user input');
       assert.ok(await page.locator('[name="barber"] option[value="any"]').count(), 'Booking form should offer automatic barber assignment');
       assert.ok(await page.locator('[name="barber"] option[value="review-barber"]').count(), 'Booking form should offer specific barbers');
       const chooseAnyBarber = (role === 'admin' && width === 1440) || (role === 'customer' && mode === 'demo');

@@ -141,6 +141,17 @@ async function render() {
   dateInput.addEventListener("change", updateTimes);
   serviceInput.addEventListener("change", updateTimes);
   timeInput.addEventListener("change", updateBarberAvailability);
+  let availabilityRefreshing = false;
+  const refreshAvailability = async () => {
+    if (document.hidden || availabilityRefreshing || !dateInput.value || !timeInput.value) return;
+    availabilityRefreshing = true;
+    try { await updateBarberAvailability(); }
+    finally { availabilityRefreshing = false; }
+  };
+  const availabilityTimer = window.setInterval(refreshAvailability, 3000);
+  document.addEventListener("visibilitychange", refreshAvailability);
+  window.addEventListener("focus", refreshAvailability);
+  window.addEventListener("pagehide", () => window.clearInterval(availabilityTimer), { once: true });
   updateTimes();
   document.querySelector("[data-booking]").addEventListener("submit", async (event) => {
     event.preventDefault();

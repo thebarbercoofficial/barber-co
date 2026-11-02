@@ -61,6 +61,18 @@ async function main() {
         await page.screenshot({ path: path.join(root, '..', 'profile-swapped-layout-test.png') });
       }
     }
+    const roleNavigation = await page.evaluate(() => {
+      const originalRole = BarberCo.state.user.role;
+      BarberCo.state.user.role = 'admin';
+      const adminHasContact = /data-active="contact"/.test(BarberCo.nav());
+      BarberCo.state.user.role = 'moderator';
+      const moderatorHasContact = /data-active="contact"/.test(BarberCo.nav());
+      BarberCo.state.user.role = 'customer';
+      const customerHasContact = /data-active="contact"/.test(BarberCo.nav());
+      BarberCo.state.user.role = originalRole;
+      return { adminHasContact, moderatorHasContact, customerHasContact };
+    });
+    assert.deepEqual(roleNavigation, { adminHasContact: false, moderatorHasContact: true, customerHasContact: true });
     console.log('PASS: bookings left, account right, desktop fit, fixed-header clearance, and mobile stacking at five widths');
   } finally {
     await browser?.close();

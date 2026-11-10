@@ -21,7 +21,7 @@ const nativeFetch = global.fetch;
 const mails = [];
 const sms = [];
 let rejectDelivery = false;
-const envNames = ['EMAIL_PROVIDER', 'RESEND_API_KEY', 'EMAIL_FROM', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM', 'TWILIO_VERIFY_SERVICE_SID', 'SMS_PROVIDER', 'PHILSMS_API_TOKEN', 'PHILSMS_SENDER_ID'];
+const envNames = ['EMAIL_PROVIDER', 'RESEND_API_KEY', 'EMAIL_FROM', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM', 'TWILIO_VERIFY_SERVICE_SID', 'SMS_PROVIDER', 'PHILSMS_API_TOKEN', 'PHILSMS_SENDER_ID', 'UNISMS_API_KEY', 'UNISMS_SENDER_ID'];
 const savedEnv = Object.fromEntries(envNames.map((key) => [key, process.env[key]]));
 envNames.forEach((key) => delete process.env[key]);
 global.fetch = async (url, options) => {

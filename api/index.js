@@ -395,7 +395,7 @@ async function handler(req, res) {
   const body = ["POST", "PATCH", "DELETE"].includes(req.method) ? await readBody(req) : {};
 
   if (req.method === "GET" && path === "/health") return send(res, 200, { ok: true });
-  if (req.method === 'GET' && path === '/auth/capabilities') return send(res, 200, { email: security.emailReady(), sms: messaging.smsReady(), smsVerification: Boolean(process.env.TWILIO_VERIFY_SERVICE_SID && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN), verificationRequired: !allowUnverified });
+  if (req.method === 'GET' && path === '/auth/capabilities') return send(res, 200, { email: security.emailReady(), sms: messaging.smsReady(), smsVerification: messaging.smsVerificationReady(), verificationRequired: !allowUnverified });
 
   if (req.method === 'POST' && path === '/contact') {
     const name = String(body.name || '').trim();
@@ -581,7 +581,7 @@ async function handler(req, res) {
   }
   if (req.method === 'GET' && path === '/admin/notifications') {
     await requireRole(req, database, ['admin']);
-    return send(res, 200, { emailConfigured: security.emailReady(), smsConfigured: messaging.smsReady(), smsProvider: messaging.smsProviderName(), smsVerificationConfigured: Boolean(process.env.TWILIO_VERIFY_SERVICE_SID && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN), notifications: await database.collection('notifications').find().sort({ createdAt: -1 }).limit(50).toArray() });
+    return send(res, 200, { emailConfigured: security.emailReady(), smsConfigured: messaging.smsReady(), smsProvider: messaging.smsProviderName(), smsVerificationConfigured: messaging.smsVerificationReady(), notifications: await database.collection('notifications').find().sort({ createdAt: -1 }).limit(50).toArray() });
   }
   if (req.method === 'POST' && path === '/admin/notifications/retry') {
     await requireRole(req, database, ['admin']);
@@ -598,12 +598,12 @@ async function handler(req, res) {
     if (path.endsWith('send-code')) {
       const previous = await database.collection('loginAttempts').findOne({ _id: key });
       if (previous?.sentAt && Date.now() - new Date(previous.sentAt).getTime() < 60000) return send(res, 429, { error: 'Wait a minute before requesting another SMS code.' });
-      await messaging.verifyPhone(phone);
+      await messaging.requestPhoneVerification(database, user._id, phone);
       await database.collection('loginAttempts').updateOne({ _id: key }, { $set: { sentAt: new Date(), expiresAt: new Date(Date.now() + 600000) } }, { upsert: true });
       return send(res, 200, { message: 'SMS verification requested. Enter the code you receive.' });
     }
     if (!/^\d{6}$/.test(String(body.code || ''))) return send(res, 400, { error: 'Enter the six-digit SMS code.' });
-    await messaging.verifyPhone(phone, body.code);
+    await messaging.verifyPhoneCode(database, user._id, phone, body.code);
     await database.collection('users').updateOne({ _id: user._id }, { $set: { phoneVerifiedAt: new Date(), smsConsent: body.smsConsent === true } });
     return send(res, 200, { user: publicUser({ ...user, phoneVerifiedAt: new Date(), smsConsent: body.smsConsent === true }) });
   }

@@ -86,7 +86,20 @@ PhilSMS. Configure these in Render's backend environment only:
 
 The server sends only to customers with a verified mobile number and explicit
 SMS consent. An accepted API request is not proof of handset delivery; check the
-provider's message report for final status. Phone-number OTP verification remains
-on Twilio Verify and is independent from this outbound notification provider.
+provider's message report for final status. Phone verification uses Twilio Verify
+when configured; otherwise it sends an app-generated, expiring one-time code
+through the configured SMS provider.
 Never put the API token in Git, HTML, or browser JavaScript. No live message
 should be sent during setup without the account owner's consent.
+
+### UniSMS thesis testing
+
+UniSMS may be used for student testing with its account's restricted default
+sender ID. Configure `SMS_PROVIDER=unisms`, `UNISMS_API_KEY`, and
+`UNISMS_SENDER_ID` in Render only. The restricted sender is documented to reach
+Globe and DITO, not Smart/TNT/Sun; a custom sender ID requires an organizational
+sponsor and carrier approval. UniSMS reports 10 free credits after mobile
+verification, then its published minimum top-up is PHP 500. Do not top up without
+the account owner's explicit approval. The adapter uses UniSMS for outbound
+notices and app-generated phone verification codes; codes are hashed, expire
+after ten minutes, are single-use, and are limited to five attempts.

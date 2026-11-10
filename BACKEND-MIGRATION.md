@@ -20,7 +20,8 @@ The server exposes API routes only, never repository files or environment files.
 
 - Render Free (Singapore) runs the API; MongoDB Atlas Free M0 (Hong Kong) stores data.
 - Gmail API uses send-only OAuth credentials configured in Render. Google shows
-  the OAuth app as In production, but it is not Google-verified. SMS is not configured.
+  the OAuth app as In production, but it is not Google-verified. PhilSMS sending
+  is supported by the API but remains inactive until its credentials are configured.
 - The new database seeds five services but has no barber profiles yet. Until a
   real GCash/Maya destination is configured, online bookings use clearly labeled
   non-payable demo methods so the booking and staff-review workflow can be tested.
@@ -73,3 +74,19 @@ its refresh tokens after seven days. Resolve publishing requirements before
 launch, and test actual inbox delivery, verification and password resets after
 configuring the hosted environment. Adapter unit tests mock Google and cannot
 prove real delivery. Gmail is subject to account sending limits.
+
+## SMS Notifications (PhilSMS)
+
+The API can send transactional appointment and queue notifications through
+PhilSMS. Configure these in Render's backend environment only:
+
+- `SMS_PROVIDER=philsms`
+- `PHILSMS_API_TOKEN`
+- `PHILSMS_SENDER_ID` (must be available/approved for the PhilSMS account)
+
+The server sends only to customers with a verified mobile number and explicit
+SMS consent. An accepted API request is not proof of handset delivery; check the
+provider's message report for final status. Phone-number OTP verification remains
+on Twilio Verify and is independent from this outbound notification provider.
+Never put the API token in Git, HTML, or browser JavaScript. No live message
+should be sent during setup without the account owner's consent.

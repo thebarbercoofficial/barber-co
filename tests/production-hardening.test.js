@@ -21,13 +21,14 @@ const nativeFetch = global.fetch;
 const mails = [];
 const sms = [];
 let rejectDelivery = false;
-const envNames = ['EMAIL_PROVIDER', 'RESEND_API_KEY', 'EMAIL_FROM', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM', 'TWILIO_VERIFY_SERVICE_SID'];
+const envNames = ['EMAIL_PROVIDER', 'RESEND_API_KEY', 'EMAIL_FROM', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM', 'TWILIO_VERIFY_SERVICE_SID', 'SMS_PROVIDER', 'PHILSMS_API_TOKEN', 'PHILSMS_SENDER_ID'];
 const savedEnv = Object.fromEntries(envNames.map((key) => [key, process.env[key]]));
 envNames.forEach((key) => delete process.env[key]);
 global.fetch = async (url, options) => {
   if (String(url).startsWith('https://api.resend.com/')) { mails.push(JSON.parse(options.body)); return { ok: !rejectDelivery, async json() { return { id: `isolated-email-${mails.length}` }; } }; }
   if (String(url).startsWith('https://verify.twilio.com/')) { const values = new URLSearchParams(options.body); return { ok: true, async json() { return { status: values.has('Code') ? values.get('Code') === '123456' ? 'approved' : 'pending' : 'pending' }; } }; }
   if (String(url).startsWith('https://api.twilio.com/')) { sms.push(String(options.body)); return { ok: !rejectDelivery, async json() { return { sid: `isolated-sms-${sms.length}` }; } }; }
+  if (String(url).startsWith('https://app.philsms.com/api/v3/sms/send')) { sms.push(String(options.body)); return { ok: !rejectDelivery, async json() { return rejectDelivery ? { status: 'error' } : { status: 'success', data: [{ uid: `isolated-philsms-${sms.length}`, status: 'Queued' }] }; } }; }
   throw new Error(`Unexpected external request during isolated tests: ${url}`);
 };
 const proof = `data:image/png;base64,${fs.readFileSync(path.join(root, 'images/logo.png')).toString('base64')}`;
@@ -221,13 +222,19 @@ async function main() {
     passed('Rescheduling, acceptance and completion record notifications; repeats do not double-count or reopen completed work');
 
     process.env.TWILIO_ACCOUNT_SID = 'isolated-account'; process.env.TWILIO_AUTH_TOKEN = 'isolated-token'; process.env.TWILIO_FROM = '+15005550006'; process.env.TWILIO_VERIFY_SERVICE_SID = 'isolated-verify-service';
+    Object.assign(context.process.env, { TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN, TWILIO_FROM: process.env.TWILIO_FROM, TWILIO_VERIFY_SERVICE_SID: process.env.TWILIO_VERIFY_SERVICE_SID });
     assert.equal((await request('/me/phone/send-code', {}, userToken)).status, 200);
     assert.equal((await request('/me/phone/verify', { code: '', smsConsent: true }, userToken)).status, 400);
     assert.equal((await request('/me/phone/verify', { code: '000000', smsConsent: true }, userToken)).status, 400);
     assert.equal((await request('/me/phone/verify', { code: '123456', smsConsent: true }, userToken)).status, 200);
+    process.env.SMS_PROVIDER = 'philsms'; process.env.PHILSMS_API_TOKEN = 'isolated-philsms-token'; process.env.PHILSMS_SENDER_ID = 'BarberCo';
     const ticket = await request('/queue/walkin', { customer: 'Call Me Nickname', serviceId: 'basic' }, userToken);
     await request('/admin/queue/next', {}, adminToken);
     assert.ok(sms.length > 0);
+    assert.equal((await request('/auth/capabilities')).data.sms, true);
+    assert.equal((await request('/auth/capabilities')).data.smsVerification, true);
+    assert.equal(JSON.parse(sms.at(-1)).recipient, '639181234567');
+    assert.equal(JSON.parse(sms.at(-1)).sender_id, 'BarberCo');
     assert.ok(rows.notifications.some((item) => item.message.includes('your turn') && item.channels.sms.status === 'accepted'));
     assert.equal((await request('/admin/queue/next', {}, adminToken)).status, 409);
     await request(`/admin/queue/${ticket.data.ticket.id}`, { status: 'done' }, adminToken, 'PATCH');
@@ -340,8 +347,8 @@ async function main() {
     await request(`/admin/queue/${nameOnlyTicketId}`, { status: 'cancelled' }, adminToken, 'PATCH');
     await walkinPage.goto(`${base}/queue.html`);
     await walkinPage.locator('[data-walkin] [name="customer"]').fill('Browser Email Guest');
-    await guestEmail.fill('walkin-ui@isolated.test');
     await guestConsent.check();
+    await guestEmail.fill('walkin-ui@isolated.test');
     await walkinPage.locator('[data-walkin] button[type="submit"]').click();
     await walkinPage.locator('[data-ticket-panel]').filter({ hasText: 'Email queue updates are enabled' }).waitFor();
     const optedInTicketId = new URL(walkinPage.url()).searchParams.get('ticket');

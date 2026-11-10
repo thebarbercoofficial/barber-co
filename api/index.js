@@ -395,7 +395,7 @@ async function handler(req, res) {
   const body = ["POST", "PATCH", "DELETE"].includes(req.method) ? await readBody(req) : {};
 
   if (req.method === "GET" && path === "/health") return send(res, 200, { ok: true });
-  if (req.method === 'GET' && path === '/auth/capabilities') return send(res, 200, { email: security.emailReady(), sms: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM), verificationRequired: !allowUnverified });
+  if (req.method === 'GET' && path === '/auth/capabilities') return send(res, 200, { email: security.emailReady(), sms: messaging.smsReady(), smsVerification: Boolean(process.env.TWILIO_VERIFY_SERVICE_SID && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN), verificationRequired: !allowUnverified });
 
   if (req.method === 'POST' && path === '/contact') {
     const name = String(body.name || '').trim();
@@ -581,7 +581,7 @@ async function handler(req, res) {
   }
   if (req.method === 'GET' && path === '/admin/notifications') {
     await requireRole(req, database, ['admin']);
-    return send(res, 200, { emailConfigured: security.emailReady(), smsConfigured: messaging.smsReady(), smsVerificationConfigured: Boolean(process.env.TWILIO_VERIFY_SERVICE_SID), notifications: await database.collection('notifications').find().sort({ createdAt: -1 }).limit(50).toArray() });
+    return send(res, 200, { emailConfigured: security.emailReady(), smsConfigured: messaging.smsReady(), smsProvider: messaging.smsProviderName(), smsVerificationConfigured: Boolean(process.env.TWILIO_VERIFY_SERVICE_SID && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN), notifications: await database.collection('notifications').find().sort({ createdAt: -1 }).limit(50).toArray() });
   }
   if (req.method === 'POST' && path === '/admin/notifications/retry') {
     await requireRole(req, database, ['admin']);

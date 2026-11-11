@@ -96,6 +96,8 @@ const BarberCo = (() => {
     save();
   }
 
+  const pendingReads = new Map();
+
   if (/\/admin-[a-z-]+\.html$/.test(location.pathname)) {
     const app = document.querySelector('#app');
     if (app) app.hidden = true;
@@ -111,22 +113,51 @@ const BarberCo = (() => {
   }
 
   async function api(path, options = {}) {
+    const method = String(options.method || 'GET').toUpperCase();
+    const shareRead = method === 'GET' && Object.keys(options).length === 0;
+    const key = `${authToken()}:${path}`;
+    if (method !== 'GET') pendingReads.clear();
+    if (!shareRead) return requestApi(path, options);
+    let pending = pendingReads.get(key);
+    if (!pending) {
+      pending = requestApi(path, options);
+      pendingReads.set(key, pending);
+    }
+    try {
+      return structuredClone(await pending);
+    } finally {
+      if (pendingReads.get(key) === pending) pendingReads.delete(key);
+    }
+  }
+
+  async function requestApi(path, options = {}) {
     if (!resolvedApiBase) {
       const error = new Error("Backend is not connected.");
       error.code = "BACKEND_UNAVAILABLE";
       throw error;
     }
     const token = authToken();
-    const response = await fetch(`${resolvedApiBase}/api${path}`, {
+    let response;
+    try {
+      response = await fetch(`${resolvedApiBase}/api${path}`, {
       cache: 'no-store',
       signal: AbortSignal.timeout(20000),
       ...options,
       headers: {
-        "Content-Type": "application/json",
+        ...(options.body != null ? { "Content-Type": "application/json" } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(options.headers || {})
       }
-    });
+      });
+    } catch (cause) {
+      const error = new Error(cause.name === 'TimeoutError'
+        ? 'The server is taking longer than usual. Please try again.'
+        : cause.name === 'AbortError' ? 'Request cancelled.'
+        : 'Unable to connect. Check your connection and try again.');
+      error.cause = cause;
+      error.code = cause.name === 'TimeoutError' ? 'REQUEST_TIMEOUT' : 'NETWORK_ERROR';
+      throw error;
+    }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       const error = new Error(data.error || "Request failed.");
@@ -186,6 +217,8 @@ const BarberCo = (() => {
     const el = document.querySelector("[data-toast]");
     if (!el) return alert(message);
     el.textContent = message;
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
     el.classList.add("show");
     window.clearTimeout(toast.timer);
     toast.timer = window.setTimeout(() => el.classList.remove("show"), 2600);
@@ -200,6 +233,13 @@ const BarberCo = (() => {
     document.body.classList.remove("is-loaded");
     document.querySelectorAll(`[data-active="${activePage}"]`).forEach((link) => link.classList.add("active"));
     if (toggle && nav) {
+      document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || !nav.classList.contains('open')) return;
+        nav.classList.remove('open');
+        header?.classList.remove('menu-open');
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.focus();
+      });
       toggle.addEventListener("click", () => {
         const isOpen = nav.classList.toggle("open");
         header?.classList.toggle("menu-open", isOpen);

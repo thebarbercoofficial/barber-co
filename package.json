@@ -5,6 +5,7 @@
   "scripts": {
     "start": "node server.js",
     "test:server": "node tests/portable-server.test.js",
+    "test:client": "node tests/api-client.test.js",
     "check": "node --check api/index.js && node --check js/shared.js && node --check js/pages/booking.js && node --check js/pages/payment.js && node --check js/pages/admin-schedule.js",
     "test": "node tests/booking-hold.test.js && node tests/analytics.test.js && node tests/analytics-api.test.js && node tests/payment-settings.test.js && node tests/gmail-delivery.test.js && node tests/sms-provider.test.js && node tests/contact-api.test.js",
     "test:ui": "node tests/staff-ui.test.js",

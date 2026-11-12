@@ -318,7 +318,7 @@ function paymentConfigured(settings) {
 
 function requireBookingEligibility(user) {
   if (allowUnverified || ['admin', 'moderator'].includes(user.role)) return;
-  if (!user.emailVerifiedAt && !user.phoneVerifiedAt) throw Object.assign(new Error('Verify your mobile number or email before booking online.'), { status: 403 });
+  if (!user.emailVerifiedAt && !user.phoneVerifiedAt && !user.adminTestAccess) throw Object.assign(new Error('Verify your mobile number or email before booking online.'), { status: 403 });
   const age = security.ageOn(user.birthDate);
   if (age == null || age < 18) throw Object.assign(new Error('Online wallet bookings are for customers aged 18 or older under shop policy. Younger customers may join the walk-in queue or have a parent book using their own account.'), { status: 403 });
 }
@@ -665,7 +665,7 @@ async function handler(req, res) {
       return send(res, 401, { error: `Incorrect login details. ${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} remaining before a temporary lock.`, attemptsRemaining });
     }
     await database.collection('loginAttempts').deleteOne({ _id: security.digest(attemptKey) });
-    if (user.verificationRequired && !user.emailVerifiedAt && !user.phoneVerifiedAt) return send(res, 403, { error: 'Verify your mobile number or email before signing in.', verificationRequired: true, email: user.email });
+    if (user.verificationRequired && !user.emailVerifiedAt && !user.phoneVerifiedAt && !user.adminTestAccess) return send(res, 403, { error: 'Verify your mobile number or email before signing in.', verificationRequired: true, email: user.email });
     return send(res, 200, { user: publicUser(user), token: tokenFor(user) });
   }
 
@@ -758,8 +758,15 @@ async function handler(req, res) {
   }
 
   if (path.startsWith("/admin/users/") && req.method === "PATCH") {
-    await requireRole(req, database, ["admin"]);
+    const admin = await requireRole(req, database, ["admin"]);
     const id = path.split("/").pop();
+    if (typeof body.adminTestAccess === 'boolean') {
+      if (!ObjectId.isValid(id)) return send(res, 400, { error: 'Choose a valid account.' });
+      const target = await database.collection('users').findOne({ _id: new ObjectId(id) });
+      if (!target || target.role !== 'customer') return send(res, 400, { error: 'Test access is only available for customer accounts.' });
+      await database.collection('users').updateOne({ _id: target._id }, { $set: { adminTestAccess: body.adminTestAccess, testAccessGrantedBy: admin._id, updatedAt: new Date() } });
+      return send(res, 200, { message: body.adminTestAccess ? 'Test sign-in and booking enabled without SMS verification. The phone number is still unverified.' : 'Test access removed. Normal verification applies.' });
+    }
     const role = String(body.role || "");
     if (!ObjectId.isValid(id) || !["customer", "moderator", "admin"].includes(role)) return send(res, 400, { error: "Choose a valid account and role." });
     const target = await database.collection("users").findOne({ _id: new ObjectId(id) });

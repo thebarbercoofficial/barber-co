@@ -27,6 +27,7 @@ function addDeleteControls() {
     actions.className = 'account-actions';
     select.before(actions);
     actions.append(select);
+    if (account.role === 'customer') actions.insertAdjacentHTML('beforeend', `<button class="button secondary small" type="button" data-test-access="${safeText(account.id)}">${account.adminTestAccess ? 'Remove test access' : 'Enable test access'}</button>`);
     select.insertAdjacentHTML('afterend', `<button class="button danger small" type="button" data-delete-account="${safeText(account.id)}" title="Delete account" aria-label="Delete account for ${safeText(account.name)}">${icon('Trash2')}</button>`);
   });
 }
@@ -42,6 +43,21 @@ async function render() {
   } catch (error) { document.querySelector('[data-user-rows]').innerHTML = `<div class="connection-error" role="alert">${safeText(error.message || 'Accounts could not be loaded.')}</div>`; }
   document.querySelector('[data-user-search]').addEventListener('input', () => { document.querySelector('[data-user-rows]').innerHTML = rows(); addDeleteControls(); });
   document.querySelector('[data-user-rows]').addEventListener('click', async (event) => {
+    const testButton = event.target.closest('[data-test-access]');
+    if (testButton && !testButton.disabled) {
+      const account = accounts.find((item) => item.id === testButton.dataset.testAccess);
+      const enabled = !account.adminTestAccess;
+      if (!window.confirm(enabled ? `Allow ${account.email} to sign in and book without SMS/email verification for testing? This does not verify their contact details or enable SMS delivery.` : `Remove test access for ${account.email}?`)) return;
+      testButton.disabled = true;
+      try {
+        const result = await api(`/admin/users/${account.id}`, { method: 'PATCH', body: JSON.stringify({ adminTestAccess: enabled }) });
+        account.adminTestAccess = enabled;
+        testButton.textContent = enabled ? 'Remove test access' : 'Enable test access';
+        toast(result.message);
+      } catch (error) { toast(error.message); }
+      finally { testButton.disabled = false; }
+      return;
+    }
     const button = event.target.closest('[data-delete-account]');
     if (!button || button.disabled) return;
     const account = accounts.find((item) => item.id === button.dataset.deleteAccount);

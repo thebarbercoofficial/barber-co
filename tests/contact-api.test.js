@@ -73,6 +73,13 @@ async function main() {
   assert.equal(inbox.contacts[0].replies[0].status, 'accepted');
   assert.equal(inbox.contacts[0].status, 'replied');
   const customer = users.find((item) => item.role === 'customer');
+  const accessPath = `/api/admin/users/${customer._id}`;
+  for (const role of ['customer', 'moderator']) assert.equal((await request({ method: 'PATCH', path: accessPath, role, body: { adminTestAccess: true } })).status, 403);
+  assert.equal((await request({ method: 'PATCH', path: accessPath, role: 'admin', body: { adminTestAccess: true } })).status, 200);
+  assert.equal(customer.adminTestAccess, true);
+  assert.equal(customer.phoneVerifiedAt, undefined, 'Test access must not falsely verify a number');
+  assert.equal((await request({ method: 'PATCH', path: accessPath, role: 'admin', body: { adminTestAccess: false } })).status, 200);
+  assert.equal(customer.adminTestAccess, false);
   const booking = { _id: new ObjectId(), userId: customer._id, status: 'confirmed', date: '2099-11-03', time: '13:00', serviceId: 'cut', barberId: '', paid: true, total: 250 };
   database.records.appointments = [booking];
   database.records.settings = [{ _id: 'shop' }];

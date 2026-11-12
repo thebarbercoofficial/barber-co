@@ -9,7 +9,7 @@ const BarberAnalytics = (() => {
   };
   const dateLabel = (date) => new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' }).format(new Date(`${date}T00:00:00+08:00`));
 
-  function markup({ rawOpen = false } = {}) {
+  function markup({ rawOpen = false, defaultDays = 30 } = {}) {
     return `<section class="analytics-section" data-analytics>
       <div class="panel-heading"><div><h3>Activity over time</h3><p class="muted">Philippine time / verified revenue includes booking fees and paid walk-ins.</p></div><label class="analytics-range">Period<select data-chart-range aria-label="Analytics period"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last 365 days</option></select></label></div>
       <div class="analytics-toolbar"><div class="chart-tabs" role="group" aria-label="Chart metric">${Object.entries(series).map(([key, item]) => `<button type="button" data-chart-metric="${key}" class="${key === 'revenue' ? 'active' : ''}" aria-pressed="${key === 'revenue'}"><i style="background:${item.color}"></i>${key === 'revenue' ? 'Revenue' : key === 'bookings' ? 'Bookings' : 'Walk-ins'}</button>`).join('')}</div><div class="period-totals" data-period-totals></div></div>

@@ -169,4 +169,26 @@ document.querySelector("[data-close-alert]").addEventListener("click", () => {
   document.querySelector("[data-login-alert]").classList.remove("show");
 });
 
+document.querySelector('.login-links').insertAdjacentHTML('beforeend', '<button type="button" data-open-sms-recovery>Lost email access? Recover by SMS</button>');
+document.querySelector('main').insertAdjacentHTML('beforeend', `<section class="login-modal" data-sms-recovery aria-label="SMS account recovery"><button class="modal-close" type="button" aria-label="Close SMS recovery" data-close-sms>x</button><h2>Account recovery</h2><p>Use a previously verified number. Globe/DITO supported; Smart/TNT/Sun unavailable with the current sender. Maximum 3 codes per number daily.</p><label>Recover<select data-recovery-purpose><option value="password">Password</option><option value="email">Email reminder</option></select></label><label>Mobile number<input type="tel" autocomplete="tel" data-recovery-phone></label><button class="button secondary" type="button" data-recovery-send>Send SMS code</button><label>SMS code<input inputmode="numeric" autocomplete="one-time-code" maxlength="6" data-recovery-code></label><div data-recovery-passwords><label>New password<input type="password" minlength="8" autocomplete="new-password" data-recovery-password></label><label>Confirm password<input type="password" minlength="8" autocomplete="new-password" data-recovery-confirm></label></div><p role="status" data-recovery-message></p><button class="button primary" type="button" data-recovery-complete>Confirm recovery</button></section>`);
+const recoveryModal = document.querySelector('[data-sms-recovery]');
+document.querySelector('[data-open-sms-recovery]').onclick = () => recoveryModal.classList.add('show');
+document.querySelector('[data-close-sms]').onclick = () => recoveryModal.classList.remove('show');
+document.querySelector('[data-recovery-purpose]').onchange = (event) => { document.querySelector('[data-recovery-passwords]').hidden = event.target.value === 'email'; };
+for (const [selector, endpoint] of [['[data-recovery-send]', '/auth/sms-recovery'], ['[data-recovery-complete]', '/auth/sms-recovery/complete']]) {
+  document.querySelector(selector).onclick = async (event) => {
+    const button = event.currentTarget;
+    if (button.disabled) return;
+    button.disabled = true;
+    try {
+      const payload = await api(endpoint, { method: 'POST', body: JSON.stringify({ phone: document.querySelector('[data-recovery-phone]').value, purpose: document.querySelector('[data-recovery-purpose]').value, code: document.querySelector('[data-recovery-code]').value, password: document.querySelector('[data-recovery-password]').value, confirmPassword: document.querySelector('[data-recovery-confirm]').value }) });
+      document.querySelector('[data-recovery-message]').textContent = payload.message;
+      if (selector === '[data-recovery-send]') { window.setTimeout(() => { button.disabled = false; }, 60000); return; }
+      document.querySelector('[data-recovery-code]').value = '';
+      document.querySelector('[data-recovery-password]').value = '';
+      document.querySelector('[data-recovery-confirm]').value = '';
+    } catch (error) { document.querySelector('[data-recovery-message]').textContent = error.message; }
+    button.disabled = false;
+  };
+}
 initHeader("login");

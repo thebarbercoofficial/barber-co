@@ -48,9 +48,16 @@ async function main() {
     assert.equal(await database.collection('accountCodes').countDocuments({ hash: code }), 0, 'OTP is not stored in plaintext');
     await assert.rejects(verifyPhoneCode(database, 'user-1', '09181234568', code), /invalid or expired/);
     await assert.rejects(verifyPhoneCode(database, 'user-1', '09181234567', '000000'), /invalid or expired/);
+    await assert.rejects(requestPhoneVerification(database, 'user-2', '09181234567'), /Wait one minute/);
+    await database.collection('loginAttempts').updateMany({}, { $set: { sentAt: new Date(0) } });
     await requestPhoneVerification(database, 'user-2', '09181234567');
     const secondCode = otpMessages[1].content.match(/\b\d{6}\b/)[0];
     await verifyPhoneCode(database, 'user-2', '09181234567', secondCode);
+    await database.collection('loginAttempts').updateMany({}, { $set: { sentAt: new Date(0) } });
+    await requestPhoneVerification(database, 'user-3', '09181234567');
+    await database.collection('loginAttempts').updateMany({}, { $set: { sentAt: new Date(0) } });
+    await assert.rejects(requestPhoneVerification(database, 'user-4', '09181234567'), /Daily SMS limit/);
+    assert.equal(otpMessages.length, 3, 'Daily quota prevents a fourth provider send');
     await assert.rejects(verifyPhoneCode(database, 'user-1', '09181234567', code), /invalid or expired/);
   } finally {
     global.fetch = savedFetch;

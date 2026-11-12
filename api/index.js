@@ -428,6 +428,29 @@ async function handler(req, res) {
     return send(res, 200, { contacts });
   }
 
+  if (req.method === 'POST' && ['/auth/sms-recovery', '/auth/sms-recovery/complete'].includes(path)) {
+    const phone = normalizeMobile(body.phone);
+    if (!/^09\d{9}$/.test(phone)) return send(res, 400, { error: 'Enter a valid Philippine mobile number.' });
+    const user = await database.collection('users').findOne({ phoneLogin: phone });
+    const eligible = user && user.phoneVerifiedAt;
+    const purpose = body.purpose === 'email' ? 'email' : 'password';
+    const identity = `recovery:${purpose}:${user?._id || 'unknown'}`;
+    if (path.endsWith('/complete')) {
+      if (!eligible) return send(res, 400, { error: 'The code is invalid or expired.' });
+      if (purpose === 'password' && (String(body.password || '').length < 8 || body.password !== body.confirmPassword)) return send(res, 400, { error: 'Use matching passwords of at least 8 characters.' });
+      await messaging.verifyPhoneCode(database, identity, phone, body.code);
+      if (purpose === 'email') {
+        const [local, domain] = user.email.split('@');
+        return send(res, 200, { message: `Your account email is ${local.slice(0, 2)}***@${domain}. You can also sign in using your mobile number.` });
+      }
+      await database.collection('users').updateOne({ _id: user._id }, { $set: { passwordHash: await bcrypt.hash(body.password, 10), sessionVersion: (user.sessionVersion || 0) + 1 } });
+      await database.collection('loginAttempts').deleteOne({ _id: security.digest(String(user._id)) });
+      return send(res, 200, { message: 'Password changed. Sign in with your new password.' });
+    }
+    if (eligible) await messaging.requestPhoneVerification(database, identity, phone);
+    return send(res, 200, { message: 'If this number is verified on an account, a recovery code was sent. SMS coverage depends on your network.' });
+  }
+
   if (req.method === 'POST' && ['/auth/forgot-password', '/auth/resend-verification'].includes(path)) {
     if (!security.emailReady()) return send(res, 503, { error: 'Email delivery is not configured. Contact the shop for account assistance.' });
     const email = String(body.email || '').trim().toLowerCase();

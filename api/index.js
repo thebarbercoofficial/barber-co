@@ -318,7 +318,7 @@ function paymentConfigured(settings) {
 
 function requireBookingEligibility(user) {
   if (allowUnverified || ['admin', 'moderator'].includes(user.role)) return;
-  if (!user.emailVerifiedAt) throw Object.assign(new Error('Verify your email in your profile before booking online.'), { status: 403 });
+  if (!user.emailVerifiedAt && !user.phoneVerifiedAt) throw Object.assign(new Error('Verify your mobile number or email before booking online.'), { status: 403 });
   const age = security.ageOn(user.birthDate);
   if (age == null || age < 18) throw Object.assign(new Error('Online wallet bookings are for customers aged 18 or older under shop policy. Younger customers may join the walk-in queue or have a parent book using their own account.'), { status: 403 });
 }
@@ -451,6 +451,22 @@ async function handler(req, res) {
     return send(res, 200, { message: 'If this number is verified on an account, a recovery code was sent. SMS coverage depends on your network.' });
   }
 
+  if (req.method === 'POST' && ['/auth/registration-sms', '/auth/registration-sms/verify'].includes(path)) {
+    const email = String(body.email || '').trim().toLowerCase();
+    const phone = normalizeMobile(body.phone);
+    const user = phone && await database.collection('users').findOne({ email, phoneLogin: phone });
+    if (!user || !user.verificationRequired || user.phoneVerifiedAt || user.emailVerifiedAt) return send(res, 400, { error: 'No pending registration matches these details. Sign in or check your registration details.' });
+    const identity = `registration:${user._id}`;
+    if (path.endsWith('/verify')) {
+      await messaging.verifyPhoneCode(database, identity, phone, body.code);
+      const update = { phoneVerifiedAt: new Date() };
+      await database.collection('users').updateOne({ _id: user._id }, { $set: update });
+      return send(res, 200, { user: publicUser({ ...user, ...update }), token: tokenFor({ ...user, ...update }) });
+    }
+    await messaging.requestPhoneVerification(database, identity, phone);
+    return send(res, 200, { message: 'SMS code requested. Check your phone; provider acceptance does not guarantee delivery.' });
+  }
+
   if (req.method === 'POST' && ['/auth/forgot-password', '/auth/resend-verification'].includes(path)) {
     if (!security.emailReady()) return send(res, 503, { error: 'Email delivery is not configured. Contact the shop for account assistance.' });
     const email = String(body.email || '').trim().toLowerCase();
@@ -556,7 +572,7 @@ async function handler(req, res) {
     const password = String(body.password || "");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(res, 400, { error: 'Enter a valid email address.' });
     if (!allowUnverified && (password.length < 8 || password !== body.confirmPassword || security.ageOn(body.birthDate) == null)) return send(res, 400, { error: 'Enter a valid birth date and matching passwords of at least 8 characters.' });
-    if (!allowUnverified && !security.emailReady()) return send(res, 503, { error: 'Email verification is temporarily unavailable. Contact the shop; no account has been created.' });
+    if (!allowUnverified && !security.emailReady() && !messaging.smsVerificationReady()) return send(res, 503, { error: 'Account verification is temporarily unavailable. Contact the shop; no account has been created.' });
     if (name.length < 2 || !email || password.length < 6) return send(res, 400, { error: "Name, email, and a 6-character password are required." });
     const phone = await availablePhone(database, body.phone);
     const user = { _id: new ObjectId(), name, email, birthDate: body.birthDate || '', passwordHash: await bcrypt.hash(password, 10), role: "customer", phone, ...(phone ? { phoneLogin: phone } : {}), verificationRequired: !allowUnverified, createdAt: new Date() };
@@ -566,7 +582,18 @@ async function handler(req, res) {
       if (error?.code === 11000) return send(res, 409, { error: error.keyPattern?.phoneLogin ? 'An account with this mobile number already exists. Try logging in.' : "An account with this email already exists. Try logging in." });
       throw error;
     }
-    if (!allowUnverified) { await security.issueCode(database, email, 'verify'); return send(res, 201, { verificationRequired: true, email }); }
+    if (!allowUnverified) {
+      if (phone && messaging.smsVerificationReady()) {
+        try {
+          await messaging.requestPhoneVerification(database, `registration:${user._id}`, phone);
+          return send(res, 201, { verificationRequired: true, channel: 'sms', email, phone });
+        } catch (error) {
+          if (!security.emailReady()) return send(res, 201, { verificationRequired: true, channel: 'sms', email, phone, message: 'SMS could not be sent. Retry from this screen later.' });
+        }
+      }
+      await security.issueCode(database, email, 'verify');
+      return send(res, 201, { verificationRequired: true, channel: 'email', email });
+    }
     return send(res, 201, { user: publicUser(user), token: tokenFor(user) });
   }
 
@@ -590,7 +617,7 @@ async function handler(req, res) {
       return send(res, 401, { error: `Incorrect login details. ${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} remaining before a temporary lock.`, attemptsRemaining });
     }
     await database.collection('loginAttempts').deleteOne({ _id: security.digest(attemptKey) });
-    if (user.verificationRequired && !user.emailVerifiedAt) return send(res, 403, { error: 'Verify your email before signing in.', verificationRequired: true, email: user.email });
+    if (user.verificationRequired && !user.emailVerifiedAt && !user.phoneVerifiedAt) return send(res, 403, { error: 'Verify your mobile number or email before signing in.', verificationRequired: true, email: user.email });
     return send(res, 200, { user: publicUser(user), token: tokenFor(user) });
   }
 

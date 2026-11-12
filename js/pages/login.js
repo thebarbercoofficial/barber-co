@@ -118,7 +118,7 @@ document.querySelector("[data-login]").addEventListener("submit", async (event) 
     const safeNext = next && /^(booking|index|services|barbers|queue|contact|about|user-profile)\.html(?:[?#].*)?$/.test(next) ? next : "";
     location.href = payload.user.role === "admin" ? "admin-dashboard.html" : payload.user.role === "moderator" ? "admin-logbook.html" : safeNext || "index.html";
   } catch (error) {
-    if (error.verificationRequired) location.href = `register.html?verify=${encodeURIComponent(identifier)}`;
+    if (error.verificationRequired) location.href = `register.html?verify=${encodeURIComponent(error.email || identifier)}`;
     const offline = error.code === "BACKEND_UNAVAILABLE" || /fetch|network/i.test(error.message || "");
     if (error.status === 429 && error.retryAfter > 0) {
       startLoginCooldown(error.retryAfter);

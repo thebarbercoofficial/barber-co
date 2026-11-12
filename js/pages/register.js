@@ -30,7 +30,11 @@ document.querySelector("[data-register]").addEventListener("submit", async (even
       method: "POST",
       body: JSON.stringify({ name, phone, email, password, confirmPassword: data.get('confirmPassword'), birthDate: data.get('birthDate') })
     });
-    if (payload.verificationRequired) { showVerification(email); return; }
+    if (payload.verificationRequired) {
+      if (payload.channel === 'sms') showSmsVerification(email, phone, payload.message);
+      else showVerification(email);
+      return;
+    }
     setSession(payload);
     location.href = safeNext || "index.html";
   } catch (error) {
@@ -49,7 +53,7 @@ terms.querySelector('span').lastChild.textContent = ' I agree to the Terms and P
 terms.insertAdjacentHTML('beforebegin', `<details class="registration-terms" data-registration-terms>
   <summary>Read Terms and Privacy</summary>
   <h3>Accounts and security</h3>
-  <p>Provide accurate contact details and keep your password and verification codes private. Email verification is required to activate your account. Do not share another person's contact information without permission.</p>
+  <p>Provide accurate contact details and keep your password and verification codes private. Verify your mobile number or email to activate your account. Do not share another person's contact information without permission.</p>
   <h3>Appointments and payments</h3>
   <p>Submitting a booking does not mean it has been accepted. Check your booking status for staff approval, changes, or cancellation. Review the service price, booking fee, payment instructions, and total before submitting payment proof. Staff review payment proof; uploading it alone does not confirm payment.</p>
   <p>Demo payment details, when explicitly shown, cannot receive money. Do not send real payments to demo details. Contact the shop about payment questions, cancellations, rescheduling, or any refund request before proceeding.</p>
@@ -61,6 +65,33 @@ terms.insertAdjacentHTML('beforebegin', `<details class="registration-terms" dat
   <p>Use the <a class="inline" href="contact.html" target="_blank" rel="noopener">shop contact page (opens in a new tab)</a> to ask about your information, request corrections or deletion, or clarify these terms before registering.</p>
 </details>`);
 initHeader("login");
+
+function showSmsVerification(email, phone, message) {
+  const form = document.querySelector('[data-register]');
+  form.innerHTML = `<h2>Verify your mobile number</h2><p data-verification-message></p><label>Mobile number<input type="tel" name="verifyPhone" readonly></label><label>SMS code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label><button class="button primary full" type="button" data-verify-sms>Verify and continue</button><button class="button secondary full" type="button" data-resend-sms>Resend SMS code</button><button class="button secondary full" type="button" data-use-email>Use email instead</button><p class="muted">Globe/DITO supported with the current sender. If your text does not arrive, use email instead. Maximum 3 SMS codes per number daily.</p>`;
+  form.querySelector('[name="verifyPhone"]').value = phone;
+  form.querySelector('[data-verification-message]').textContent = message || 'Enter the six-digit code sent to your mobile number.';
+  for (const [selector, endpoint] of [['[data-verify-sms]', '/auth/registration-sms/verify'], ['[data-resend-sms]', '/auth/registration-sms']]) {
+    form.querySelector(selector).onclick = async (event) => {
+      if (endpoint.endsWith('/verify') && !form.reportValidity()) return;
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const payload = await api(endpoint, { method: 'POST', body: JSON.stringify({ email, phone, code: form.querySelector('[name="code"]').value }) });
+        if (payload.token) { setSession(payload); location.href = safeNext || 'index.html'; }
+        else form.querySelector('[data-verification-message]').textContent = payload.message;
+      } catch (error) { form.querySelector('[data-verification-message]').textContent = error.message; }
+      finally { button.disabled = false; }
+    };
+  }
+  form.querySelector('[data-use-email]').onclick = async (event) => {
+    event.currentTarget.disabled = true;
+    try {
+      await api('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) });
+      showVerification(email);
+    } catch (error) { form.querySelector('[data-verification-message]').textContent = error.message; event.currentTarget.disabled = false; }
+  };
+}
 
 function showVerification(email) {
   document.querySelector('[data-register]').innerHTML = `<h2>Verify your email</h2><p data-verification-message>Enter the six-digit code sent to your email.</p><label>Email<input type="email" name="verifyEmail" required></label><label>Email code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label><button class="button primary full" type="button" data-verify>Verify and continue</button><button class="button secondary full" type="button" data-resend>Resend code</button>`;

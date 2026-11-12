@@ -21,7 +21,7 @@ const nativeFetch = global.fetch;
 const mails = [];
 const sms = [];
 let rejectDelivery = false;
-const envNames = ['EMAIL_PROVIDER', 'RESEND_API_KEY', 'EMAIL_FROM', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM', 'TWILIO_VERIFY_SERVICE_SID', 'SMS_PROVIDER', 'PHILSMS_API_TOKEN', 'PHILSMS_SENDER_ID', 'UNISMS_API_KEY', 'UNISMS_SENDER_ID'];
+const envNames = ['SMS_ROUTINE_UPDATES', 'EMAIL_PROVIDER', 'RESEND_API_KEY', 'EMAIL_FROM', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM', 'TWILIO_VERIFY_SERVICE_SID', 'SMS_PROVIDER', 'PHILSMS_API_TOKEN', 'PHILSMS_SENDER_ID', 'UNISMS_API_KEY', 'UNISMS_SENDER_ID'];
 const savedEnv = Object.fromEntries(envNames.map((key) => [key, process.env[key]]));
 envNames.forEach((key) => delete process.env[key]);
 global.fetch = async (url, options) => {
@@ -244,6 +244,7 @@ async function main() {
     assert.equal(reminder.status, 200);
     assert.ok(reminder.data.message.includes('re***@isolated.test'));
     assert.ok(!reminder.data.message.includes(recoveryUser.email));
+    process.env.SMS_ROUTINE_UPDATES = 'false';
     const beforeRoutine = sms.length;
     await require('../lib/notifications').notify(database, recoveryUser._id, 'Recovery-only notification test', 'recovery-only-test');
     assert.equal(sms.length, beforeRoutine, 'Routine updates do not consume SMS');
@@ -264,6 +265,7 @@ async function main() {
     assert.equal(JSON.parse(sms.at(-1)).recipient, '639181234567');
     assert.equal(JSON.parse(sms.at(-1)).sender_id, 'BarberCo');
     assert.ok(rows.notifications.some((item) => item.message.includes('your turn') && item.channels.sms.status === 'accepted'));
+    assert.ok(rows.notifications.some((item) => item.message.includes('your turn') && item.channels.sms.status === 'accepted' && item.channels.email.status === 'standby'), 'Successful SMS keeps email as fallback only');
     assert.equal((await request('/admin/queue/next', {}, adminToken)).status, 409);
     await request(`/admin/queue/${ticket.data.ticket.id}`, { status: 'done' }, adminToken, 'PATCH');
     const queuePaidAt = rows.queue.find((item) => String(item._id) === ticket.data.ticket.id).paidAt;
@@ -434,7 +436,7 @@ async function main() {
     await signupPage.waitForURL('**/index.html');
     assert.equal(await signupPage.evaluate(() => JSON.parse(localStorage.getItem('barberCoState')).user.emailVerified), true);
     await signupPage.goto(`${base}/login.html`);
-    await signupPage.getByRole('button', { name: 'Forgot password?' }).click();
+    await signupPage.locator('[data-open-email-recovery]').click();
     assert.equal(await signupPage.locator('[data-forgot-email]').evaluate((element) => getComputedStyle(element).borderColor), 'rgb(145, 133, 114)');
     await signupPage.locator('[data-forgot-email]').fill('browser@isolated.test');
     await signupPage.getByRole('button', { name: 'Send code', exact: true }).click();

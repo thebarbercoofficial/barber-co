@@ -81,11 +81,10 @@ function draw() {
   document.querySelector('[data-profile]').insertAdjacentHTML('beforeend', `<p>${user.emailVerified ? 'Email verified' : 'Email not yet verified'}</p>${user.emailVerified ? '' : '<button class="button secondary" type="button" data-verify-email>Verify email</button>'}<p>${user.phoneVerified ? 'Mobile number verified' : 'Mobile number not verified'}</p><button class="button secondary" type="button" data-phone-code>Send SMS verification</button><label>SMS code<input data-phone-code-value inputmode="numeric" autocomplete="one-time-code" maxlength="6"></label><label class="check-row"><input type="checkbox" data-sms-consent ${user.smsConsent ? 'checked' : ''}> Send appointment and queue updates to my verified number</label><button class="button secondary" type="button" data-verify-phone>Verify number and save SMS preference</button>`);
   const profileForm = document.querySelector('[data-profile]');
   const smsConsent = profileForm.querySelector('[data-sms-consent]');
-  smsConsent.checked = false;
-  smsConsent.closest('label').hidden = true;
+  smsConsent.checked = Boolean(user.smsConsent);
   profileForm.querySelector('[data-verify-phone]').textContent = 'Verify recovery number';
   profileForm.querySelector('[data-phone-code]').textContent = 'Send recovery-number verification';
-  profileForm.querySelector('[data-phone-code]').insertAdjacentHTML('beforebegin', '<p class="muted">SMS is reserved for account recovery. Appointment updates arrive by email and in your profile. Verify once; each code uses SMS credit. Globe/DITO supported, maximum 3 codes per number daily.</p>');
+  profileForm.querySelector('[data-phone-code]').insertAdjacentHTML('beforebegin', '<p class="muted">Verify your number for account recovery. Enable SMS updates below for SMS-first appointment notifications, with email backup if sending fails. Globe/DITO supported; Smart/TNT/Sun unavailable with the current sender. Maximum 3 verification or recovery codes per number daily.</p>');
   const security = document.createElement('details');
   security.className = 'account-security';
   security.innerHTML = '<summary>Account verification</summary>';

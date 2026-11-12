@@ -84,7 +84,7 @@ function draw() {
   smsConsent.checked = Boolean(user.smsConsent);
   profileForm.querySelector('[data-verify-phone]').textContent = 'Verify recovery number';
   profileForm.querySelector('[data-phone-code]').textContent = 'Send recovery-number verification';
-  profileForm.querySelector('[data-phone-code]').insertAdjacentHTML('beforebegin', '<p class="muted">Verify your number for account recovery. Enable SMS updates below for SMS-first appointment notifications, with email backup if sending fails. Globe/DITO supported; Smart/TNT/Sun unavailable with the current sender. Maximum 3 verification or recovery codes per number daily.</p>');
+  profileForm.querySelector('[data-phone-code]').insertAdjacentHTML('beforebegin', '<p class="muted">Verify your number for account recovery. Enable SMS updates below for SMS-first appointment notifications, with email backup if sending fails. Maximum 3 verification or recovery codes per number daily.</p>');
   const security = document.createElement('details');
   security.className = 'account-security';
   security.innerHTML = '<summary>Account verification</summary>';

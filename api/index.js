@@ -975,11 +975,14 @@ async function handler(req, res) {
     return send(res, 200, { paymentProof: appointment.paymentProof });
   }
 
-  if (req.method === 'PATCH' && /^\/admin\/appointments\/[a-f0-9]{24}\/reschedule$/.test(path)) {
-    await requireRole(req, database, ['admin', 'moderator']);
-    const id = path.split('/')[3];
+  if (req.method === 'PATCH' && /^\/(admin\/)?appointments\/[a-f0-9]{24}\/reschedule$/.test(path)) {
+    const customerRequest = !path.startsWith('/admin/');
+    const actor = customerRequest ? await requireUser(req, database) : await requireRole(req, database, ['admin', 'moderator']);
+    const id = path.split('/').at(-2);
     const current = await database.collection('appointments').findOne({ _id: new ObjectId(id) });
+    if (customerRequest && (!current || String(current.userId) !== String(actor._id))) return send(res, 404, { error: 'Appointment not found.' });
     if (!current || !['pending', 'confirmed'].includes(current.status)) return send(res, 409, { error: 'Only active appointments can be rescheduled.' });
+    if (customerRequest && new Date(`${current.date}T${current.time}:00+08:00`).getTime() <= Date.now()) return send(res, 409, { error: 'This appointment has already started. Contact the shop.' });
     const date = String(body.date || '');
     const time = String(body.time || '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time) || !(new Date(`${date}T${time}:00+08:00`).getTime() > Date.now())) return send(res, 400, { error: 'Choose a valid future date and time.' });
@@ -1010,6 +1013,20 @@ async function handler(req, res) {
     }
     await messaging.notify(database, current.userId, `Your Barber Co appointment was rescheduled to ${date} at ${time}. Contact the shop if this does not suit you.`, `appointment:${id}:rescheduled:${date}:${time}`);
     return send(res, 200, { appointment: normalizeDoc({ ...current, date, time }) });
+  }
+
+  if (req.method === 'PATCH' && /^\/appointments\/[a-f0-9]{24}\/cancel$/.test(path)) {
+    const user = await requireUser(req, database);
+    const id = path.split('/')[2];
+    const current = await database.collection('appointments').findOne({ _id: new ObjectId(id), userId: user._id });
+    if (!current) return send(res, 404, { error: 'Appointment not found.' });
+    if (!['pending', 'confirmed'].includes(current.status) || new Date(`${current.date}T${current.time}:00+08:00`).getTime() <= Date.now()) return send(res, 409, { error: 'Only upcoming active appointments can be cancelled.' });
+    if (body.acceptNoRefund !== true) return send(res, 400, { error: 'Confirm that cancellation does not include a refund.' });
+    const changed = await database.collection('appointments').updateOne({ _id: current._id, status: current.status, date: current.date, time: current.time }, { $set: { status: 'cancelled', cancelledBy: 'customer', noRefund: true, updatedAt: new Date() } });
+    if (!changed.modifiedCount) return send(res, 409, { error: 'This appointment changed. Refresh and try again.' });
+    await database.collection('appointmentSlots').deleteMany({ appointmentId: id });
+    await messaging.notify(database, user._id, `Your Barber Co appointment on ${current.date} at ${current.time} was cancelled. No refund will be issued.`, `appointment:${id}:cancelled`);
+    return send(res, 200, { appointment: normalizeDoc({ ...current, status: 'cancelled', noRefund: true }) });
   }
 
   if (path.startsWith("/admin/appointments/") && req.method === "PATCH") {

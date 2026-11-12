@@ -11,6 +11,11 @@ function escapeValue(value = "") {
 
 let myAppointments = [];
 
+function bookingActions(item) {
+  if (!['pending', 'confirmed'].includes(item.status) || new Date(`${item.date}T${item.time}:00+08:00`).getTime() <= Date.now()) return '';
+  return `<div style="grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap"><button class="button secondary" data-reschedule="${escapeValue(item._id || item.id)}">Reschedule</button><button class="button secondary" data-cancel-booking="${escapeValue(item._id || item.id)}">Cancel booking</button></div>`;
+}
+
 function bookingStatus(status, demo = false) {
   if (demo) return status === 'confirmed' ? 'Demo booking accepted' : status === 'completed' ? 'Demo completed' : status === 'cancelled' ? 'Demo cancelled' : 'Demo awaiting staff approval';
   return status === "confirmed" ? "Accepted and payment verified" : status === "completed" ? "Completed" : status === "cancelled" ? "Cancelled" : "Waiting for staff approval";
@@ -18,7 +23,7 @@ function bookingStatus(status, demo = false) {
 
 function bookingRows() {
   if (!myAppointments.length) return `<div class="empty-state">You have no online bookings yet.</div>`;
-  return myAppointments.map((item) => `<div class="appointment-row"><span>${item.demoPayment ? 'DEMO / ' : ''}Queue #${String(item.queueNumber || 0).padStart(2, "0")}<br><small class="muted">${escapeValue(item.date)} at ${escapeValue(item.time)}</small></span><strong>${escapeValue(item.customer)}<br><small class="muted">${escapeValue(byId(state.services, item.serviceId).name)} - ${peso(item.total || 0)}${item.demoPayment ? ' (not charged)' : ''}</small></strong><span class="status-pill ${escapeValue(item.status)}">${bookingStatus(item.status, item.demoPayment)}</span></div>`).join("");
+  return myAppointments.map((item) => `<div class="appointment-row"><span>${item.demoPayment ? 'DEMO / ' : ''}Queue #${String(item.queueNumber || 0).padStart(2, "0")}<br><small class="muted">${escapeValue(item.date)} at ${escapeValue(item.time)}</small></span><strong>${escapeValue(item.customer)}<br><small class="muted">${escapeValue(byId(state.services, item.serviceId).name)} - ${peso(item.total || 0)}${item.demoPayment ? ' (not charged)' : ''}</small></strong><span class="status-pill ${escapeValue(item.status)}">${bookingStatus(item.status, item.demoPayment)}</span>${bookingActions(item)}</div>`).join("");
 }
 
 async function refreshBookings({ quiet = false } = {}) {
@@ -36,6 +41,36 @@ function draw() {
 
   const profileGrid = document.querySelector(".grid-2");
   const bookingSection = document.querySelector("#bookings");
+  bookingSection.addEventListener('click', async (event) => {
+    const cancel = event.target.closest('[data-cancel-booking]');
+    const reschedule = event.target.closest('[data-reschedule]');
+    if (!cancel && !reschedule) return;
+    const button = cancel || reschedule;
+    const id = cancel ? cancel.dataset.cancelBooking : reschedule.dataset.reschedule;
+    if (cancel) {
+      if (!window.confirm('Cancel this booking? No refund will be issued, including any booking fee. This cannot be undone.')) return;
+      button.disabled = true;
+      try { await api(`/appointments/${id}/cancel`, { method: 'PATCH', body: JSON.stringify({ acceptNoRefund: true }) }); toast('Booking cancelled. No refund will be issued.'); await refreshBookings(); }
+      catch (error) { toast(error.message); button.disabled = false; }
+      return;
+    }
+    document.querySelector('[data-reschedule-form]')?.remove();
+    const item = myAppointments.find((entry) => String(entry._id || entry.id) === id);
+    const form = document.createElement('form');
+    form.dataset.rescheduleForm = '';
+    form.className = 'form-card';
+    form.innerHTML = `<h3>Reschedule booking</h3><label>Date<input type="date" name="date" min="${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })}" value="${escapeValue(item.date)}" required></label><label>Time<input type="time" name="time" step="1800" value="${escapeValue(item.time)}" required></label><p>The same barber and service are retained. Unavailable times and closed hours cannot be reserved.</p><button class="button primary" type="submit">Save new schedule</button><button class="button secondary" type="button" data-dismiss>Keep current schedule</button><p role="status" data-schedule-error></p>`;
+    bookingSection.querySelector('[data-my-bookings]').before(form);
+    form.querySelector('[data-dismiss]').onclick = () => form.remove();
+    form.addEventListener('submit', async (submitEvent) => {
+      submitEvent.preventDefault();
+      const save = submitEvent.submitter;
+      save.disabled = true;
+      try { await api(`/appointments/${id}/reschedule`, { method: 'PATCH', body: JSON.stringify(Object.fromEntries(new FormData(form))) }); form.remove(); toast('Booking rescheduled.'); await refreshBookings(); }
+      catch (error) { form.querySelector('[data-schedule-error]').textContent = error.message; save.disabled = false; }
+    });
+    form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
   profileGrid.classList.add("account-layout");
   const accountColumn = document.createElement("div");
   accountColumn.className = "account-column";

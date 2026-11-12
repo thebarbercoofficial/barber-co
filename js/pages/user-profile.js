@@ -122,10 +122,27 @@ function draw() {
   initHeader("login");
 }
 
-Promise.all([api("/me"), loadCatalog()]).then(async ([payload]) => { setSession(payload); await refreshBookings({ quiet: true }); draw(); refreshBookings({ quiet: true }); }).catch((error) => {
-  toast(error.message || "Profile could not be loaded.");
-  if (/login|required|token/i.test(error.message)) location.replace("login.html");
-});
+async function loadProfile() {
+  document.querySelector('#app').innerHTML = '<main class="section"><p role="status">Loading your profile...</p></main>';
+  try {
+    const payload = await api('/me');
+    setSession(payload);
+    // Catalog failure must not prevent access to account details.
+    await loadCatalog().catch(() => {});
+    draw();
+    refreshBookings({ quiet: true });
+    refreshNotifications();
+  } catch (error) {
+    if (error.status === 401 || error.status === 403) {
+      BarberCo.clearSession();
+      location.replace('login.html?next=user-profile.html');
+      return;
+    }
+    document.querySelector('#app').innerHTML = `<main class="section"><h1>Profile unavailable</h1><p role="alert">${escapeValue(error.message || 'Please try again.')}</p><button class="button primary" data-profile-retry>Try again</button><a class="button secondary" href="login.html?next=user-profile.html">Sign in</a></main>`;
+    document.querySelector('[data-profile-retry]').addEventListener('click', loadProfile);
+  }
+}
+loadProfile();
 
 window.setInterval(() => {
   if (!document.hidden) { refreshBookings({ quiet: true }); refreshNotifications(); }

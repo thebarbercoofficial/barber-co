@@ -425,7 +425,55 @@ async function handler(req, res) {
   if (req.method === 'GET' && path === '/admin/contacts') {
     await requireRole(req, database, ['admin', 'moderator']);
     const contacts = await database.collection('contactMessages').find({}, { projection: { name: 1, email: 1, message: 1, status: 1, createdAt: 1 } }).sort({ createdAt: -1 }).limit(100).toArray();
+    const replies = await database.collection('contactReplies').find({ contactId: { $in: contacts.map((item) => String(item._id)) } }, { projection: { contactId: 1, message: 1, status: 1, createdAt: 1 } }).sort({ createdAt: 1 }).toArray();
+    contacts.forEach((contact) => { contact.replies = replies.filter((reply) => reply.contactId === String(contact._id)); });
     return send(res, 200, { contacts });
+  }
+
+  if (req.method === 'POST' && /^\/admin\/contacts\/[^/]+\/reply$/.test(path)) {
+    const admin = await requireRole(req, database, ['admin']);
+    const id = path.split('/')[3];
+    if (!ObjectId.isValid(id)) return send(res, 400, { error: 'Invalid contact message.' });
+    const message = String(body.message || '').trim();
+    const requestId = String(body.requestId || '');
+    if (message.length < 2 || message.length > 5000 || !/^[a-f0-9-]{36}$/i.test(requestId)) return send(res, 400, { error: 'Enter a reply of 2-5000 characters.' });
+    const contact = await database.collection('contactMessages').findOne({ _id: new ObjectId(id) });
+    if (!contact) return send(res, 404, { error: 'Contact message not found.' });
+    if (!security.emailReady()) return send(res, 503, { error: 'Email delivery is not configured. Your reply was not sent.' });
+    const collection = database.collection('contactReplies');
+    const reply = { _id: security.digest(`contact-reply:${id}:${requestId}`), contactId: id, adminId: admin._id, message, status: 'sending', createdAt: new Date() };
+    try { await collection.insertOne(reply); }
+    catch (error) {
+      if (error.code !== 11000) throw error;
+      const previous = await collection.findOne({ _id: reply._id });
+      if (previous.message !== message) return send(res, 409, { error: 'This reply attempt has different content. Refresh before sending a new reply.' });
+      if (previous.status === 'accepted') return send(res, 200, { message: 'Reply already accepted by the email provider.' });
+      const claimed = await collection.updateOne({ _id: reply._id, status: 'failed' }, { $set: { status: 'sending' } });
+      if (!claimed.modifiedCount) return send(res, 409, { error: 'This reply is being processed. Refresh to check its status before retrying.' });
+    }
+    try {
+      await security.sendEmail(contact.email, 'Re: The Barber Co enquiry', `${message}\n\nThe Barber Co\n\nYour original enquiry:\n${contact.message}`, reply._id);
+    } catch {
+      await collection.updateOne({ _id: reply._id }, { $set: { status: 'failed' } });
+      return send(res, 503, { error: 'The email provider could not accept your reply. The failed attempt is saved; you can retry.' });
+    }
+    await collection.updateOne({ _id: reply._id }, { $set: { status: 'accepted' } });
+    await database.collection('contactMessages').updateOne({ _id: contact._id }, { $set: { status: 'replied' } });
+    return send(res, 200, { message: 'Reply accepted by the email provider. This is not a delivery confirmation.' });
+  }
+
+  if (req.method === 'DELETE' && /^\/admin\/users\/[^/]+$/.test(path)) {
+    const admin = await requireRole(req, database, ['admin']);
+    const id = path.split('/')[3];
+    if (!ObjectId.isValid(id)) return send(res, 400, { error: 'Invalid account.' });
+    const target = await database.collection('users').findOne({ _id: new ObjectId(id) });
+    if (!target) return send(res, 404, { error: 'Account not found.' });
+    const ownerEmail = 'thebarberco.official@gmail.com';
+    if (String(admin._id) === id || target.role === 'admin' || target.email === ownerEmail) return send(res, 403, { error: 'Admin accounts cannot be deleted here.' });
+    if (body.confirmEmail !== target.email) return send(res, 400, { error: 'Enter the account email to confirm permanent deletion.' });
+    const deleted = await database.collection('users').deleteOne({ _id: target._id, role: { $ne: 'admin' }, email: { $ne: ownerEmail } });
+    if (!deleted.deletedCount) return send(res, 409, { error: 'The account changed. Refresh before trying again.' });
+    return send(res, 200, { message: 'Account deleted. Booking and payment history were preserved.' });
   }
 
   if (req.method === 'POST' && ['/auth/sms-recovery', '/auth/sms-recovery/complete'].includes(path)) {

@@ -19,6 +19,18 @@ function rows() {
   }).join("");
 }
 
+function addDeleteControls() {
+  document.querySelectorAll('[data-role-select]').forEach((select) => {
+    const account = accounts.find((item) => item.id === select.dataset.roleSelect);
+    if (!account || account.role === 'admin' || account.email === protectedAdminEmail) return;
+    const actions = document.createElement('div');
+    actions.className = 'account-actions';
+    select.before(actions);
+    actions.append(select);
+    select.insertAdjacentHTML('afterend', `<button class="button danger small" type="button" data-delete-account="${safeText(account.id)}" title="Delete account" aria-label="Delete account for ${safeText(account.name)}">${icon('Trash2')}</button>`);
+  });
+}
+
 async function render() {
   document.querySelector("#app").innerHTML = `${nav("admin")}<section class="app-shell">${adminSidebar("users")}<div class="workspace"><div class="workspace-heading"><div><p class="eyebrow">ACCESS MANAGEMENT</p><h1>Users & permissions</h1><p class="muted">The owner account is protected. Staff roles apply across all devices.</p></div></div><div class="management-layout"><section><div class="panel-heading"><h3>Registered accounts</h3>${icon('Users')}</div><div class="list-toolbar"><label class="search-field">${icon('Search')}<input type="search" data-user-search placeholder="Search name or email" aria-label="Search accounts"></label></div><div class="record-list" data-user-rows><div class="empty-state">Loading accounts...</div></div></section><form class="panel" data-account-form autocomplete="off"><div class="panel-heading"><h3>Create an account</h3>${icon('UserRoundPlus')}</div><label>Name<input name="name" autocomplete="off" required placeholder="Staff name"></label><label>Email<input type="email" name="email" autocomplete="off" required placeholder="staff@email.com"></label><label>Temporary password<input type="password" name="password" autocomplete="new-password" minlength="6" required></label><label>Permission<select name="role"><option value="customer">Customer</option><option value="moderator">Moderator</option><option value="admin">Admin</option></select></label><button class="button primary full" type="submit">${icon('Plus')} Create account</button></form></div></div></section>`;
   initHeader("admin");
@@ -26,8 +38,26 @@ async function render() {
     const payload = await api("/admin/users");
     accounts = payload.users || [];
     document.querySelector("[data-user-rows]").innerHTML = rows();
+    addDeleteControls();
   } catch (error) { document.querySelector('[data-user-rows]').innerHTML = `<div class="connection-error" role="alert">${safeText(error.message || 'Accounts could not be loaded.')}</div>`; }
-  document.querySelector('[data-user-search]').addEventListener('input', () => { document.querySelector('[data-user-rows]').innerHTML = rows(); });
+  document.querySelector('[data-user-search]').addEventListener('input', () => { document.querySelector('[data-user-rows]').innerHTML = rows(); addDeleteControls(); });
+  document.querySelector('[data-user-rows]').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-delete-account]');
+    if (!button || button.disabled) return;
+    const account = accounts.find((item) => item.id === button.dataset.deleteAccount);
+    if (!account) return;
+    const confirmEmail = window.prompt(`Permanently delete ${account.name}? They will lose account access. Booking and payment history will remain. This cannot be undone. Type ${account.email} to confirm:`);
+    if (confirmEmail === null) return;
+    if (confirmEmail !== account.email) return toast('Email did not match. Nothing was deleted.');
+    button.disabled = true;
+    try {
+      const result = await api(`/admin/users/${account.id}`, { method: 'DELETE', body: JSON.stringify({ confirmEmail }) });
+      accounts = accounts.filter((item) => item.id !== account.id);
+      document.querySelector('[data-user-rows]').innerHTML = rows();
+      addDeleteControls();
+      toast(result.message);
+    } catch (error) { toast(error.message || 'Account could not be deleted.'); button.disabled = false; }
+  });
 
   document.querySelector("[data-account-form]").addEventListener("submit", async (event) => {
     event.preventDefault();

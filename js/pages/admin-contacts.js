@@ -31,9 +31,28 @@ function render(contacts) {
     <article class="contact-inbox-item">
       <header><div><h2>${escapeHtml(contact.name)}</h2><a href="mailto:${encodeURIComponent(contact.email)}">${escapeHtml(contact.email)}</a></div><time datetime="${escapeHtml(contact.createdAt)}">${escapeHtml(dateText(contact.createdAt))}</time></header>
       <p>${escapeHtml(contact.message)}</p>
-      <a class="button secondary small" href="mailto:${encodeURIComponent(contact.email)}?subject=${encodeURIComponent('Re: The Barber Co enquiry')}">${icon('Reply')} Reply by email</a>
+      ${(contact.replies || []).map((reply) => `<div class="contact-reply"><strong>Admin reply</strong><p>${escapeHtml(reply.message)}</p><small>${escapeHtml(dateText(reply.createdAt))} · ${escapeHtml(reply.status === 'accepted' ? 'Accepted by email provider' : reply.status === 'failed' ? 'Send failed' : 'Processing')}</small></div>`).join('')}
+      ${canAccess('admin') ? `<details><summary>Reply to customer</summary><form data-reply="${escapeHtml(contact._id)}"><label>Reply<textarea name="message" required minlength="2" maxlength="5000" rows="4"></textarea></label><button class="button primary small" type="submit">${icon('Send')} Send email reply</button><p role="status" data-reply-status></p></form></details>` : ''}
     </article>`).join('') : `<div class="staff-empty">${icon('Mail')}<strong>No messages yet</strong><span>Website enquiries will show up here when customers submit the contact form.</span></div>`;
 }
+
+list.addEventListener('submit', async (event) => {
+  const form = event.target.closest('[data-reply]');
+  if (!form) return;
+  event.preventDefault();
+  if (!form.reportValidity()) return;
+  const button = form.querySelector('button');
+  if (button.disabled) return;
+  button.disabled = true;
+  const message = form.elements.message.value.trim();
+  if (form.dataset.lastMessage !== message) { form.dataset.requestId = crypto.randomUUID(); form.dataset.lastMessage = message; }
+  try {
+    const result = await api(`/admin/contacts/${form.dataset.reply}/reply`, { method: 'POST', body: JSON.stringify({ message, requestId: form.dataset.requestId }) });
+    form.querySelector('[data-reply-status]').textContent = result.message;
+    form.elements.message.readOnly = true;
+    button.textContent = 'Reply accepted';
+  } catch (error) { form.querySelector('[data-reply-status]').textContent = error.message; button.disabled = false; }
+});
 
 async function refresh() {
   if (loading) return;

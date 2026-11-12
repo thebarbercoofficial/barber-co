@@ -16,7 +16,8 @@ let reject = false;
 const sent = [];
 const context = { require: (name) => name === '../lib/account-security' ? { ...security, emailReady: () => ready, sendEmail: async (...args) => { if (reject) throw new Error('Provider unavailable'); sent.push(args); } } : localRequire(name), module: { exports: {} }, process: { env: { JWT_SECRET: secret, ADMIN_EMAIL: 'shop@example.com' } }, URL, console, fixtureDatabase: database };
 vm.runInNewContext(`${fs.readFileSync('api/index.js', 'utf8')}\ndb = async () => fixtureDatabase;`, context);
-const token = (role) => jwt.sign({ sub: String(users.find((user) => user.role === role)._id) }, secret);
+const tokens = Object.fromEntries(users.map((user) => [user.role, jwt.sign({ sub: String(user._id) }, secret)]));
+const token = (role) => tokens[role];
 
 async function request({ body = {}, method = 'POST', path: pathname = '/api/contact', role } = {}) {
   const req = Readable.from([JSON.stringify(body)]);
@@ -55,6 +56,37 @@ async function main() {
   assert.match(savedDespiteEmailFailure.message, /email alert is unavailable/i);
   inbox = await request({ method: 'GET', path: '/api/admin/contacts', role: 'admin' });
   assert.equal(inbox.contacts.length, 3, 'The staff inbox must retain messages if email delivery fails');
+  const replyPath = `/api/admin/contacts/${inbox.contacts[0]._id}/reply`;
+  const reply = { message: 'Thanks for your enquiry. We can help at the shop.', requestId: '11111111-1111-4111-8111-111111111111' };
+  assert.equal((await request({ path: replyPath, body: reply })).status, 401);
+  for (const role of ['customer', 'moderator']) assert.equal((await request({ path: replyPath, body: reply, role })).status, 403);
+  assert.equal((await request({ path: replyPath, body: { ...reply, message: '' }, role: 'admin' })).status, 400);
+  assert.equal((await request({ path: replyPath, body: reply, role: 'admin' })).status, 503);
+  reject = false;
+  const accepted = await request({ path: replyPath, body: reply, role: 'admin' });
+  assert.equal(accepted.status, 200);
+  const deliveries = sent.length;
+  assert.equal((await request({ path: replyPath, body: reply, role: 'admin' })).status, 200);
+  assert.equal(sent.length, deliveries, 'Repeated send must not duplicate an accepted reply');
+  assert.equal(sent.at(-1)[0], inbox.contacts[0].email);
+  inbox = await request({ method: 'GET', path: '/api/admin/contacts', role: 'admin' });
+  assert.equal(inbox.contacts[0].replies[0].status, 'accepted');
+  assert.equal(inbox.contacts[0].status, 'replied');
+  const customer = users.find((item) => item.role === 'customer');
+  const deletePath = `/api/admin/users/${customer._id}`;
+  assert.equal((await request({ method: 'DELETE', path: deletePath, role: 'moderator' })).status, 403);
+  assert.equal((await request({ method: 'DELETE', path: deletePath, role: 'customer' })).status, 403);
+  assert.equal((await request({ method: 'DELETE', path: deletePath, role: 'admin', body: { confirmEmail: 'wrong' } })).status, 400);
+  const admin = users.find((item) => item.role === 'admin');
+  assert.equal((await request({ method: 'DELETE', path: `/api/admin/users/${admin._id}`, role: 'admin', body: { confirmEmail: admin.email } })).status, 403);
+  const otherAdmin = { _id: new ObjectId(), role: 'admin', email: 'other-admin@review.test' };
+  database.records.users.push(otherAdmin);
+  assert.equal((await request({ method: 'DELETE', path: `/api/admin/users/${otherAdmin._id}`, role: 'admin', body: { confirmEmail: otherAdmin.email } })).status, 403);
+  database.records.appointments = [{ _id: new ObjectId(), userId: customer._id, paid: true }];
+  assert.equal((await request({ method: 'DELETE', path: deletePath, role: 'admin', body: { confirmEmail: customer.email } })).status, 200);
+  assert.equal(await database.collection('users').findOne({ _id: customer._id }), null);
+  assert.equal(database.records.appointments.length, 1, 'Deleting an account preserves historical payments/bookings');
+  assert.equal((await request({ method: 'GET', path: '/api/me', role: 'customer' })).status, 401);
   console.log('Contact API: validation, persistence, email fallback, rate limits, and staff-only inbox access passed.');
 }
 

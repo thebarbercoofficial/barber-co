@@ -12,7 +12,8 @@ function escapeValue(value = "") {
 let myAppointments = [];
 
 function bookingActions(item) {
-  if (!['pending', 'confirmed'].includes(item.status) || new Date(`${item.date}T${item.time}:00+08:00`).getTime() <= Date.now()) return '';
+  if (!['pending', 'confirmed'].includes(item.status)) return '';
+  if (new Date(`${item.date}T${item.time}:00+08:00`).getTime() <= Date.now()) return '<div style="grid-column:1/-1"><button class="button secondary" disabled>Reschedule</button> <button class="button secondary" disabled>Cancel booking</button><p class="muted">The scheduled start time has passed. Contact the shop to change this booking.</p></div>';
   return `<div style="grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap"><button class="button secondary" data-reschedule="${escapeValue(item._id || item.id)}">Reschedule</button><button class="button secondary" data-cancel-booking="${escapeValue(item._id || item.id)}">Cancel booking</button></div>`;
 }
 

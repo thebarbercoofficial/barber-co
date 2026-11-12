@@ -419,6 +419,12 @@ async function main() {
     const signupPage = await signup.newPage();
     await signupPage.goto(`${base}/register.html`);
     await signupPage.locator('[name="name"]').fill('Browser Verified Customer');
+    await signupPage.locator('[data-registration-terms] summary').click();
+    assert.equal(await signupPage.locator('[data-registration-terms] h3').first().isVisible(), true);
+    assert.equal(await signupPage.locator('[name="name"]').inputValue(), 'Browser Verified Customer');
+    assert.equal(await signupPage.locator('[type="checkbox"]').isChecked(), false);
+    assert.equal(await signupPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await signupPage.locator('[data-registration-terms] summary').click();
     await signupPage.locator('[name="phone"]').fill('09191234567');
     await signupPage.locator('[name="email"]').fill('browser@isolated.test');
     await signupPage.locator('[name="birthDate"]').fill('2000-01-01');

@@ -27,7 +27,7 @@ function rows() {
 async function loadBarbers() {
   try {
     const data = await api("/admin/barbers");
-    state.barbers.splice(0, state.barbers.length, ...(data.barbers || state.barbers));
+    state.barbers.splice(0, state.barbers.length, ...(data.barbers || state.barbers).filter(barber => barber.status !== 'fired'));
     save();
   } catch (error) {
     if (error.message.includes("Admin") && !BarberCo.canAccess("admin")) location.href = "login.html";
@@ -80,11 +80,16 @@ async function render() {
         render();
       }
       if (del) {
+        if (del.disabled) return;
+        const barber = barbers.find(item => (item.mongoId || item.id) === del.dataset.delete);
+        if (!barber || !window.confirm(`Remove ${barber.name} from the team? They will no longer appear in the team list or accept new bookings. Appointment and performance history will be kept. Review any upcoming appointments to reassign them. For a temporary absence, choose On leave instead.`)) return;
+        del.disabled = true;
         await api(`/admin/barbers/${del.dataset.delete}`, { method: "DELETE" });
-        toast("Barber removed from public booking.");
+        toast("Barber removed from the team. History preserved.");
         render();
       }
     } catch (error) {
+      if (del) del.disabled = false;
       toast(error.message || "Backend is not online yet.");
     }
   });

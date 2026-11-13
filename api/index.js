@@ -871,7 +871,7 @@ async function handler(req, res) {
 
   if (path === "/admin/barbers") {
     await requireRole(req, database, ["admin"]);
-    if (req.method === "GET") return send(res, 200, { barbers: (await database.collection("barbers").find().sort({ createdAt: 1 }).toArray()).map(normalizeDoc) });
+    if (req.method === "GET") return send(res, 200, { barbers: (await database.collection("barbers").find({ status: { $ne: 'fired' } }).sort({ createdAt: 1 }).toArray()).map(normalizeDoc) });
     if (req.method === "POST") {
       const barber = { _id: new ObjectId(), slug: slugify(body.name), name: body.name, role: body.role || "Barber", status: body.status || "active", bio: body.bio || "", createdAt: new Date() };
       await database.collection("barbers").insertOne(barber);
@@ -882,12 +882,15 @@ async function handler(req, res) {
   if (path.startsWith("/admin/barbers/")) {
     await requireRole(req, database, ["admin"]);
     const id = path.split("/").pop();
+    if (!ObjectId.isValid(id)) return send(res, 400, { error: 'Choose a valid barber.' });
     if (req.method === "PATCH") {
       const update = { ...body, updatedAt: new Date() };
       await database.collection("barbers").updateOne({ _id: new ObjectId(id) }, { $set: update });
       return send(res, 200, { ok: true });
     }
     if (req.method === "DELETE") {
+      const barber = await database.collection('barbers').findOne({ _id: new ObjectId(id), status: { $ne: 'fired' } });
+      if (!barber) return send(res, 404, { error: 'Barber is already removed or does not exist.' });
       await database.collection("barbers").updateOne({ _id: new ObjectId(id) }, { $set: { status: "fired", updatedAt: new Date() } });
       return send(res, 200, { ok: true });
     }

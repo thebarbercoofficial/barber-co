@@ -92,6 +92,15 @@ async function main() {
   assert.equal((await request({ path: '/api/admin/services', role: 'admin', body: { name: 'FIRST CUT', price: 200 } })).status, 409);
   assert.equal((await request({ path: '/api/admin/services', role: 'admin', body: { name: '', price: 150 } })).status, 400);
   const accessPath = `/api/admin/users/${customer._id}`;
+  const formerBarber = { _id: new ObjectId(), slug: 'former-barber', name: 'Former barber', status: 'active' };
+  database.records.barbers = [formerBarber];
+  const barberPath = `/api/admin/barbers/${formerBarber._id}`;
+  assert.equal((await request({ method: 'DELETE', path: barberPath, role: 'moderator' })).status, 403);
+  assert.equal((await request({ method: 'DELETE', path: barberPath, role: 'admin' })).status, 200);
+  assert.equal((await request({ method: 'GET', path: '/api/admin/barbers', role: 'admin' })).barbers.length, 0);
+  assert.equal((await request({ method: 'GET', path: '/api/catalog' })).barbers.length, 0);
+  assert.equal(database.records.barbers.length, 1, 'Barber history remains stored');
+  assert.equal((await request({ method: 'DELETE', path: barberPath, role: 'admin' })).status, 404);
   for (const role of ['customer', 'moderator']) assert.equal((await request({ method: 'PATCH', path: accessPath, role, body: { adminTestAccess: true } })).status, 403);
   assert.equal((await request({ method: 'PATCH', path: accessPath, role: 'admin', body: { adminTestAccess: true } })).status, 200);
   assert.equal(customer.adminTestAccess, true);

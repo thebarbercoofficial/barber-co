@@ -13,7 +13,7 @@ function renderRows() {
 async function loadServices() {
   try {
     const data = await api("/admin/services");
-    state.services = data.services || state.services;
+    state.services = (data.services || state.services).filter((service) => service.active !== false);
     save();
   } catch (error) {
     if (error.message.includes("Admin")) location.href = "login.html";

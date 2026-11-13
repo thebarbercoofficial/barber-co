@@ -84,6 +84,13 @@ async function main() {
   assert.equal(database.records.services.length, 2, 'Removing a service preserves its historical record');
   assert.equal((await request({ method: 'DELETE', path: servicePath, role: 'admin' })).status, 404);
   assert.equal((await request({ method: 'DELETE', path: `/api/admin/services/${secondService._id}`, role: 'admin' })).status, 409);
+  const restored = await request({ path: '/api/admin/services', role: 'admin', body: { name: 'First cut', price: 150, duration: '30 min' } });
+  assert.equal(restored.status, 201);
+  assert.equal(database.records.services.length, 2, 'Re-adding restores the service without duplicating history');
+  assert.equal(firstService.active, true);
+  assert.equal(firstService.price, 150);
+  assert.equal((await request({ path: '/api/admin/services', role: 'admin', body: { name: 'FIRST CUT', price: 200 } })).status, 409);
+  assert.equal((await request({ path: '/api/admin/services', role: 'admin', body: { name: '', price: 150 } })).status, 400);
   const accessPath = `/api/admin/users/${customer._id}`;
   for (const role of ['customer', 'moderator']) assert.equal((await request({ method: 'PATCH', path: accessPath, role, body: { adminTestAccess: true } })).status, 403);
   assert.equal((await request({ method: 'PATCH', path: accessPath, role: 'admin', body: { adminTestAccess: true } })).status, 200);

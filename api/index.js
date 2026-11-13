@@ -829,8 +829,22 @@ async function handler(req, res) {
     await requireRole(req, database, ["admin"]);
     if (req.method === "GET") return send(res, 200, { services: (await database.collection("services").find({ active: { $ne: false } }).sort({ createdAt: 1 }).toArray()).map(normalizeDoc) });
     if (req.method === "POST") {
-      const service = { _id: new ObjectId(), slug: slugify(body.name), name: body.name, price: Number(body.price), duration: body.duration || "30 min", detail: body.detail || "", icon: body.icon || "NEW", active: body.active !== false, createdAt: new Date() };
-      await database.collection("services").insertOne(service);
+      const name = String(body.name || '').trim();
+      const slug = slugify(name);
+      if (!name || !slug || body.price == null || body.price === '' || !Number.isFinite(Number(body.price)) || Number(body.price) < 0) return send(res, 400, { error: 'Enter a service name and a valid non-negative price.' });
+      const services = await database.collection('services').find({}).toArray();
+      const existing = services.find(item => item.slug === slug || String(item.name || '').trim().toLowerCase() === name.toLowerCase());
+      if (existing && existing.active !== false) return send(res, 409, { error: 'This service already exists. Edit the existing service instead.' });
+      const service = { _id: existing?._id || new ObjectId(), slug: existing?.slug || slug, name, price: Number(body.price), duration: body.duration || "30 min", detail: body.detail || "", icon: body.icon || "NEW", active: true, createdAt: existing?.createdAt || new Date() };
+      if (existing) {
+        await database.collection('services').updateOne({ _id: existing._id }, { $set: { ...service, updatedAt: new Date() } });
+      } else {
+        try { await database.collection("services").insertOne(service); }
+        catch (error) {
+          if (error.code === 11000) return send(res, 409, { error: 'This service already exists. Refresh the list and edit it instead.' });
+          throw error;
+        }
+      }
       return send(res, 201, { service: normalizeDoc(service) });
     }
   }

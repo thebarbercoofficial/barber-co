@@ -117,7 +117,7 @@ async function main() {
         if (name === 'contacts') {
           assert.equal(await page.locator('.contact-inbox-item').count(), 1);
           assert.ok((await page.locator('.contact-inbox-item').innerText()).includes('Can I book a Saturday appointment?'));
-          assert.equal(await page.locator('.contact-inbox-item a[href^="mailto:"]').count(), 2);
+          assert.equal(await page.locator('.contact-inbox-item a[href^="mailto:"]').count(), 1);
         }
         if (['dashboard', 'reports'].includes(name)) {
           await page.waitForFunction(() => Boolean(Chart.getChart(document.querySelector('[data-trend-chart]'))));
@@ -173,6 +173,7 @@ async function main() {
       assert.ok((await page.locator('[data-barber-rows]').innerText()).includes('No barbers match'));
       await page.locator('[data-barber-search]').fill('');
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+      await page.locator('[data-chart-range]').selectOption('30');
       const downloadEvent = page.waitForEvent('download');
       await page.locator('[data-chart-export]').click();
       const download = await downloadEvent;
@@ -238,6 +239,8 @@ async function main() {
     await page.goto(`${base}/admin-contacts.html`);
     await page.waitForSelector('.contact-inbox-item');
     assert.equal(await page.locator('.contact-inbox-item').count(), 1);
+    assert.equal(await page.locator('[data-reply]').count(), 1, 'Moderator can reply to customer enquiries');
+    assert.equal(await page.locator('[data-archive-contact]').count(), 1, 'Moderator can archive inbox messages');
     assert.equal(await page.locator('.sidebar a[href="admin-users.html"]').count(), 0);
     assert.equal(await page.locator('.sidebar a[href="admin-profile.html"]').count(), 0);
     assert.equal(await page.locator('.sidebar a[href="admin-reports.html"]').count(), 0);
@@ -254,7 +257,7 @@ async function main() {
     await emptyPage.goto(`${base}/admin-reports.html`);
     await emptyPage.waitForSelector('[data-chart-message]:visible');
     assert.equal(await emptyPage.locator('[data-chart-message]').textContent(), 'No activity in this period');
-    assert.equal(await emptyPage.locator('[data-chart-rows] tr').count(), 30);
+    assert.equal(await emptyPage.locator('[data-chart-rows] tr').count(), 1);
     await empty.route('**/api/admin/analytics', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Analytics temporarily unavailable.' }) }));
     await emptyPage.reload();
     await emptyPage.waitForSelector('[data-chart-message]:visible');

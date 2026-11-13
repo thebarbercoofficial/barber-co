@@ -39,7 +39,7 @@ function appointmentRows(connectionError = "") {
   if (statusFilter === 'awaiting-payment') {
     return reservations.filter((item) => !query || `${item.customer} ${item.date} ${item.request || ''}`.toLowerCase().includes(query)).map((item) => `<div class="appointment-row appointment-record"><div class="appointment-date"><strong>${safeText(item.date)}</strong><small>${safeText(item.time)}</small></div><div class="row-main"><strong>${safeText(item.customer)}</strong>${item.demoPayment ? '<small class="text-action">DEMO / no real payment</small>' : ''}<small>${safeText(byId(state.services, item.serviceId).name)} / ${safeText(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned barber')}</small>${item.request ? `<small class="appointment-request"><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}</div><div><strong>${peso(item.total || 0)}</strong><small class="muted">Not yet submitted</small></div><span class="status-pill pending">Awaiting payment</span><small class="muted">Hold ends ${safeText(new Date(item.expiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</small></div>`).join('') || `<div class="staff-empty">${icon('Clock')}<strong>No active payment holds</strong></div>`;
   }
-  const items = appointments.filter((item) => (statusFilter === 'all' || (statusFilter === 'history' ? ['completed', 'cancelled'].includes(item.status) : item.status === statusFilter)) && (!query || `${item.customer} ${item.queueNumber} ${item.date} ${item.request || ''}`.toLowerCase().includes(query)));
+  const items = appointments.filter((item) => (statusFilter === 'archived' ? item.archived === true : item.archived !== true) && (['all', 'archived'].includes(statusFilter) || (statusFilter === 'history' ? ['completed', 'cancelled'].includes(item.status) : item.status === statusFilter)) && (!query || `${item.customer} ${item.queueNumber} ${item.date} ${item.request || ''}`.toLowerCase().includes(query)));
   return items.map((item) => `<div class="appointment-row appointment-record"><div class="appointment-date"><strong>${safeText(item.date || 'Unscheduled')}</strong><small>${safeText(item.time)} / #${String(item.queueNumber || '').padStart(2, '0')}</small></div><div class="row-main"><strong>${safeText(item.customer)}</strong>${item.demoPayment ? '<small class="text-action">DEMO / no real payment</small>' : ''}<small>${safeText(byId(state.services, item.serviceId).name)} / ${safeText(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned barber')}</small>${item.request ? `<small class="appointment-request"><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}${item.paymentProof ? `<a class="text-action" href="${item.paymentProof}" target="_blank" rel="noreferrer">${icon('Image')} Payment proof</a>` : ''}</div><div><strong>${peso(item.total || 0)}</strong><small class="muted">${item.demoPayment ? 'Demo total' : 'Advance payment'}</small></div><span class="status-pill ${item.status}">${item.status === 'pending' ? 'Needs review' : item.status === 'confirmed' ? 'Accepted' : item.status}</span><span class="button-row">${item.status === 'pending' ? `<button class="button primary small" type="button" data-status="${item.mongoId || item.id}:confirmed">${icon('Check')} ${item.demoPayment ? 'Accept demo' : 'Verify / accept'}</button>` : ''}${item.status === 'confirmed' ? `<button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:completed">Complete</button>` : ''}${!['completed', 'cancelled'].includes(item.status) ? `<button class="icon-button danger-icon" type="button" data-status="${item.mongoId || item.id}:cancelled" aria-label="Cancel appointment" title="Cancel appointment">${icon('X')}</button>` : ''}</span></div>`).join('') || `<div class="staff-empty">${icon('CalendarDays')}<strong>No ${statusFilter === 'pending' ? 'pending ' : ''}appointments${query ? ' match your search' : ' here'}</strong><span>Submitted bookings appear here for payment verification.</span></div>`;
 }
 
@@ -54,13 +54,19 @@ function updatePanel(connectionError = "", force = false) {
   lastSnapshot = nextSnapshot;
   const panel = document.querySelector("[data-appointment-panel]");
   if (panel) panel.innerHTML = appointmentRows(connectionError);
+  const visibleHistory = appointments.filter(item => ['completed', 'cancelled'].includes(item.status) && (statusFilter === 'archived' ? item.archived === true : item.archived !== true));
+  panel?.querySelectorAll('.appointment-record').forEach(row => {
+    const proof = row.querySelector('a.text-action');
+    const item = visibleHistory.find(entry => entry.paymentProof === proof?.getAttribute('href') || (row.querySelector('.appointment-date strong')?.textContent === (entry.date || 'Unscheduled') && row.querySelector('.appointment-date small')?.textContent === `${entry.time} / #${String(entry.queueNumber || '').padStart(2, '0')}`));
+    if (item) row.querySelector('.button-row')?.insertAdjacentHTML('beforeend', `<button class="icon-button" type="button" data-archive-appointment="${item.id}" title="${item.archived ? 'Restore appointment' : 'Archive appointment'}" aria-label="${item.archived ? 'Restore appointment' : 'Archive appointment'}">${icon(item.archived ? 'ArchiveRestore' : 'Archive')}</button>`);
+  });
   panel?.querySelectorAll('.appointment-record').forEach((row) => {
     const id = row.querySelector('[data-status]')?.dataset.status.split(':')[0];
     if (id) row.querySelector('.button-row')?.insertAdjacentHTML('afterbegin', `<button class="icon-button" type="button" data-reschedule="${id}" title="Reschedule appointment" aria-label="Reschedule appointment">${icon('CalendarClock')}</button>`);
   });
   document.querySelectorAll('[data-filter-count]').forEach((target) => {
     const filter = target.dataset.filterCount;
-    target.textContent = filter === 'awaiting-payment' ? reservations.length : appointments.filter((item) => filter === 'all' || (filter === 'history' ? ['completed', 'cancelled'].includes(item.status) : item.status === filter)).length;
+    target.textContent = filter === 'awaiting-payment' ? reservations.length : appointments.filter((item) => (filter === 'archived' ? item.archived === true : item.archived !== true) && (['all', 'archived'].includes(filter) || (filter === 'history' ? ['completed', 'cancelled'].includes(item.status) : item.status === filter))).length;
   });
   const warning = document.querySelector('[data-payment-warning]');
   if (warning) {
@@ -95,6 +101,7 @@ async function render() {
     </section>
   `;
   lastSnapshot = snapshot(connectionError);
+  document.querySelector('.filter-tabs').insertAdjacentHTML('beforeend', '<button type="button" data-filter="archived" aria-pressed="false">Archived<span data-filter-count="archived">0</span></button>');
   updatePanel(connectionError, true);
   document.querySelector('[data-appointment-search]').addEventListener('input', () => updatePanel(latestConnectionError, true));
   document.querySelectorAll('[data-filter]').forEach((button) => button.addEventListener('click', () => {
@@ -103,6 +110,15 @@ async function render() {
     updatePanel(latestConnectionError, true);
   }));
   document.querySelector("[data-appointment-panel]").addEventListener("click", async (event) => {
+    const archive = event.target.closest('[data-archive-appointment]');
+    if (archive) {
+      const item = appointments.find(entry => entry.id === archive.dataset.archiveAppointment);
+      if (archive.disabled || !item || !window.confirm(item.archived ? 'Restore this appointment to the list?' : 'Archive this appointment? Booking and payment history stay intact. You can restore it from Archived.')) return;
+      archive.disabled = true;
+      try { await api(`/admin/appointments/${item.id}/archive`, { method: 'PATCH', body: JSON.stringify({ archived: !item.archived }) }); await refreshAppointments({ force: true }); }
+      catch (error) { toast(error.message); archive.disabled = false; }
+      return;
+    }
     const reschedule = event.target.closest('[data-reschedule]');
     if (reschedule) {
       const item = appointments.find((entry) => entry.id === reschedule.dataset.reschedule);

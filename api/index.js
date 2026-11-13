@@ -424,14 +424,14 @@ async function handler(req, res) {
 
   if (req.method === 'GET' && path === '/admin/contacts') {
     await requireRole(req, database, ['admin', 'moderator']);
-    const contacts = await database.collection('contactMessages').find({}, { projection: { name: 1, email: 1, message: 1, status: 1, createdAt: 1 } }).sort({ createdAt: -1 }).limit(100).toArray();
+    const contacts = await database.collection('contactMessages').find({ archived: requestUrl.searchParams.get('archived') === 'true' ? true : { $ne: true } }, { projection: { name: 1, email: 1, message: 1, status: 1, createdAt: 1, archived: 1 } }).sort({ createdAt: -1 }).limit(100).toArray();
     const replies = await database.collection('contactReplies').find({ contactId: { $in: contacts.map((item) => String(item._id)) } }, { projection: { contactId: 1, message: 1, status: 1, createdAt: 1 } }).sort({ createdAt: 1 }).toArray();
     contacts.forEach((contact) => { contact.replies = replies.filter((reply) => reply.contactId === String(contact._id)); });
     return send(res, 200, { contacts });
   }
 
   if (req.method === 'POST' && /^\/admin\/contacts\/[^/]+\/reply$/.test(path)) {
-    const admin = await requireRole(req, database, ['admin']);
+    const admin = await requireRole(req, database, ['admin', 'moderator']);
     const id = path.split('/')[3];
     if (!ObjectId.isValid(id)) return send(res, 400, { error: 'Invalid contact message.' });
     const message = String(body.message || '').trim();
@@ -441,7 +441,7 @@ async function handler(req, res) {
     if (!contact) return send(res, 404, { error: 'Contact message not found.' });
     if (!security.emailReady()) return send(res, 503, { error: 'Email delivery is not configured. Your reply was not sent.' });
     const collection = database.collection('contactReplies');
-    const reply = { _id: security.digest(`contact-reply:${id}:${requestId}`), contactId: id, adminId: admin._id, message, status: 'sending', createdAt: new Date() };
+    const reply = { _id: security.digest(`contact-reply:${id}:${requestId}`), contactId: id, adminId: admin._id, staffRole: admin.role, message, status: 'sending', createdAt: new Date() };
     try { await collection.insertOne(reply); }
     catch (error) {
       if (error.code !== 11000) throw error;
@@ -460,6 +460,18 @@ async function handler(req, res) {
     await collection.updateOne({ _id: reply._id }, { $set: { status: 'accepted' } });
     await database.collection('contactMessages').updateOne({ _id: contact._id }, { $set: { status: 'replied' } });
     return send(res, 200, { message: 'Reply accepted by the email provider. This is not a delivery confirmation.' });
+  }
+
+  if (req.method === 'PATCH' && /^\/admin\/(contacts|appointments)\/[a-f0-9]{24}\/archive$/.test(path)) {
+    const actor = await requireRole(req, database, ['admin', 'moderator']);
+    const [, , kind, id] = path.split('/');
+    if (typeof body.archived !== 'boolean') return send(res, 400, { error: 'Choose archive or restore.' });
+    const collection = database.collection(kind === 'contacts' ? 'contactMessages' : 'appointments');
+    const record = await collection.findOne({ _id: new ObjectId(id) });
+    if (!record) return send(res, 404, { error: 'Record not found.' });
+    if (kind === 'appointments' && !['completed', 'cancelled'].includes(record.status)) return send(res, 409, { error: 'Only completed or cancelled appointments can be archived.' });
+    await collection.updateOne({ _id: record._id }, { $set: { archived: body.archived, archivedBy: actor._id, archivedAt: new Date() } });
+    return send(res, 200, { ok: true });
   }
 
   if (req.method === 'DELETE' && /^\/admin\/users\/[^/]+$/.test(path)) {

@@ -1474,6 +1474,7 @@ body.transaction-page .panel,
 body.transaction-page .login-card > * { animation: none !important; }
 .terms-consent > span { display: flex; align-items: flex-start; gap: 10px; line-height: 1.5; }
 [data-register] .terms-consent { margin-top: 14px; margin-bottom: 10px; }
+.payment-layout .payment-methods { margin-bottom: 20px; }
 .payment-receipt-upload { margin-top: 18px; margin-bottom: 16px; }
 .terms-consent input[type="checkbox"] { width: 18px; min-width: 18px; height: 18px; min-height: 18px; margin: 2px 0 0; padding: 0; }
 .registration-terms { min-width: 0; padding: 16px; border: 1px solid #b18a53; border-radius: 6px; overflow-wrap: anywhere; }

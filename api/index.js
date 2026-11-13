@@ -873,8 +873,21 @@ async function handler(req, res) {
     await requireRole(req, database, ["admin"]);
     if (req.method === "GET") return send(res, 200, { barbers: (await database.collection("barbers").find({ status: { $ne: 'fired' } }).sort({ createdAt: 1 }).toArray()).map(normalizeDoc) });
     if (req.method === "POST") {
-      const barber = { _id: new ObjectId(), slug: slugify(body.name), name: body.name, role: body.role || "Barber", status: body.status || "active", bio: body.bio || "", createdAt: new Date() };
-      await database.collection("barbers").insertOne(barber);
+      const name = String(body.name || '').trim();
+      if (!name) return send(res, 400, { error: 'Enter the barber name.' });
+      const slug = slugify(name);
+      const existing = (await database.collection('barbers').find({}).toArray()).find(item => item.slug === slug || String(item.name || '').trim().toLowerCase() === name.toLowerCase());
+      if (existing && existing.status !== 'fired') return send(res, 409, { error: 'This barber is already on the team. Update their status instead.' });
+      const barber = { _id: existing?._id || new ObjectId(), slug: existing?.slug || slug, name, role: body.role || "Barber", status: body.status === 'on-leave' ? 'on-leave' : 'active', bio: body.bio || "", createdAt: existing?.createdAt || new Date() };
+      if (existing) {
+        await database.collection('barbers').updateOne({ _id: existing._id }, { $set: { ...barber, updatedAt: new Date() } });
+      } else {
+        try { await database.collection("barbers").insertOne(barber); }
+        catch (error) {
+          if (error.code === 11000) return send(res, 409, { error: 'This barber already exists. Refresh the team list and try again.' });
+          throw error;
+        }
+      }
       return send(res, 201, { barber: normalizeDoc(barber) });
     }
   }

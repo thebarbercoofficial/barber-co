@@ -101,6 +101,12 @@ async function main() {
   assert.equal((await request({ method: 'GET', path: '/api/catalog' })).barbers.length, 0);
   assert.equal(database.records.barbers.length, 1, 'Barber history remains stored');
   assert.equal((await request({ method: 'DELETE', path: barberPath, role: 'admin' })).status, 404);
+  assert.equal((await request({ path: '/api/admin/barbers', role: 'admin', body: { name: 'Former barber', role: 'Fade specialist' } })).status, 201);
+  assert.equal(database.records.barbers.length, 1, 'Re-adding a barber preserves their original historical identity');
+  assert.equal(formerBarber.status, 'active');
+  assert.equal(formerBarber.role, 'Fade specialist');
+  assert.equal((await request({ path: '/api/admin/barbers', role: 'admin', body: { name: 'FORMER BARBER' } })).status, 409);
+  assert.equal((await request({ path: '/api/admin/barbers', role: 'admin', body: { name: '' } })).status, 400);
   for (const role of ['customer', 'moderator']) assert.equal((await request({ method: 'PATCH', path: accessPath, role, body: { adminTestAccess: true } })).status, 403);
   assert.equal((await request({ method: 'PATCH', path: accessPath, role: 'admin', body: { adminTestAccess: true } })).status, 200);
   assert.equal(customer.adminTestAccess, true);

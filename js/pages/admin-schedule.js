@@ -109,6 +109,15 @@ async function render() {
       const modal = document.createElement('dialog');
       modal.className = 'receipt-dialog';
       modal.innerHTML = `<form data-reschedule-form><h3>Reschedule appointment</h3><label>Date<input type="date" name="date" required value="${safeText(item.date)}"></label><label>Time<input type="time" name="time" step="1800" required value="${safeText(item.time)}"></label><p data-reschedule-error role="alert"></p><div class="button-row"><button class="button secondary" type="button" data-close>Cancel</button><button class="button primary" type="submit">Save schedule</button></div></form>`;
+      const reasonLabel = document.createElement('label');
+      reasonLabel.textContent = 'Reason / message to customer';
+      const reasonInput = document.createElement('textarea');
+      reasonInput.name = 'reason';
+      reasonInput.required = true;
+      reasonInput.maxLength = 500;
+      reasonInput.placeholder = 'Explain why the appointment needs to change';
+      reasonLabel.append(reasonInput);
+      modal.querySelector('[data-reschedule-error]').before(reasonLabel);
       modal.querySelector('[data-close]').onclick = () => modal.close();
       modal.addEventListener('close', () => modal.remove());
       modal.querySelector('form').onsubmit = async (submit) => {
@@ -149,10 +158,17 @@ async function render() {
     const button = event.target.closest("[data-status]");
     if (!button || button.disabled) return;
     const [id, status] = button.dataset.status.split(":");
+    let reason = '';
+    if (status === 'cancelled') {
+      const message = window.prompt('Cancel this appointment? Enter the reason to share with the customer. Their account will be updated and SMS/email will be attempted.');
+      if (message === null) return;
+      reason = message.trim().slice(0, 500);
+      if (!reason) return toast('Enter a cancellation reason for the customer.');
+    }
     button.disabled = true;
     try {
-      await api(`/admin/appointments/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
-      toast(`Appointment marked ${status}.`);
+      await api(`/admin/appointments/${id}`, { method: "PATCH", body: JSON.stringify({ status, reason }) });
+      toast(`Appointment marked ${status}. Customer update recorded; message delivery is not guaranteed.`);
       await refreshAppointments({ force: true });
     } catch (error) {
       toast(error.message || "Status could not be updated.");

@@ -1019,6 +1019,7 @@ async function handler(req, res) {
 
   if (req.method === 'PATCH' && /^\/(admin\/)?appointments\/[a-f0-9]{24}\/reschedule$/.test(path)) {
     const customerRequest = !path.startsWith('/admin/');
+    const staffNote = customerRequest ? '' : String(body.reason || '').trim().slice(0, 500);
     const actor = customerRequest ? await requireUser(req, database) : await requireRole(req, database, ['admin', 'moderator']);
     const id = path.split('/').at(-2);
     const current = await database.collection('appointments').findOne({ _id: new ObjectId(id) });
@@ -1044,7 +1045,7 @@ async function handler(req, res) {
     const extraSlots = newSlots.filter((slot) => !retained.has(slot)).map((_id) => ({ _id, appointmentId: tempId, createdAt: new Date(), expiresAt: new Date(Date.now() + 120000) }));
     try {
       if (extraSlots.length) await database.collection('appointmentSlots').insertMany(extraSlots, { ordered: true });
-      const changed = await database.collection('appointments').updateOne({ _id: current._id, date: current.date, time: current.time, status: current.status }, { $set: { date, time, updatedAt: new Date() } });
+      const changed = await database.collection('appointments').updateOne({ _id: current._id, date: current.date, time: current.time, status: current.status }, { $set: { date, time, ...(staffNote ? { staffNote } : {}), updatedAt: new Date() } });
       if (!changed.modifiedCount) throw Object.assign(new Error('This appointment changed. Refresh and try again.'), { status: 409 });
       await database.collection('appointmentSlots').updateMany({ appointmentId: tempId }, { $set: { appointmentId: id }, $unset: { expiresAt: '' } });
       await database.collection('appointmentSlots').deleteMany({ appointmentId: id, _id: { $nin: newSlots } });
@@ -1053,7 +1054,7 @@ async function handler(req, res) {
       if (error.code === 11000) return send(res, 409, { error: 'This barber was just reserved. Choose another time.' });
       throw error;
     }
-    await messaging.notify(database, current.userId, `Your Barber Co appointment was rescheduled to ${date} at ${time}. Contact the shop if this does not suit you.`, `appointment:${id}:rescheduled:${date}:${time}`);
+    await messaging.notify(database, current.userId, `Your Barber Co appointment was rescheduled from ${current.date} at ${current.time} to ${date} at ${time}.${staffNote ? ` Reason: ${staffNote}.` : ''} Contact the shop if this does not suit you.`, `appointment:${id}:rescheduled:${date}:${time}`);
     return send(res, 200, { appointment: normalizeDoc({ ...current, date, time }) });
   }
 
@@ -1079,6 +1080,8 @@ async function handler(req, res) {
     const current = await database.collection('appointments').findOne({ _id: new ObjectId(id) });
     if (!current) return send(res, 404, { error: 'Appointment not found.' });
     const update = { status: body.status, updatedAt: new Date() };
+    const staffNote = body.status === 'cancelled' ? String(body.reason || '').trim().slice(0, 500) : '';
+    if (staffNote) update.staffNote = staffNote;
     if (current.status === body.status) return send(res, 200, { appointment: normalizeDoc(current) });
     const transitions = { pending: ['confirmed', 'cancelled'], confirmed: ['completed', 'cancelled'], completed: [], cancelled: [] };
     if (!transitions[current.status]?.includes(body.status)) return send(res, 409, { error: 'This appointment has already changed. Refresh before proceeding.' });
@@ -1092,7 +1095,7 @@ async function handler(req, res) {
       await database.collection("appointmentSlots").deleteMany({ appointmentId: id });
     }
     const appointment = await database.collection("appointments").findOne({ _id: new ObjectId(id) });
-    await messaging.notify(database, current.userId, `Your Barber Co appointment on ${current.date} at ${current.time} is ${body.status === 'confirmed' ? 'accepted' : body.status}.`, `appointment:${id}:${body.status}`);
+    await messaging.notify(database, current.userId, `Your Barber Co appointment on ${current.date} at ${current.time} is ${body.status === 'confirmed' ? 'accepted' : body.status}.${staffNote ? ` Reason: ${staffNote}.` : ''}`, `appointment:${id}:${body.status}`);
     return send(res, 200, { appointment: normalizeDoc(appointment) });
   }
 

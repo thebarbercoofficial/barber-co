@@ -73,6 +73,17 @@ async function main() {
   assert.equal(inbox.contacts[0].replies[0].status, 'accepted');
   assert.equal(inbox.contacts[0].status, 'replied');
   const customer = users.find((item) => item.role === 'customer');
+  const firstService = { _id: new ObjectId(), slug: 'first-cut', name: 'First cut', active: true };
+  const secondService = { _id: new ObjectId(), slug: 'second-cut', name: 'Second cut', active: true };
+  database.records.services = [firstService, secondService];
+  const servicePath = `/api/admin/services/${firstService._id}`;
+  assert.equal((await request({ method: 'DELETE', path: servicePath, role: 'customer' })).status, 403);
+  assert.equal((await request({ method: 'DELETE', path: servicePath, role: 'admin' })).status, 200);
+  assert.equal((await request({ method: 'GET', path: '/api/admin/services', role: 'admin' })).services.length, 1);
+  assert.equal((await request({ method: 'GET', path: '/api/catalog' })).services.length, 1);
+  assert.equal(database.records.services.length, 2, 'Removing a service preserves its historical record');
+  assert.equal((await request({ method: 'DELETE', path: servicePath, role: 'admin' })).status, 404);
+  assert.equal((await request({ method: 'DELETE', path: `/api/admin/services/${secondService._id}`, role: 'admin' })).status, 409);
   const accessPath = `/api/admin/users/${customer._id}`;
   for (const role of ['customer', 'moderator']) assert.equal((await request({ method: 'PATCH', path: accessPath, role, body: { adminTestAccess: true } })).status, 403);
   assert.equal((await request({ method: 'PATCH', path: accessPath, role: 'admin', body: { adminTestAccess: true } })).status, 200);

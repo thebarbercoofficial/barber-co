@@ -827,7 +827,7 @@ async function handler(req, res) {
 
   if (path === "/admin/services") {
     await requireRole(req, database, ["admin"]);
-    if (req.method === "GET") return send(res, 200, { services: (await database.collection("services").find().sort({ createdAt: 1 }).toArray()).map(normalizeDoc) });
+    if (req.method === "GET") return send(res, 200, { services: (await database.collection("services").find({ active: { $ne: false } }).sort({ createdAt: 1 }).toArray()).map(normalizeDoc) });
     if (req.method === "POST") {
       const service = { _id: new ObjectId(), slug: slugify(body.name), name: body.name, price: Number(body.price), duration: body.duration || "30 min", detail: body.detail || "", icon: body.icon || "NEW", active: body.active !== false, createdAt: new Date() };
       await database.collection("services").insertOne(service);
@@ -838,6 +838,7 @@ async function handler(req, res) {
   if (path.startsWith("/admin/services/")) {
     await requireRole(req, database, ["admin"]);
     const id = path.split("/").pop();
+    if (!ObjectId.isValid(id)) return send(res, 400, { error: 'Choose a valid service.' });
     if (req.method === "PATCH") {
       const update = { ...body, updatedAt: new Date() };
       if (body.price != null) update.price = Number(body.price);
@@ -845,6 +846,10 @@ async function handler(req, res) {
       return send(res, 200, { ok: true });
     }
     if (req.method === "DELETE") {
+      const service = await database.collection('services').findOne({ _id: new ObjectId(id), active: { $ne: false } });
+      if (!service) return send(res, 404, { error: 'Service is already removed or does not exist.' });
+      const activeServices = await database.collection('services').find({ active: { $ne: false } }).toArray();
+      if (activeServices.length <= 1) return send(res, 409, { error: 'At least one service must remain.' });
       await database.collection("services").updateOne({ _id: new ObjectId(id) }, { $set: { active: false, updatedAt: new Date() } });
       return send(res, 200, { ok: true });
     }

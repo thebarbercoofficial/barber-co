@@ -49,7 +49,7 @@ passwordLabel.insertAdjacentHTML('beforebegin', `<label>Date of birth<input type
 passwordLabel.insertAdjacentHTML('afterend', '<label>Confirm password<input type="password" name="confirmPassword" required minlength="8" autocomplete="new-password" placeholder="Repeat password"></label>');
 const terms = document.querySelector('[data-register] input[type="checkbox"]').closest('label');
 terms.classList.add('terms-consent');
-terms.querySelector('span').lastChild.textContent = ' I agree to the Terms and Privacy information below.';
+terms.querySelector('span').lastChild.textContent = ' I agree to the Terms and Privacy information above.';
 terms.insertAdjacentHTML('beforebegin', `<details class="registration-terms" data-registration-terms>
   <summary>Read Terms and Privacy</summary>
   <h3>Accounts and security</h3>

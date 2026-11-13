@@ -61,12 +61,16 @@ async function render() {
     }
   }
   if (del) {
+    if (del.disabled) return;
     if (state.services.length <= 1) return toast("At least one service must remain.");
+    const service = state.services.find((item) => (item.mongoId || item.id) === del.dataset.delete);
+    if (!service || !window.confirm(`Remove ${service.name} from the service menu? Customers will no longer be able to book it. Existing booking history will be kept.`)) return;
+    del.disabled = true;
     try {
       await api(`/admin/services/${del.dataset.delete}`, { method: "DELETE" });
       toast("Service removed.");
       render();
-    } catch (error) { toast(error.message || "Service could not be removed."); }
+    } catch (error) { toast(error.message || "Service could not be removed."); del.disabled = false; }
   }
   });
   initHeader("admin");

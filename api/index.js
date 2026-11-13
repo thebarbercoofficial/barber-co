@@ -71,6 +71,7 @@ function mergedSettings(settings = {}) {
     gcash,
     maya,
     paymentMode,
+    paymentRevision: security.digest(JSON.stringify({ paymentMode, gcash, maya, bookingFee: settings.bookingFee ?? defaultSettings.bookingFee })),
     allowDemoPayments,
     demoMethods,
     operatingHours,
@@ -964,6 +965,7 @@ async function handler(req, res) {
     const demoPayment = settings.paymentMode === 'demo';
     if (!paymentConfigured(settings)) return send(res, 409, { error: 'Online payments are not configured. Please contact the shop.' });
     if (body.paymentMode && body.paymentMode !== settings.paymentMode) return send(res, 409, { error: 'Payment mode changed. Reload the payment page before proceeding.' });
+    if (body.paymentRevision && body.paymentRevision !== settings.paymentRevision) return send(res, 409, { error: 'Payment recipient or fee changed. Reload the payment page and check the latest details. If you already paid, contact the shop before paying again.' });
     const methods = demoPayment ? settings.demoMethods : settings;
     const paymentMethod = ["GCash", "Maya"].find((name) => name === body.paymentMethod && methods[name.toLowerCase()]?.enabled) || "";
     const paymentProof = String(body.paymentProof || "");

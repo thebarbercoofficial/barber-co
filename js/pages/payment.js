@@ -16,7 +16,12 @@ let receiptFile = null;
 async function render() {
   let settings;
   try { settings = await loadSettings(); }
-  catch (error) { toast(error.message || "Payment details could not be loaded."); settings = state.shopSettings || {}; }
+  catch (error) {
+    document.querySelector('#app').innerHTML = `${nav('booking')}<section class="section top"><div class="panel"><h2>Payment details could not be loaded.</h2><p>Do not transfer money using old details. Retry to get the current recipient and amount.</p><button class="button primary" type="button" data-retry-payment>Retry</button></div></section>`;
+    document.querySelector('[data-retry-payment]').addEventListener('click', render);
+    initHeader('booking');
+    return;
+  }
   const demo = settings.paymentMode === 'demo';
   const paymentSettings = demo ? settings.demoMethods || {} : settings;
   const methods = [
@@ -75,13 +80,19 @@ async function render() {
     button.disabled = true;
     button.textContent = "Submitting...";
     try {
+      const latest = await loadSettings();
+      if (latest.paymentRevision !== settings.paymentRevision || latest.paymentMode !== settings.paymentMode) {
+        toast('Payment details changed. Check the updated recipient and total. If you already paid, contact the shop before paying again.');
+        await render();
+        return;
+      }
       const paymentProof = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
         reader.onerror = () => reject(new Error("Payment proof could not be read."));
         reader.readAsDataURL(proofFile);
       });
-      const payload = await api("/appointments", { method: "POST", body: JSON.stringify({ ...booking, paymentMethod: state.paymentMethod, paymentProof, paymentMode: settings.paymentMode || 'live' }) });
+      const payload = await api("/appointments", { method: "POST", body: JSON.stringify({ ...booking, paymentMethod: state.paymentMethod, paymentProof, paymentMode: settings.paymentMode || 'live', paymentRevision: settings.paymentRevision }) });
       toast(`Booking submitted for approval. Queue #${String(payload.appointment.queueNumber).padStart(2, "0")}.`);
       state.booking = null;
       save();

@@ -259,7 +259,7 @@ async function main() {
       }
       await reports.waitForFunction((count) => [...document.querySelectorAll('.report-bars .bar b')].some((node) => node.textContent === String(count)), records.appointments.length, { timeout: 10000 });
       assert.equal(await reports.locator('[data-chart-day]').inputValue(), '0', 'Live analytics refresh must preserve the day being inspected');
-      assert.equal(await reports.locator('[data-chart-readout]').innerText(), inspectedDay);
+      assert.equal((await reports.locator('[data-chart-readout]').innerText()).split(' / ')[0], inspectedDay.split(' / ')[0], 'Live totals may change, but the selected date must stay fixed');
       await review.locator(`.appointment-record:has([data-status="${saved._id}:confirmed"]) a.text-action`).click();
       await review.locator('.receipt-dialog img').waitFor();
       await review.waitForFunction(() => document.querySelector('.receipt-dialog img')?.naturalWidth > 0);
@@ -341,7 +341,46 @@ async function main() {
         }
       }
     }
+    const QRCode = require('qrcode');
+    const { crc16 } = require('../lib/payment-settings');
+    const tlv = (id, value) => `${id}${String(value.length).padStart(2, '0')}${value}`;
+    const qrBase = tlv('00', '01') + tlv('01', '11') + tlv('28', tlv('00', 'ph.ppmi.p2m') + tlv('01', 'TEST-ONLY')) + tlv('52', '7298') + tlv('53', '608') + tlv('58', 'PH') + tlv('59', 'TEST SHOP') + tlv('60', 'CARMONA') + '6304';
+    const qrImage = await QRCode.toDataURL(qrBase + crc16(qrBase), { width: 500 });
+    const bothWallets = { ...config, gcash: { ...config.gcash, qrImage }, maya: { enabled: true, accountName: 'Maya Test Shop', accountNumber: '+639987654321', qrImage } };
+    const switched = await request('/admin/settings', 'admin', bothWallets, 'PATCH');
+    assert.equal(switched.status, 200, JSON.stringify(switched.data));
+    const published = (await request('/settings', null)).data.settings;
+    assert.equal(published.paymentMode, 'live');
+    assert.equal(published.maya.accountNumber, '09987654321');
+    assert.equal(published.maya.qrImage, qrImage);
+    for (const [paymentMethod, time] of [['GCash', '14:00'], ['Maya', '15:00']]) {
+      const payload = { ...booking, date: '2100-03-04', time, paymentMethod, paymentProof: proof, paymentMode: 'live', paymentRevision: published.paymentRevision };
+      assert.equal((await request('/appointments', 'customer', { ...payload, paymentRevision: 'old-recipient' })).status, 409);
+      const result = await request('/appointments', 'customer', payload);
+      assert.equal(result.status, 201, JSON.stringify(result.data));
+      assert.equal(result.data.appointment.demoPayment, false);
+      assert.equal(result.data.appointment.paid, false, 'Receipt uploads must wait for staff verification');
+      const staffBookings = (await request('/admin/appointments', 'moderator')).data.appointments;
+      assert.ok(staffBookings.some(item => item.mongoId === result.data.appointment.id && item.hasPaymentProof));
+      assert.equal((await request(`/admin/appointments/${result.data.appointment.id}/proof`, 'moderator')).data.paymentProof, proof);
+      assert.equal((await request(`/admin/appointments/${result.data.appointment.id}`, 'moderator', { status: 'confirmed' }, 'PATCH')).status, 200);
+    }
+    await setup.evaluate((booking) => {
+      const data = JSON.parse(localStorage.getItem('barberCoState'));
+      data.booking = booking;
+      localStorage.setItem('barberCoState', JSON.stringify(data));
+    }, { ...booking, date: '2100-03-05' });
+    await setup.route('**/api/settings', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Unavailable' }) }));
+    await setup.goto(`${base}/payment.html`);
+    await setup.getByRole('button', { name: 'Retry', exact: true }).waitFor();
+    assert.equal(await setup.locator('[data-confirm-payment]').count(), 0, 'Failed settings requests must never expose cached payment instructions');
+    await setup.unroute('**/api/settings');
+    await setup.getByRole('button', { name: 'Retry', exact: true }).click();
+    await setup.locator('[data-payment="Maya"]').click();
+    await setup.getByText('Maya Test Shop', { exact: true }).waitFor();
+    assert.equal(await setup.locator('.qr-preview').getAttribute('src'), qrImage);
     await adminContext.close();
+    console.log('Demo-to-live GCash/Maya settings, QR persistence, customer submission, staff verification, stale-recipient rejection, and checkout retry passed');
     console.log('Profile panel sizing passed expanded/collapsed at 390, 768, 1024, and 1860px');
     console.log('Admin-only settings/QR checks, real-payment spoof protection, demo GCash/Maya submission, and exclusion from real analytics passed');
   } finally {

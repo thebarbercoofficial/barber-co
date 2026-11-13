@@ -49,9 +49,10 @@ passwordLabel.insertAdjacentHTML('beforebegin', `<label>Date of birth<input type
 passwordLabel.insertAdjacentHTML('afterend', '<label>Confirm password<input type="password" name="confirmPassword" required minlength="8" autocomplete="new-password" placeholder="Repeat password"></label>');
 const terms = document.querySelector('[data-register] input[type="checkbox"]').closest('label');
 terms.classList.add('terms-consent');
-terms.querySelector('span').lastChild.textContent = ' I agree to the Terms and Privacy information above.';
-terms.insertAdjacentHTML('beforebegin', `<details class="registration-terms" data-registration-terms>
-  <summary>Read Terms and Privacy</summary>
+terms.innerHTML = '<span><input type="checkbox" name="termsAccepted" required><span>I agree to the <a class="inline" href="#registration-policy" data-open-policy aria-haspopup="dialog">Terms and Privacy Policy</a>.</span></span>';
+document.body.insertAdjacentHTML('beforeend', `<dialog class="registration-policy-dialog" id="registration-policy" aria-labelledby="registration-policy-title">
+  <header class="registration-policy-heading"><h2 id="registration-policy-title">Terms and Privacy Policy</h2><button class="icon-button" type="button" data-close-policy aria-label="Close terms and privacy policy" title="Close">${BarberCo.icon('X')}</button></header>
+  <div class="registration-policy-content">
   <h3>Accounts and security</h3>
   <p>Provide accurate contact details and keep your password and verification codes private. Verify your mobile number or email to activate your account. Do not share another person's contact information without permission.</p>
   <h3>Appointments and payments</h3>
@@ -63,7 +64,19 @@ terms.insertAdjacentHTML('beforebegin', `<details class="registration-terms" dat
   <p>The shop uses your account details, bookings, payment proof, and messages to operate appointments, verify payments, recover accounts, and respond to enquiries. Authorized staff can access relevant records. Hosting, email, and SMS providers process information needed to deliver those services.</p>
   <p>Your queue number and call name may appear on the public queue or shop display. Use a call name you are comfortable displaying. Do not include sensitive personal information in booking notes.</p>
   <p>Use the <a class="inline" href="contact.html" target="_blank" rel="noopener">shop contact page (opens in a new tab)</a> to ask about your information, request corrections or deletion, or clarify these terms before registering.</p>
-</details>`);
+  </div>
+</dialog>`);
+const policyDialog = document.querySelector('#registration-policy');
+document.querySelector('[data-open-policy]').addEventListener('click', (event) => {
+  event.preventDefault();
+  policyDialog.showModal();
+});
+document.querySelector('[data-close-policy]').addEventListener('click', () => policyDialog.close());
+policyDialog.addEventListener('click', (event) => {
+  if (event.target !== policyDialog) return;
+  const bounds = policyDialog.getBoundingClientRect();
+  if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) policyDialog.close();
+});
 initHeader("login");
 
 function showSmsVerification(email, phone, message) {

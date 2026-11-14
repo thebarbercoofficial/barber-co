@@ -24,6 +24,8 @@ const barberPerformance = barbers.map((barber, index) => ({ ...barber, bookings:
 async function fixtures(context, role) {
   let queue = structuredClone(initialQueue);
   let appointments = structuredClone(initialAppointments);
+  appointments[1].graceDeadline = new Date(Date.now() + 600000).toISOString();
+  appointments[1].partyMembers = ['John Santos'];
   let reservations = [];
   let analyticsUnavailable = false;
   context.bookingTestData = {
@@ -62,7 +64,12 @@ async function fixtures(context, role) {
       queue = queue.map((item) => item.id === id ? { ...item, ...body } : item);
       data = { ticket: queue.find((item) => item.id === id) };
     } else if (endpoint.endsWith('/appointments')) data = { appointments, reservations };
-    else if (endpoint.includes('/appointments/')) {
+    else if (endpoint.endsWith('/check-in')) {
+      const id = endpoint.split('/').at(-2);
+      const item = appointments.find(item => item.mongoId === id);
+      item.arrivals = Object.fromEntries(req.postDataJSON().memberIndices.map(index => [index, new Date().toISOString()]));
+      data = { appointment: item };
+    } else if (endpoint.includes('/appointments/')) {
       const id = endpoint.split('/').pop();
       appointments = appointments.map((item) => item.mongoId === id ? { ...item, ...req.postDataJSON() } : item);
       data = { appointment: appointments.find((item) => item.mongoId === id) };
@@ -85,7 +92,7 @@ async function main() {
   try {
     browser = await chromium.launch({ headless: true, channel: 'chrome' });
     const pages = ['dashboard', 'logbook', 'schedule', 'contacts', 'users', 'barbers', 'services', 'reports', 'profile'];
-    for (const width of [1920, 1440, 768, 390]) {
+    for (const width of process.env.STAFF_UI_WIDTH ? [Number(process.env.STAFF_UI_WIDTH)] : [1920, 1440, 768, 390]) {
       const context = await browser.newContext({ viewport: { width, height: 900 } });
       await fixtures(context, 'admin');
       const page = await context.newPage();
@@ -98,7 +105,8 @@ async function main() {
         assert.equal(errors.length, 0, `${name}: ${errors.join(', ')}`);
         assert.ok(await page.locator('.sidebar a svg').count() >= 7, `${name}: navigation icons missing`);
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
-        assert.ok(overflow <= 1, `${name} at ${width}: horizontal overflow ${overflow}`);
+        const outside = overflow > 1 ? await page.locator('.workspace *').evaluateAll(nodes => nodes.filter(node => node.getBoundingClientRect().right > innerWidth + 1).map(node => `${node.tagName}.${node.className}: ${node.textContent.slice(0, 50)}`).slice(-12)) : [];
+        assert.ok(overflow <= 1, `${name} at ${width}: horizontal overflow ${overflow}: ${outside.join('; ')}`);
         assert.equal(await page.locator('.site-header').evaluate((el) => Math.round(el.getBoundingClientRect().height)), 64);
         if (name === 'profile') {
           const groups = await page.locator('.settings-group').evaluateAll((elements) => elements.map((group) => {
@@ -185,7 +193,7 @@ async function main() {
       await page.goto(`${base}/admin-logbook.html`);
       await page.waitForSelector('[data-ticket-row]');
       assert.equal(await page.locator('[data-ticket-row="queue-0"] .button:disabled').textContent(), 'Serving');
-      assert.equal(await page.locator('[data-next]').isDisabled(), true);
+      assert.equal(await page.locator('[data-next]').isDisabled(), false, 'Other free barbers may serve waiting customers while one barber is busy');
       await page.locator('[data-queue-search]').fill('Miguel');
       assert.equal(await page.locator('[data-ticket-row]').count(), 1);
       await page.locator('[name="customer"]').fill('Draft customer');
@@ -200,6 +208,9 @@ async function main() {
       await page.waitForSelector('.staff-empty');
       await page.locator('[data-filter="confirmed"]').click();
       assert.equal(await page.locator('.appointment-record').count(), 2);
+      await page.locator('[data-check-in="booking-1"]').click();
+      await page.locator('.appointment-record').filter({ hasText: 'John Santos' }).filter({ hasText: 'Checked in' }).waitFor();
+      assert.ok(requests.some(item => item.endpoint.endsWith('/booking-1/check-in') && item.body.memberIndices[0] === 0));
       await page.goto(`${base}/admin-users.html`);
       await page.waitForSelector('[data-role-select]');
       assert.equal(await page.locator('[data-role-select="owner"]').isDisabled(), true);
@@ -219,7 +230,7 @@ async function main() {
       const activity = page.locator('[data-online-activity]');
       const liveHold = activity.locator('.compact-row').filter({ hasText: 'Live checkout hold' });
       await liveHold.waitFor({ timeout: 10000 });
-      assert.ok((await liveHold.innerText()).includes('Awaiting payment'));
+      assert.ok((await liveHold.innerText()).includes('Payment draft / no capacity reserved'));
       assert.ok((await liveHold.innerText()).includes('Please keep the sides short.'));
       context.bookingTestData.addAppointment({ mongoId: 'live-booking', customer: 'Live submitted booking', serviceId: 'basic', date: today, time: '17:00', request: 'Same barber please.', total: 250, status: 'pending', queueNumber: 99, createdAt: new Date().toISOString() });
       const liveBooking = activity.locator('.compact-row').filter({ hasText: 'Live submitted booking' });

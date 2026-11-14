@@ -14,7 +14,7 @@ function escapeHtml(value = "") {
 }
 
 function statusText(status) {
-  return status === "serving" ? "Now serving" : status === "done" ? "Paid / done" : status === "cancelled" ? "Cancelled" : "Waiting";
+  return status === "serving" ? "Now serving" : status === "done" ? "Completed" : status === "cancelled" ? "Cancelled" : "Waiting";
 }
 
 function queueRows() {
@@ -24,11 +24,11 @@ function queueRows() {
   if (!active.length) return `<div class="staff-empty">${icon('ListOrdered')}<strong>${query || filter !== 'active' ? 'No matching customers' : 'No customers in line'}</strong><span>${query || filter !== 'active' ? 'Choose another filter or customer name.' : 'Walk-ins added here or through the shop QR will appear in this list.'}</span></div>`;
   return active.map((item) => `
     <div class="appointment-row" data-ticket-row="${item.mongoId || item.id}">
-      <span>Queue #${String(item.queueNumber).padStart(2, "0")}<br><small class="muted">${item.waitMinutes || 0} min estimate</small></span>
-      <strong>${escapeHtml(item.customer)}<br><small class="muted">${escapeHtml(item.cutName || byId(state.services, item.serviceId).name)} - ${peso(item.price || byId(state.services, item.serviceId).price)} - ${item.source === "shop-qr" ? "Customer QR" : "Staff entry"}</small>${item.emailConsent && item.contactEmail ? `<br><small class="muted">Email updates: ${escapeHtml(item.contactEmail)}</small>` : ''}</strong>
+      <span>Queue #${String(item.queueNumber).padStart(2, "0")}${item.source === 'appointment' ? ` / member ${Number(item.memberIndex) + 1}` : ''}<br><small class="muted">${item.source === 'appointment' ? `Booked ${escapeHtml(new Date(item.scheduledAt).toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }))}` : `${item.waitMinutes || 0} min estimate`}${item.calledAt ? `<br>Started ${escapeHtml(new Date(item.calledAt).toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }))}` : ''}</small></span>
+      <strong>${escapeHtml(item.customer)}<br><small class="muted">${escapeHtml(item.cutName || byId(state.services, item.serviceId).name)} - ${item.source === 'appointment' ? 'Online booking / payment recorded on appointment' : `${peso(item.price || byId(state.services, item.serviceId).price)} - ${item.source === "shop-qr" ? "Customer QR" : "Staff entry"}`}</small>${item.emailConsent && item.contactEmail ? `<br><small class="muted">Email updates: ${escapeHtml(item.contactEmail)}</small>` : ''}</strong>
       <span class="queue-barber">${escapeHtml(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned')}</span>
       <span class="status-pill ${item.status}">${statusText(item.status)}</span>
-      <span class="button-row">${['done', 'cancelled'].includes(item.status) ? '' : `<button class="icon-button" type="button" data-rename="${item.mongoId || item.id}" aria-label="Edit customer name" title="Edit customer name">${icon('Pencil')}</button>${item.status === 'waiting' ? `<button class="button primary small" type="button" data-status="${item.mongoId || item.id}:serving">Serve</button>` : `<button class="button primary small" type="button" disabled>Serving</button>`}<button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:done">Paid / done</button><button class="icon-button danger-icon" type="button" data-status="${item.mongoId || item.id}:cancelled" aria-label="Cancel customer" title="Cancel customer">${icon('X')}</button>`}</span>
+      <span class="button-row">${['done', 'cancelled'].includes(item.status) ? '' : `<button class="icon-button" type="button" data-rename="${item.mongoId || item.id}" aria-label="Edit customer name" title="Edit customer name">${icon('Pencil')}</button>${item.status === 'waiting' ? `<button class="button primary small" type="button" data-status="${item.mongoId || item.id}:serving">Serve</button>` : `<button class="button primary small" type="button" disabled>Serving</button>`}<button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:done">${item.source === 'appointment' ? 'Complete' : 'Paid / done'}</button><button class="icon-button danger-icon" type="button" data-status="${item.mongoId || item.id}:cancelled" aria-label="Cancel customer" title="Cancel customer">${icon('X')}</button>`}</span>
     </div>`).join("");
 }
 
@@ -49,11 +49,10 @@ function updateQueueUI() {
   if (stamp) stamp.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
   const nextButton = document.querySelector("[data-next]");
   if (nextButton) {
-    const serving = liveQueue.find((item) => item.status === "serving");
     const hasWaiting = liveQueue.some((item) => item.status === "waiting");
-    nextButton.disabled = Boolean(serving) || !hasWaiting;
-    nextButton.textContent = serving ? 'Customer in service' : hasWaiting ? "Call next customer" : "No customers waiting";
-    nextButton.title = serving ? `Now serving ${serving.customer}` : '';
+    nextButton.disabled = !hasWaiting;
+    nextButton.textContent = hasWaiting ? "Call next customer" : "No customers waiting";
+    nextButton.title = 'Calls a due appointment or a walk-in who fits an available barber';
   }
 }
 
@@ -76,7 +75,7 @@ async function initialize() {
   document.querySelector("#app").innerHTML = `
     ${nav("admin")}
     <section class="app-shell">${adminSidebar("logbook")}<div class="workspace">
-      <div class="workspace-heading"><div><p class="eyebrow">FRONT DESK</p><h1>Walk-in queue</h1><p class="muted">Check in, call, and complete customers.</p></div><div class="heading-actions"><span class="sync-indicator" data-last-sync>Connecting...</span><a class="button secondary mobile-check-in" href="#check-in-customer">${icon('Plus')} Check in</a></div></div>
+      <div class="workspace-heading"><div><p class="eyebrow">FRONT DESK</p><h1>Customer queue</h1><p class="muted">Checked-in appointments and walk-ins.</p><a class="text-action" href="admin-schedule.html">Check in a booked customer</a></div><div class="heading-actions"><span class="sync-indicator" data-last-sync>Connecting...</span><a class="button secondary mobile-check-in" href="#check-in-customer">${icon('Plus')} Check in</a></div></div>
       <div class="queue-overview"><div class="queue-counters"><div><span>Waiting</span><strong data-count="waiting">0</strong></div><div class="serving-counter"><span>Now serving</span><strong data-count="serving">0</strong></div><div><span>Completed</span><strong data-count="done">0</strong></div></div><div class="button-row"><button class="button primary" type="button" data-next>Call next customer</button><a class="button secondary" href="queue-display.html" target="_blank" rel="noreferrer" title="Open TV queue display">${icon('Monitor')} TV display</a><a class="button secondary" href="printables/walk-in-qr.html" target="_blank" rel="noreferrer" title="Open printable walk-in QR">${icon('QrCode')} Shop QR</a></div></div>
       <div class="frontdesk-layout">
         <form class="panel" id="check-in-customer" data-logbook-form>
@@ -123,7 +122,7 @@ async function initialize() {
     event.currentTarget.disabled = true;
     try {
       const payload = await api("/admin/queue/next", { method: "POST", body: "{}" });
-      toast(payload.ticket ? `Now serving ${payload.ticket.customer}, queue #${payload.ticket.queueNumber}.` : "No waiting customers.");
+      toast(payload.ticket ? `Now serving ${payload.ticket.customer}, queue #${payload.ticket.queueNumber}.` : "No customer can start now. Barbers are busy or reserved for upcoming appointments.");
       await refreshQueue();
     } catch (error) { toast(error.message || "The next customer could not be called."); }
     finally { updateQueueUI(); }
@@ -145,7 +144,7 @@ async function initialize() {
       } else {
         const [id, status] = statusButton.dataset.status.split(":");
         await api(`/admin/queue/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
-        toast(status === "done" ? "Customer marked paid and completed." : "Queue updated.");
+        toast(status === "done" ? "Service completed. Booking payments remain on the appointment; walk-in payments are recorded here." : "Queue updated.");
       }
       await refreshQueue();
     } catch (error) { toast(error.message || "Queue could not be updated."); }

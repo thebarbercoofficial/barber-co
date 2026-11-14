@@ -57,7 +57,8 @@ document.body.insertAdjacentHTML('beforeend', `<dialog class="registration-polic
   <p>Provide accurate contact details and keep your password and verification codes private. Verify your mobile number or email to activate your account. Do not share another person's contact information without permission.</p>
   <h3>Appointments and payments</h3>
   <p>Submitting a booking does not mean it has been accepted. Check your booking status for staff approval, changes, or cancellation. Review the service price, booking fee, payment instructions, and total before submitting payment proof. Staff review payment proof; uploading it alone does not confirm payment.</p>
-  <p>Demo payment details, when explicitly shown, cannot receive money. Do not send real payments to demo details. Contact the shop about payment questions, cancellations, rescheduling, or any refund request before proceeding.</p>
+  <p>Bookings are non-refundable, including service payments and booking fees. Customer reschedule requests need staff approval; the requested time is not guaranteed until approved. If review is unresolved at the earlier of the original or requested start time, the booking is automatically cancelled without a refund. Pending requests and payment drafts do not reserve capacity or block other customers. Submission and payment do not guarantee a time. Staff approval is first-wins: the first staff-approved booking gets the time, not the first request or payment; competing requests may be rejected. Groups receive the same service sequentially with one barber and pay the per-person price multiplied by party size plus one booking fee for the whole group. Approval, rejection, cancellation, completion and rescheduling apply to the whole group, not individual members. Review the booking terms shown at checkout before paying.</p>
+  <p>Demo payment details, when explicitly shown, cannot receive money. Do not send real payments to demo details. Contact the shop about payment questions before proceeding.</p>
   <h3>Walk-ins and notifications</h3>
   <p>Queue estimates are approximate and may change. Staff control service order and completion. SMS updates require a verified supported number and your opt-in; delivery is not guaranteed. Email and your account booking status provide other ways to check updates. Agreeing to these terms does not opt you into SMS.</p>
   <h3>Your information</h3>
@@ -67,6 +68,7 @@ document.body.insertAdjacentHTML('beforeend', `<dialog class="registration-polic
   </div>
 </dialog>`);
 const policyDialog = document.querySelector('#registration-policy');
+policyDialog.querySelector('.registration-policy-content').insertAdjacentHTML('beforeend', '<h3>Appointment arrival</h3><p>Check in with staff before the grace deadline shown in your booking. The default grace period is 10 minutes after the appointment. Absent group members lose their reserved time without a refund. Late customers may join the walk-in queue. Checked-in customers are not penalized for barber delays.</p>');
 document.querySelector('[data-open-policy]').addEventListener('click', (event) => {
   event.preventDefault();
   policyDialog.showModal();

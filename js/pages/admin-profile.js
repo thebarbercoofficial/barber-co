@@ -56,7 +56,7 @@ async function render() {
           <div class="panel profile-head settings-account">
             ${avatar(state.user.name || "The Barber Co Admin", state.user.photo || "")}
             <h2>${safeText(state.user.name || "The Barber Co Admin")}</h2>
-            <p class="muted">Moderators cannot view or change these payment settings.</p>
+            <p class="muted">Staff cannot view or change these payment settings.</p>
             <a class="button secondary" href="printables/walk-in-qr.html" target="_blank" rel="noreferrer">${icon('QrCode')} Shop walk-in QR</a>
           </div>
           <form class="form-card settings-form" data-payment-settings>
@@ -67,6 +67,7 @@ async function render() {
               <label class="check-row" data-recipient-confirmation><input type="checkbox" name="paymentDetailsConfirmed" ${settings.paymentDetailsConfirmed ? 'checked' : ''}> I checked the recipient in GCash/Maya and confirmed these details belong to the shop.</label>
             </div>
             <label>Online booking fee<input type="number" min="0" name="bookingFee" value="${Number(settings.bookingFee ?? 100)}" required></label>
+            <label>Arrival grace period (minutes)<input type="number" min="0" max="60" step="1" name="gracePeriodMinutes" value="${Number(settings.gracePeriodMinutes ?? 10)}" required><small>Applies to newly approved bookings. Absent members lose their reserved time after this deadline, without a refund.</small></label>
             <div class="settings-group" role="group" aria-labelledby="gcash-settings-title">
               <h3 class="settings-group-title" id="gcash-settings-title">GCash</h3>
               <label class="check-row"><input type="checkbox" name="gcashEnabled" ${gcash.enabled !== false ? "checked" : ""}> Accept GCash</label>
@@ -141,6 +142,7 @@ async function render() {
           paymentMode: data.has('demoPayments') ? 'demo' : 'live',
           paymentDetailsConfirmed: data.has('paymentDetailsConfirmed'),
           bookingFee: Number(data.get("bookingFee")),
+          gracePeriodMinutes: Number(data.get('gracePeriodMinutes')),
           gcash: { enabled: data.has("gcashEnabled"), accountName: data.get("gcashName"), accountNumber: data.get("gcashNumber"), qrImage: draft.gcashQr },
           maya: { enabled: data.has("mayaEnabled"), accountName: data.get("mayaName"), accountNumber: data.get("mayaNumber"), qrImage: draft.mayaQr },
           operatingHours: Object.fromEntries(dayNames.map((day) => [day, { open: data.get(`${day}Open`), close: data.get(`${day}Close`), closed: data.has(`${day}Closed`) }])),

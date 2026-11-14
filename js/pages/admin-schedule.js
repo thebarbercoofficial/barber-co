@@ -14,6 +14,41 @@ let reservations = [];
 let paymentReady = true;
 let demoMode = false;
 
+function pendingReschedule(item) {
+  return ['pending', 'confirmed'].includes(item.status) && item.rescheduleRequest?.status === 'pending';
+}
+
+function visibleAppointments(query) {
+  return appointments.filter(item => matchesAppointmentFilter(item, statusFilter) && (!query || `${item.customer} ${(item.partyMembers || []).join(' ')} ${item.queueNumber} ${item.date} ${item.request || ''} ${item.rescheduleRequest?.date || ''}`.toLowerCase().includes(query)));
+}
+
+function groupDetails(item) {
+  if (!(item.partySize > 1)) return '';
+  return `<small><strong>Group of ${safeText(item.partySize)}:</strong> ${(item.partyMembers || []).map(safeText).join(', ')}</small><small>Served consecutively by one barber${item.durationMinutes ? ` / ${safeText(item.durationMinutes)} minutes total` : ''}. Approval and changes apply to the whole group.</small>`;
+}
+
+function attendanceDetails(item) {
+  if (item.cancelledBy === 'no-show') return '<small><strong>No-show / no refund.</strong> Reserved time released.</small>';
+  if (item.status !== 'confirmed') return '';
+  const names = item.partyMembers || [item.customer];
+  const deadline = item.graceDeadline ? new Date(item.graceDeadline).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : 'Loading deadline';
+  return `<small>Check-in deadline: ${safeText(deadline)} (Philippine time)</small>${names.map((name, index) => `<small>${safeText(name)}: ${item.arrivals?.[index] ? 'Checked in' : item.attendanceClosedAt ? 'Absent / no refund' : `<button class="button secondary small" type="button" data-check-in="${safeText(item.id)}" data-member-index="${index}">Check in</button>`}</small>`).join('')}<small><a href="admin-logbook.html">Open staff queue</a></small>`;
+}
+
+function rescheduleDetails(item) {
+  const request = item.rescheduleRequest;
+  if (!request) return '';
+  const deadline = new Date(request.expiresAt);
+  const originalLabel = request.originalDate || request.status === 'pending' ? 'Original' : 'Current schedule';
+  const deadlineText = Number.isNaN(deadline.getTime()) ? 'Unavailable; refresh before reviewing' : `${deadline.toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })} (Asia/Manila)`;
+  return `<small><strong>${originalLabel}:</strong> ${safeText(request.originalDate || item.date)} at ${safeText(request.originalTime || item.time)}</small><small><strong>Requested:</strong> ${safeText(request.date)} at ${safeText(request.time)}</small><small><strong>Reschedule status:</strong> ${safeText(request.status)}</small>${request.reason ? `<small>Reason: ${safeText(request.reason)}</small>` : ''}<small><strong>Review deadline:</strong> ${safeText(deadlineText)}</small>${pendingReschedule(item) ? '<small>Unresolved requests automatically cancel the booking at the earlier of the original and requested start. No refund will be issued, including any booking fee.</small>' : ''}`;
+}
+
+function matchesAppointmentFilter(item, filter) {
+  return (filter === 'archived' ? item.archived === true : item.archived !== true) &&
+    (['all', 'archived'].includes(filter) || (filter === 'reschedule-review' ? pendingReschedule(item) : filter === 'history' ? ['completed', 'cancelled'].includes(item.status) : item.status === filter));
+}
+
 async function loadAppointments(refreshCatalog = false) {
   try {
     if (refreshCatalog) await loadCatalog().catch(() => toast("Booking details are using the saved catalog."));
@@ -39,7 +74,7 @@ function appointmentRows(connectionError = "") {
   if (statusFilter === 'awaiting-payment') {
     return reservations.filter((item) => !query || `${item.customer} ${item.date} ${item.request || ''}`.toLowerCase().includes(query)).map((item) => `<div class="appointment-row appointment-record"><div class="appointment-date"><strong>${safeText(item.date)}</strong><small>${safeText(item.time)}</small></div><div class="row-main"><strong>${safeText(item.customer)}</strong>${item.demoPayment ? '<small class="text-action">DEMO / no real payment</small>' : ''}<small>${safeText(byId(state.services, item.serviceId).name)} / ${safeText(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned barber')}</small>${item.request ? `<small class="appointment-request"><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}</div><div><strong>${peso(item.total || 0)}</strong><small class="muted">Not yet submitted</small></div><span class="status-pill pending">Awaiting payment</span><small class="muted">Hold ends ${safeText(new Date(item.expiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</small></div>`).join('') || `<div class="staff-empty">${icon('Clock')}<strong>No active payment holds</strong></div>`;
   }
-  const items = appointments.filter((item) => (statusFilter === 'archived' ? item.archived === true : item.archived !== true) && (['all', 'archived'].includes(statusFilter) || (statusFilter === 'history' ? ['completed', 'cancelled'].includes(item.status) : item.status === statusFilter)) && (!query || `${item.customer} ${item.queueNumber} ${item.date} ${item.request || ''}`.toLowerCase().includes(query)));
+  const items = visibleAppointments(query);
   return items.map((item) => `<div class="appointment-row appointment-record"><div class="appointment-date"><strong>${safeText(item.date || 'Unscheduled')}</strong><small>${safeText(item.time)} / #${String(item.queueNumber || '').padStart(2, '0')}</small></div><div class="row-main"><strong>${safeText(item.customer)}</strong>${item.demoPayment ? '<small class="text-action">DEMO / no real payment</small>' : ''}<small>${safeText(byId(state.services, item.serviceId).name)} / ${safeText(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned barber')}</small>${item.request ? `<small class="appointment-request"><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}${item.paymentProof ? `<a class="text-action" href="${item.paymentProof}" target="_blank" rel="noreferrer">${icon('Image')} Payment proof</a>` : ''}</div><div><strong>${peso(item.total || 0)}</strong><small class="muted">${item.demoPayment ? 'Demo total' : 'Advance payment'}</small></div><span class="status-pill ${item.status}">${item.status === 'pending' ? 'Needs review' : item.status === 'confirmed' ? 'Accepted' : item.status}</span><span class="button-row">${item.status === 'pending' ? `<button class="button primary small" type="button" data-status="${item.mongoId || item.id}:confirmed">${icon('Check')} ${item.demoPayment ? 'Accept demo' : 'Verify / accept'}</button>` : ''}${item.status === 'confirmed' ? `<button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:completed">Complete</button>` : ''}${!['completed', 'cancelled'].includes(item.status) ? `<button class="icon-button danger-icon" type="button" data-status="${item.mongoId || item.id}:cancelled" aria-label="Cancel appointment" title="Cancel appointment">${icon('X')}</button>` : ''}</span></div>`).join('') || `<div class="staff-empty">${icon('CalendarDays')}<strong>No ${statusFilter === 'pending' ? 'pending ' : ''}appointments${query ? ' match your search' : ' here'}</strong><span>Submitted bookings appear here for payment verification.</span></div>`;
 }
 
@@ -53,20 +88,48 @@ function updatePanel(connectionError = "", force = false) {
   if (!force && nextSnapshot === lastSnapshot) return;
   lastSnapshot = nextSnapshot;
   const panel = document.querySelector("[data-appointment-panel]");
+  const focused = panel?.contains(document.activeElement) ? document.activeElement : null;
+  const focusAction = focused ? ['data-status', 'data-reschedule', 'data-reschedule-review', 'data-archive-appointment'].find(name => focused.hasAttribute(name)) : null;
+  const focusValue = focusAction ? focused.getAttribute(focusAction) : null;
+  const focusDecision = focused?.dataset.decision;
   if (panel) panel.innerHTML = appointmentRows(connectionError);
+  const query = document.querySelector('[data-appointment-search]')?.value.toLowerCase().trim() || '';
+  if (statusFilter !== 'awaiting-payment') panel?.querySelectorAll('.appointment-record').forEach((row, index) => {
+    row.dataset.appointmentId = String(visibleAppointments(query)[index].id);
+  });
+  else panel?.querySelectorAll('.appointment-record').forEach((row, index) => {
+    const drafts = reservations.filter(item => !query || `${item.customer} ${item.date} ${item.request || ''}`.toLowerCase().includes(query));
+    row.querySelector('.row-main')?.insertAdjacentHTML('beforeend', groupDetails(drafts[index]));
+    const expiry = row.lastElementChild;
+    if (expiry) expiry.textContent = `Checkout expires ${new Date(drafts[index].expiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}; time is not reserved`;
+  });
   const visibleHistory = appointments.filter(item => ['completed', 'cancelled'].includes(item.status) && (statusFilter === 'archived' ? item.archived === true : item.archived !== true));
   panel?.querySelectorAll('.appointment-record').forEach(row => {
-    const proof = row.querySelector('a.text-action');
-    const item = visibleHistory.find(entry => entry.paymentProof === proof?.getAttribute('href') || (row.querySelector('.appointment-date strong')?.textContent === (entry.date || 'Unscheduled') && row.querySelector('.appointment-date small')?.textContent === `${entry.time} / #${String(entry.queueNumber || '').padStart(2, '0')}`));
+    const item = visibleHistory.find(entry => String(entry.id) === row.dataset.appointmentId);
     if (item) row.querySelector('.button-row')?.insertAdjacentHTML('beforeend', `<button class="icon-button" type="button" data-archive-appointment="${item.id}" title="${item.archived ? 'Restore appointment' : 'Archive appointment'}" aria-label="${item.archived ? 'Restore appointment' : 'Archive appointment'}">${icon(item.archived ? 'ArchiveRestore' : 'Archive')}</button>`);
   });
   panel?.querySelectorAll('.appointment-record').forEach((row) => {
     const id = row.querySelector('[data-status]')?.dataset.status.split(':')[0];
-    if (id) row.querySelector('.button-row')?.insertAdjacentHTML('afterbegin', `<button class="icon-button" type="button" data-reschedule="${id}" title="Reschedule appointment" aria-label="Reschedule appointment">${icon('CalendarClock')}</button>`);
+    const item = appointments.find(entry => String(entry.id) === id);
+    if (!item) return;
+    if (pendingReschedule(item)) {
+      row.querySelectorAll('[data-status]').forEach(button => {
+        if (!button.dataset.status.endsWith(':cancelled')) button.remove();
+      });
+      row.querySelector('.status-pill').textContent = 'Reschedule needs review';
+      row.querySelector('.button-row')?.insertAdjacentHTML('afterbegin', `<button class="button primary small" type="button" data-reschedule-review="${safeText(id)}" data-decision="approve">${icon('Check')} Approve reschedule</button><button class="button secondary small" type="button" data-reschedule-review="${safeText(id)}" data-decision="reject">${icon('X')} Reject reschedule</button>`);
+    } else {
+      row.querySelector('.button-row')?.insertAdjacentHTML('afterbegin', `<button class="icon-button" type="button" data-reschedule="${safeText(id)}" title="Reschedule appointment" aria-label="Reschedule appointment">${icon('CalendarClock')}</button>`);
+    }
   });
+  panel?.querySelectorAll('.appointment-record').forEach(row => {
+    const item = appointments.find(entry => String(entry.id) === row.dataset.appointmentId);
+    if (item) row.querySelector('.row-main')?.insertAdjacentHTML('beforeend', groupDetails(item) + attendanceDetails(item) + rescheduleDetails(item));
+  });
+  if (focusAction) Array.from(panel.querySelectorAll(`[${focusAction}]`)).find(button => button.getAttribute(focusAction) === focusValue && button.dataset.decision === focusDecision)?.focus();
   document.querySelectorAll('[data-filter-count]').forEach((target) => {
     const filter = target.dataset.filterCount;
-    target.textContent = filter === 'awaiting-payment' ? reservations.length : appointments.filter((item) => (filter === 'archived' ? item.archived === true : item.archived !== true) && (['all', 'archived'].includes(filter) || (filter === 'history' ? ['completed', 'cancelled'].includes(item.status) : item.status === filter))).length;
+    target.textContent = filter === 'awaiting-payment' ? reservations.length : appointments.filter(item => matchesAppointmentFilter(item, filter)).length;
   });
   const warning = document.querySelector('[data-payment-warning]');
   if (warning) {
@@ -102,6 +165,7 @@ async function render() {
   `;
   lastSnapshot = snapshot(connectionError);
   document.querySelector('.filter-tabs').insertAdjacentHTML('beforeend', '<button type="button" data-filter="archived" aria-pressed="false">Archived<span data-filter-count="archived">0</span></button>');
+  document.querySelector('.filter-tabs').insertAdjacentHTML('beforeend', '<button type="button" data-filter="reschedule-review" aria-pressed="false">Reschedule review<span data-filter-count="reschedule-review">0</span></button>');
   updatePanel(connectionError, true);
   document.querySelector('[data-appointment-search]').addEventListener('input', () => updatePanel(latestConnectionError, true));
   document.querySelectorAll('[data-filter]').forEach((button) => button.addEventListener('click', () => {
@@ -110,6 +174,44 @@ async function render() {
     updatePanel(latestConnectionError, true);
   }));
   document.querySelector("[data-appointment-panel]").addEventListener("click", async (event) => {
+    const arrival = event.target.closest('[data-check-in]');
+    if (arrival) {
+      arrival.disabled = true;
+      try {
+        await api(`/admin/appointments/${arrival.dataset.checkIn}/check-in`, { method: 'PATCH', body: JSON.stringify({ memberIndices: [Number(arrival.dataset.memberIndex)] }) });
+        toast('Customer checked in and added to the staff queue.');
+        await loadAppointments(); updatePanel('', true);
+      } catch (error) { toast(error.message); }
+      finally { arrival.disabled = false; }
+      return;
+    }
+    const review = event.target.closest('[data-reschedule-review]');
+    if (review) {
+      const item = appointments.find(entry => String(entry.id) === review.dataset.rescheduleReview);
+      if (!item || !pendingReschedule(item)) return;
+      const decision = review.dataset.decision;
+      const modal = document.createElement('dialog');
+      modal.className = 'receipt-dialog';
+      modal.setAttribute('aria-labelledby', 'reschedule-review-title');
+      modal.innerHTML = `<form><h3 id="reschedule-review-title">${decision === 'approve' ? 'Approve' : 'Reject'} reschedule?</h3>${rescheduleDetails(item)}<p>${decision === 'approve' ? 'Approval moves the booking to the requested date and time.' : 'Rejection keeps the original booking date and time.'}</p><label>Reason / message to customer (optional)<textarea name="reason" maxlength="500"></textarea></label><p role="alert" data-review-error></p><div class="button-row"><button class="button secondary" type="button" data-close autofocus>Go back</button><button class="button primary" type="submit">Confirm ${decision === 'approve' ? 'approval' : 'rejection'}</button></div></form>`;
+      modal.querySelector('[data-close]').onclick = () => modal.close();
+      modal.addEventListener('close', () => modal.remove());
+      modal.querySelector('form').onsubmit = async event => {
+        event.preventDefault();
+        const button = modal.querySelector('[type="submit"]');
+        if (button.disabled) return;
+        button.disabled = true;
+        try {
+          await api(`/admin/appointments/${item.id}/reschedule-review`, { method: 'PATCH', body: JSON.stringify({ decision, requestedAt: item.rescheduleRequest.requestedAt, reason: modal.querySelector('[name="reason"]').value.trim() }) });
+          modal.close();
+          toast(decision === 'approve' ? 'Reschedule approved.' : 'Reschedule rejected. Original schedule retained.');
+          await refreshAppointments({ force: true });
+        } catch (error) { modal.querySelector('[data-review-error]').textContent = error.message; button.disabled = false; }
+      };
+      document.body.append(modal);
+      modal.showModal();
+      return;
+    }
     const archive = event.target.closest('[data-archive-appointment]');
     if (archive) {
       const item = appointments.find(entry => entry.id === archive.dataset.archiveAppointment);
@@ -122,8 +224,10 @@ async function render() {
     const reschedule = event.target.closest('[data-reschedule]');
     if (reschedule) {
       const item = appointments.find((entry) => entry.id === reschedule.dataset.reschedule);
+      if (!item || pendingReschedule(item)) return;
       const modal = document.createElement('dialog');
       modal.className = 'receipt-dialog';
+      modal.setAttribute('aria-label', 'Reschedule appointment');
       modal.innerHTML = `<form data-reschedule-form><h3>Reschedule appointment</h3><label>Date<input type="date" name="date" required value="${safeText(item.date)}"></label><label>Time<input type="time" name="time" step="1800" required value="${safeText(item.time)}"></label><p data-reschedule-error role="alert"></p><div class="button-row"><button class="button secondary" type="button" data-close>Cancel</button><button class="button primary" type="submit">Save schedule</button></div></form>`;
       const reasonLabel = document.createElement('label');
       reasonLabel.textContent = 'Reason / message to customer';
@@ -138,6 +242,9 @@ async function render() {
       modal.addEventListener('close', () => modal.remove());
       modal.querySelector('form').onsubmit = async (submit) => {
         submit.preventDefault();
+        if (submit.submitter.disabled) return;
+        const values = Object.fromEntries(new FormData(submit.target));
+        if (!window.confirm(`Reschedule ${item.customer} from ${item.date} at ${item.time} to ${values.date} at ${values.time} (Asia/Manila)?\nReason: ${values.reason}\nThis changes the booking immediately.`)) return;
         submit.submitter.disabled = true;
         try { await api(`/admin/appointments/${item.id}/reschedule`, { method: 'PATCH', body: JSON.stringify(Object.fromEntries(new FormData(submit.target))) }); modal.close(); toast('Appointment rescheduled. Customer update recorded.'); await refreshAppointments({ force: true }); }
         catch (error) { modal.querySelector('[data-reschedule-error]').textContent = error.message; submit.submitter.disabled = false; }
@@ -174,6 +281,7 @@ async function render() {
     const button = event.target.closest("[data-status]");
     if (!button || button.disabled) return;
     const [id, status] = button.dataset.status.split(":");
+    if (status !== 'cancelled' && pendingReschedule(appointments.find(item => String(item.id) === id) || {})) return;
     let reason = '';
     if (status === 'cancelled') {
       const message = window.prompt('Cancel this appointment? Enter the reason to share with the customer. Their account will be updated and SMS/email will be attempted.');

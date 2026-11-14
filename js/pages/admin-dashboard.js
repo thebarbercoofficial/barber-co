@@ -33,13 +33,20 @@ function callNextLocal() {
   render();
 }
 
+function compactGroupDetails(item) {
+  if (!(Number(item.partySize) > 1)) return '';
+  const names = Array.isArray(item.partyMembers) ? item.partyMembers.map(safeText).join(', ') : '';
+  const duration = Number(item.durationMinutes);
+  return `<small style="overflow-wrap:anywhere">Group of ${Number(item.partySize)}${names ? `: ${names}` : ''}</small><small>${Number.isFinite(duration) && duration > 0 ? `${duration} minutes / ` : ''}Sequential, same barber / ${peso(item.total)} total / one group fee</small><small>Actions apply to the whole group.</small>`;
+}
+
 function onlineBookingRows(appointments = [], reservations = []) {
   const activity = [
-    ...reservations.map((item) => ({ ...item, activityStatus: 'Awaiting payment' })),
-    ...appointments.filter((item) => ['pending', 'confirmed'].includes(item.status)).map((item) => ({ ...item, activityStatus: `${item.demoPayment ? 'Test / ' : ''}${item.status === 'confirmed' ? 'Accepted' : 'Needs review'}` }))
+    ...reservations.map((item) => ({ ...item, activityStatus: 'Payment draft / no capacity reserved' })),
+    ...appointments.filter((item) => ['pending', 'confirmed'].includes(item.status)).map((item) => ({ ...item, activityStatus: `${item.demoPayment ? 'Test / ' : ''}${item.status === 'confirmed' ? 'Accepted' : 'Needs review / no capacity reserved'}` }))
   ].sort((a, b) => new Date(b.createdAt || b.expiresAt || 0) - new Date(a.createdAt || a.expiresAt || 0));
 
-  return activity.slice(0, 6).map((item) => `<div class="compact-row"><div class="row-main"><strong>${safeText(item.customer)}</strong><small>${safeText(item.date)} / ${safeText(item.time)}</small>${item.request ? `<small><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}</div><span class="status-pill ${item.status === 'pending' ? 'pending' : 'waiting'}">${item.activityStatus}</span><a class="button secondary small" href="admin-schedule.html">Review</a></div>`).join('') || `<div class="staff-empty compact">${icon('CalendarCheck')}<strong>No active online bookings</strong></div>`;
+  return activity.slice(0, 6).map((item) => `<div class="compact-row"><div class="row-main"><strong>${safeText(item.customer)}</strong><small>${safeText(item.date)} / ${safeText(item.time)}</small>${compactGroupDetails(item)}${item.request ? `<small><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}</div><span class="status-pill ${item.status === 'pending' ? 'pending' : 'waiting'}">${item.activityStatus}</span><a class="button secondary small" href="admin-schedule.html">Review</a></div>`).join('') || `<div class="staff-empty compact">${icon('CalendarCheck')}<strong>No active online bookings</strong></div>`;
 }
 
 async function render() {
@@ -71,10 +78,11 @@ async function render() {
   const onlinePanel = document.querySelector('.dashboard-layout > div:first-child > section:nth-of-type(2)');
   onlinePanel.dataset.onlineActivity = '';
   onlinePanel.innerHTML = `<div class="panel-heading"><h3>Online bookings <span class="count-badge">${schedule.appointments.filter((item) => ['pending', 'confirmed'].includes(item.status)).length + reservations.length}</span></h3><a class="text-action" href="admin-schedule.html">Review ${icon('ArrowUpRight')}</a></div>${onlineBookingRows(schedule.appointments, reservations)}`;
+  document.querySelector('[data-call-next]').disabled = !queue.some(item => item.status === 'waiting');
   document.querySelector("[data-call-next]").addEventListener("click", async () => {
     try {
       const payload = await api("/admin/queue/next", { method: "POST", body: "{}" });
-      toast(payload.ticket ? `Now serving queue #${payload.ticket.queueNumber}.` : "No waiting walk-ins.");
+      toast(payload.ticket ? `Now serving queue #${payload.ticket.queueNumber}.` : "No customer fits an available barber right now.");
       render();
     } catch (error) { toast(error.message || "The next walk-in could not be called."); }
   });
@@ -134,7 +142,7 @@ async function refreshDashboard() {
       panel.querySelectorAll('.compact-row,.staff-empty').forEach((node) => node.remove());
       const markup = active.slice(0, 6).map((item) => `<div class="compact-row"><span class="ticket-number">#${String(item.queueNumber).padStart(2, '0')}</span><div class="row-main"><strong>${safeText(item.customer)}</strong><small>${safeText(item.cutName || 'Service to be assigned')}</small></div><span class="status-pill ${item.status}">${item.status === 'serving' ? 'Serving' : 'Waiting'}</span></div>`).join('') || `<div class="staff-empty">${icon('ListOrdered')}<strong>The line is clear</strong></div>`;
       panel.querySelector('.panel-heading').insertAdjacentHTML('afterend', markup);
-      document.querySelector('[data-call-next]').disabled = !active.some((item) => item.status === 'waiting') || active.some((item) => item.status === 'serving');
+      document.querySelector('[data-call-next]').disabled = !active.some((item) => item.status === 'waiting');
       receivedUpdate = true;
     }
     if (scheduleResult.status === 'fulfilled') {

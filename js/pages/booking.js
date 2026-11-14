@@ -33,6 +33,13 @@ function dayFor(date) {
   return dayNames[new Date(`${date}T12:00:00`).getDay()];
 }
 
+function durationMinutes(value) {
+  const text = String(value || '').toLowerCase();
+  const hours = text.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b/);
+  const minutes = text.match(/(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m)\b/);
+  return Math.max(30, hours || minutes ? Number(hours?.[1] || 0) * 60 + Number(minutes?.[1] || 0) : Number.parseFloat(text) || 30);
+}
+
 async function render() {
   let settings = state.shopSettings || {};
   try {
@@ -62,12 +69,32 @@ async function render() {
     </section>
   `;
   const dateInput = document.querySelector('[name="date"]');
+  document.querySelector('.booking-layout h2').textContent = 'Request an appointment';
+  const form = document.querySelector('[data-booking]');
+  const group = document.createElement('fieldset');
+  group.innerHTML = '<legend>Your group</legend><label>Party size<input type="number" name="partySize" min="1" max="10" step="1" value="1" required></label><div data-party-members></div><p class="field-help">One service for everyone, one barber, served sequentially. One booking fee for the whole group.</p>';
+  form.querySelector('.account-booking-note').after(group);
+  const warning = document.createElement('p');
+  warning.className = 'field-help';
+  warning.textContent = 'Before payment: this is a pending request, not a guaranteed appointment. Checkout and pending requests do not block other customers. Only staff-approved bookings block time; competing requests may be rejected.';
+  form.querySelector('[type="submit"]').before(warning);
+  const partyInput = group.querySelector('[name="partySize"]');
+  const partySize = () => Number(partyInput.value);
+  const validParty = () => Number.isInteger(partySize()) && partySize() >= 1 && partySize() <= 10;
+  const memberNames = [state.user.name || ''];
+  const updateMembers = () => {
+    group.querySelectorAll('[data-member]').forEach((input, index) => { memberNames[index] = input.value; });
+    if (!validParty()) return;
+    group.querySelector('[data-party-members]').innerHTML = Array.from({ length: partySize() }, (_, index) => `<label>Person ${index + 1} name<input data-member name="partyMember" value="${escapeAttr(memberNames[index] || '')}" maxlength="100" required></label>`).join('');
+  };
+  updateMembers();
   const timeInput = document.querySelector('[name="time"]');
   const scheduleHelp = document.querySelector("[data-schedule-help]");
   const serviceInput = document.querySelector('[name="service"]');
   const updateSummary = () => {
     const service = byId(state.services, serviceInput.value);
-    const values = [service.name, peso(service.price), peso(onlineFee), peso(Number(service.price) + onlineFee), service.duration];
+    if (!validParty()) return;
+    const values = [service.name, `${peso(service.price)} x ${partySize()} people`, peso(onlineFee), peso(Number(service.price) * partySize() + onlineFee), `${durationMinutes(service.duration) * partySize()} minutes (${partySize()} sequential service${partySize() === 1 ? '' : 's'}, same barber)`];
     document.querySelectorAll('.booking-layout .summary-list strong').forEach((node, index) => { node.textContent = values[index]; });
     state.selectedServiceId = serviceInput.value;
     save();
@@ -84,10 +111,10 @@ async function render() {
     const serviceId = serviceInput.value;
     const selectedBarber = barberInput.value;
     const options = [...timeInput.options].filter((option) => option.value);
-    if (!date || !options.length) return;
+    if (!validParty() || !date || !options.length) return;
     try {
       const results = await Promise.all(options.map(async (option) => {
-        const payload = await api(`/availability?${new URLSearchParams({ date, time: option.value, serviceId })}`);
+        const payload = await api(`/availability?${new URLSearchParams({ date, time: option.value, serviceId, partySize: partySize() })}`);
         const busy = new Set(payload.unavailableBarberIds || []);
         const active = barbers.filter((barber) => !['fired', 'on-leave'].includes(barber.status));
         const unavailable = selectedBarber && selectedBarber !== 'any' ? busy.has(selectedBarber) : !active.some((barber) => !busy.has(barber.id));
@@ -104,7 +131,7 @@ async function render() {
         toast('That time is no longer available. Choose another time.');
       }
     } catch {
-      if (request === timesRequest) scheduleHelp.textContent = 'Time availability could not refresh. Availability is checked again before reserving.';
+      if (request === timesRequest) scheduleHelp.textContent = 'Time availability could not refresh. Availability is checked again before checkout; approval is not guaranteed.';
     }
   };
   const updateBarberAvailability = async () => {
@@ -119,12 +146,12 @@ async function render() {
     });
     const anyOption = barberInput.querySelector('option[value="any"]');
     if (anyOption) anyOption.textContent = "Any available barber";
-    if (!date || !time) {
+    if (!validParty() || !date || !time) {
       barberHelp.textContent = "Select a date and time to check barber availability.";
       return;
     }
     try {
-      const query = new URLSearchParams({ date, time, serviceId: serviceInput.value });
+      const query = new URLSearchParams({ date, time, serviceId: serviceInput.value, partySize: partySize() });
       const payload = await api(`/availability?${query}`);
       if (request !== availabilityRequest) return;
       const unavailable = new Set(payload.unavailableBarberIds || []);
@@ -145,13 +172,15 @@ async function render() {
         barberInput.value = availableCount ? "any" : "";
         toast(availableCount ? "That barber is unavailable at this time. Any available barber is selected." : "No barber is available at this time. Choose another time.");
       }
-      barberHelp.textContent = availableCount ? `${availableCount} barber${availableCount === 1 ? " is" : "s are"} available. Any available barber will be assigned and reserved automatically.` : "No barbers are available for this timeslot.";
+      barberHelp.textContent = availableCount ? `${availableCount} barber(s) currently fit the full group, sequentially with the same barber. Assignment remains subject to staff approval.` : "No barbers are available for this group's full duration.";
     } catch (error) {
       if (request === availabilityRequest) barberHelp.textContent = error.message || "Availability could not be checked.";
     }
   };
   const updateTimes = () => {
     ++timesRequest;
+    ++availabilityRequest;
+    if (!validParty()) { timeInput.innerHTML = '<option value="">Enter a party size from 1 to 10</option>'; timeInput.disabled = true; return; }
     const date = dateInput.value;
     const shopHours = date ? hours[dayFor(date)] : null;
     const holiday = date && (fixedHolidays.has(date.slice(5)) || closedDates.has(date));
@@ -162,7 +191,7 @@ async function render() {
       return;
     }
     const service = byId(state.services, document.querySelector('[name="service"]').value);
-    const duration = Math.max(30, Number.parseInt(service.duration, 10) || 30);
+    const duration = durationMinutes(service.duration) * partySize();
     const today = localDateValue();
     const now = new Date(Date.now() + 5 * 60 * 1000);
     const earliestToday = Math.ceil((now.getHours() * 60 + now.getMinutes()) / 30) * 30;
@@ -175,11 +204,12 @@ async function render() {
     }
     timeInput.innerHTML = slots.length ? `<option value="">Choose a time</option>${slots.join("")}` : `<option value="">No remaining times</option>`;
     timeInput.disabled = !slots.length;
-    scheduleHelp.textContent = slots.length ? `Open ${timeLabel(shopHours.open)} to ${timeLabel(shopHours.close)}. Times fit the selected service duration.` : "No appointment times remain for this date.";
+    scheduleHelp.textContent = slots.length ? `Open ${timeLabel(shopHours.open)} to ${timeLabel(shopHours.close)}. Times fit all ${partySize()} people sequentially with one barber (${duration} minutes). Staff approval is required.` : "No appointment times fit the full group on this date.";
     refreshTimeAvailability();
     updateBarberAvailability();
   };
   dateInput.addEventListener("change", updateTimes);
+  partyInput.addEventListener('input', () => { updateMembers(); updateSummary(); updateTimes(); });
   serviceInput.addEventListener("change", updateTimes);
   timeInput.addEventListener("change", updateBarberAvailability);
   barberInput.addEventListener("change", refreshTimeAvailability);
@@ -201,6 +231,8 @@ async function render() {
     event.preventDefault();
     const submitButton = event.submitter || event.target.querySelector('[type="submit"]');
     const data = new FormData(event.target);
+    const partyMembers = data.getAll('partyMember').map((name) => String(name).trim());
+    if (!validParty() || partyMembers.length !== partySize() || partyMembers.some((name) => !name)) return toast('Enter a party size from 1 to 10 and a name for every person.');
     const appointmentTime = new Date(`${data.get("date")}T${data.get("time")}:00`);
     if (!Number.isFinite(appointmentTime.getTime()) || appointmentTime <= new Date()) {
       toast("Choose a date and time that has not already passed.");
@@ -209,18 +241,18 @@ async function render() {
     if (timeInput.disabled || !timeInput.value || timeInput.selectedOptions[0]?.disabled) return toast("Choose an available date and time during shop hours.");
     if (hasBarbers && (!barberInput.value || barberInput.selectedOptions[0]?.disabled)) return toast("Choose a barber who is available at that time.");
     const service = byId(state.services, data.get("service"));
-    const booking = { customer: state.user.name, serviceId: data.get("service"), barberId: data.get("barber"), date: data.get("date"), time: data.get("time"), request: data.get("request"), source: "online", bookingFee: onlineFee, total: Number(service.price) + onlineFee };
+    const booking = { customer: state.user.name, partySize: partySize(), partyMembers, serviceDurationMinutes: durationMinutes(service.duration), durationMinutes: durationMinutes(service.duration) * partySize(), serviceId: data.get("service"), barberId: data.get("barber"), date: data.get("date"), time: data.get("time"), request: data.get("request"), source: "online", bookingFee: onlineFee, total: Number(service.price) * partySize() + onlineFee };
     submitButton.disabled = true;
-    submitButton.textContent = "Reserving slot...";
+    submitButton.textContent = "Preparing checkout...";
     try {
       const payload = await api("/appointment-holds", { method: "POST", body: JSON.stringify(booking) });
-      state.booking = { ...booking, barberId: payload.hold.barberId || booking.barberId, holdId: payload.hold.id, holdExpiresAt: payload.hold.expiresAt };
+      state.booking = { ...booking, ...payload.hold, barberId: payload.hold.barberId || booking.barberId, holdId: payload.hold.id, holdExpiresAt: payload.hold.expiresAt };
       state.selectedServiceId = booking.serviceId;
       state.selectedBarberId = booking.barberId === "any" ? "any" : booking.barberId;
       save();
       location.href = "payment.html";
     } catch (error) {
-      toast(error.message || "That appointment time could not be reserved.");
+      toast(error.message || "Checkout could not be prepared for that appointment time.");
       submitButton.disabled = false;
       submitButton.textContent = "Proceed to payment";
       await updateBarberAvailability();

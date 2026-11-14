@@ -49,3 +49,26 @@ assert.equal(withDemo.totals.bookings, 6, 'Test bookings must remain visible in 
 assert.equal(withDemo.totals.demoBookings, 1);
 assert.equal(withDemo.daily.at(-1).bookings, 2);
 assert.equal(withDemo.totals.revenue, data.totals.revenue, 'Test payments must never inflate collected revenue');
+
+const groupAppointments = [
+  { partySize: 3, unitPrice: 150, bookingFee: 100, total: 550, status: 'completed', paid: true },
+  { total: 250, status: 'completed', paid: true },
+  { partySize: 4, unitPrice: 150, bookingFee: 100, total: 700, status: 'confirmed', paid: true },
+  { partySize: 10, total: 1600, status: 'pending', paid: false },
+  { partySize: 2, total: 400, status: 'cancelled', paid: false },
+  { partySize: 2, total: 400, status: 'completed', paid: true, demoPayment: true }
+].map(item => ({ ...item, barberId: 'alex', serviceId: 'basic', createdAt: now, paidAt: now }));
+const groupWalkins = [{ barberId: 'alex', partySize: 10, status: 'done', paid: true, price: 150, createdAt: now, paidAt: now }];
+const groupAnalytics = buildAnalytics(groupAppointments, groupWalkins, 6, services, now);
+assert.deepEqual(groupAnalytics.totals, { customers: 6, bookings: 6, demoBookings: 1, walkins: 1, revenue: 1650, waiting: 0 }, 'Groups count as reservations, and stored totals already include every member plus one fee');
+assert.deepEqual(groupAnalytics.daily.at(-1), { date: '2026-10-04', bookings: 6, walkins: 1, revenue: 1650 });
+const groupPerformance = buildBarberPerformance(groupAppointments, groupWalkins, [{ _id: 'id-alex', slug: 'alex', name: 'Alex' }], services);
+assert.deepEqual(groupPerformance, [{ id: 'id-alex', name: 'Alex', status: 'active', bookings: 6, walkins: 1, completed: 7, cancelled: 1, revenue: 1650, demoBookings: 1 }], 'Completed cuts count online party members, legacy singles and one per walk-in, never pending or confirmed members');
+assert.equal(groupPerformance[0].revenue, groupAnalytics.totals.revenue, 'Barber revenue must not multiply group totals again');
+for (const partySize of [1, 3, 10]) {
+  const [row] = buildBarberPerformance([{ barberId: 'alex', partySize, status: 'completed', paid: true, total: partySize * 150 + 100 }], [], [], services);
+  assert.equal(row.completed, partySize);
+  assert.equal(row.bookings, 1);
+  assert.equal(row.revenue, partySize * 150 + 100);
+}
+console.log('Group completed cuts, reservation counts, single booking fee, snapshot revenue, legacy singles, demos and walk-in separation passed');

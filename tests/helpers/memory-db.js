@@ -4,7 +4,8 @@ function matches(item, query = {}) {
   return Object.entries(query).every(([key, expected]) => {
     if (key === '$or') return expected.some((condition) => matches(item, condition));
     if (key === '$and') return expected.every((condition) => matches(item, condition));
-    const value = item[key];
+    const value = key.split('.').reduce((value, part) => value?.[part], item);
+    if (expected && typeof expected === 'object' && !Object.keys(expected).some(key => key.startsWith('$')) && !(expected instanceof ObjectId) && !(expected instanceof Date)) return require('node:util').isDeepStrictEqual(value, expected);
     if (expected && typeof expected === 'object' && !(expected instanceof ObjectId) && !(expected instanceof Date)) return Object.entries(expected).every(([operator, argument]) => {
       if (operator === '$ne') return !same(value, argument);
       if (operator === '$gt') return value > argument;
@@ -20,7 +21,12 @@ function matches(item, query = {}) {
 }
 function apply(item, changes, inserted) {
   if (inserted) Object.assign(item, changes.$setOnInsert);
-  Object.assign(item, changes.$set);
+  for (const [key, value] of Object.entries(changes.$set || {})) {
+    const parts = key.split('.');
+    const last = parts.pop();
+    const parent = parts.reduce((parent, part) => parent[part] ||= {}, item);
+    parent[last] = value;
+  }
   Object.entries(changes.$inc || {}).forEach(([key, value]) => { item[key] = (item[key] || 0) + value; });
   Object.keys(changes.$unset || {}).forEach((key) => { delete item[key]; });
 }

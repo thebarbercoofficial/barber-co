@@ -307,7 +307,7 @@ const BarberCo = (() => {
     const role = currentRole();
     const signedIn = isAuthenticated();
     if (active === 'admin') {
-      const roleLabel = role === 'moderator' ? 'Moderator' : 'Administrator';
+      const roleLabel = role === 'moderator' ? 'Staff' : 'Administrator';
       return `<header class="site-header staff-header" data-header>
         <div class="staff-header-brand"><button class="icon-button staff-menu-toggle" type="button" data-staff-toggle aria-label="Open staff navigation" aria-expanded="false" aria-controls="staff-sidebar">${icon('Menu')}</button><a class="brand" href="${role === 'moderator' ? 'admin-logbook.html' : 'admin-dashboard.html'}"><img class="brand-logo" src="images/logo.png" alt="The Barber Co"><span>The Barber Co<small>SHOP WORKSPACE</small></span></a></div>
         <div class="staff-header-actions"><a class="header-link" href="queue-display.html" target="_blank" rel="noreferrer" title="Open TV queue display">${icon('Monitor')}<span>Queue display</span></a><a class="header-link" href="index.html" title="Open public website">${icon('ExternalLink')}<span>View website</span></a><span class="staff-account">${avatar(safeText(state.user.name || 'Staff'), safeText(state.user.photo || ''), 'staff-avatar')}<span><strong>${safeText(state.user.name || 'Staff')}</strong><small>${roleLabel}</small></span></span><button class="icon-button" type="button" data-logout aria-label="Log out" title="Log out">${icon('LogOut')}</button></div>

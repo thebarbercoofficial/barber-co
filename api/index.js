@@ -8,6 +8,100 @@ const security = require('../lib/account-security');
 const messaging = require('../lib/notifications');
 const { validateReceipt } = require('../lib/receipt');
 const allowUnverified = process.env.ALLOW_UNVERIFIED_ACCOUNTS === 'true';
+const nonRefundablePolicyVersion = '2026-11-15';
+const frontDesk = require('../lib/front-desk')({ withAppointmentMutation, notify: (...args) => messaging.notify(...args), serviceDuration, nextQueueNumber });
+
+function serviceDuration(value) {
+  const text = String(value || '').toLowerCase();
+  const hours = text.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)\b/);
+  const mins = text.match(/(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m)\b/);
+  return Math.max(30, hours || mins ? Number(hours?.[1] || 0) * 60 + Number(mins?.[1] || 0) : Number.parseFloat(text) || 30);
+}
+
+function partyQuote(body, user, service, settings) {
+  const partySize = body.partySize === undefined ? 1 : body.partySize;
+  const partyMembers = body.partyMembers === undefined && partySize === 1 ? [user.name] : body.partyMembers;
+  if (!Number.isInteger(partySize) || partySize < 1 || partySize > 10 || !Array.isArray(partyMembers) || partyMembers.length !== partySize || partyMembers.some(name => typeof name !== 'string' || !name.trim() || name.trim().length > 120)) {
+    throw Object.assign(new Error('Choose 1 to 10 people and provide a name for every party member.'), { status: 400 });
+  }
+  const unitDurationMinutes = serviceDuration(service.duration);
+  const unitPrice = Number(service.price);
+  const bookingFee = Math.max(0, Number(settings.bookingFee) || 0);
+  return { partySize, partyMembers: partyMembers.map(name => name.trim()), unitDurationMinutes, unitPrice, durationMinutes: unitDurationMinutes * partySize, bookingFee, total: unitPrice * partySize + bookingFee };
+}
+
+function appointmentDuration(appointment, service) {
+  return Number(appointment.durationMinutes) || (Number(appointment.unitDurationMinutes) || serviceDuration(service?.duration)) * (appointment.partySize || 1);
+}
+
+function partyNotice(appointment) {
+  return appointment.partySize > 1 ? ` Group (${appointment.partySize}): ${(appointment.partyMembers || []).join(', ')}.` : '';
+}
+
+async function cleanLegacyCapacity(database) {
+  const pending = await database.collection('appointments').find({ status: 'pending' }).toArray();
+  for (const appointment of pending) {
+    await withAppointmentMutation(database, String(appointment._id), async () => {
+      const current = await database.collection('appointments').findOne({ _id: appointment._id });
+      if (current?.status === 'pending') await database.collection('appointmentSlots').deleteMany({ appointmentId: String(appointment._id) });
+    }).catch(error => { if (error.status !== 409) throw error; });
+  }
+  const holds = await database.collection('appointmentHolds').find().toArray();
+  for (const hold of holds) {
+    const appointment = await database.collection('appointments').findOne({ _id: hold._id });
+    if (!appointment) await database.collection('appointmentSlots').deleteMany({ appointmentId: String(hold._id) });
+  }
+}
+
+function rescheduleDeadline(appointment, request) {
+  return new Date(Math.min(...[appointment, request].map(({ date, time }) => new Date(`${date}T${time}:00+08:00`).getTime())));
+}
+
+async function withAppointmentMutation(database, id, action) {
+  const owner = String(new ObjectId());
+  const locks = database.collection('counters');
+  const key = `appointment-mutation:${id}`;
+  try {
+    await locks.findOneAndUpdate({ _id: key, $or: [{ expiresAt: { $lt: new Date() } }, { owner: { $exists: false } }] }, { $set: { owner, expiresAt: new Date(Date.now() + 300000) } }, { upsert: true, returnDocument: 'after' });
+  } catch (error) {
+    if (error.code === 11000) throw Object.assign(new Error('This appointment is being updated. Refresh and retry.'), { status: 409 });
+    throw error;
+  }
+  const { setInterval, clearInterval } = require('node:timers');
+  const heartbeat = setInterval(() => {
+    locks.updateOne({ _id: key, owner }, { $set: { expiresAt: new Date(Date.now() + 300000) } }).catch(error => console.error('Appointment lease renewal failed:', error.message));
+  }, 30000);
+  heartbeat.unref();
+  try { return await action(); }
+  finally {
+    clearInterval(heartbeat);
+    await locks.deleteOne({ _id: key, owner });
+  }
+}
+
+async function sweepRescheduleRequests(database, now = new Date()) {
+  database = database || await db();
+  let failure;
+  const appointments = await database.collection('appointments').find({ $or: [{ status: { $in: ['pending', 'confirmed'] } }, { status: 'cancelled', cancelledBy: 'reschedule-expiration' }], 'rescheduleRequest.status': 'pending' }).toArray();
+  for (const current of appointments) {
+    if (!(rescheduleDeadline(current, current.rescheduleRequest) <= now)) continue;
+    try {
+      await withAppointmentMutation(database, String(current._id), async () => {
+        // Keep the request pending until side effects finish so a failed sweep can retry.
+        if (current.status !== 'cancelled') {
+          const changed = await database.collection('appointments').updateOne({ _id: current._id, status: current.status, date: current.date, time: current.time, rescheduleRequest: current.rescheduleRequest }, { $set: { status: 'cancelled', cancelledBy: 'reschedule-expiration', noRefund: true, updatedAt: now } });
+          if (!changed.modifiedCount) return;
+        }
+        await database.collection('appointmentSlots').deleteMany({ appointmentId: String(current._id) });
+        await messaging.notify(database, current.userId, `Your Barber Co booking was cancelled because the reschedule request was not reviewed before its deadline.${partyNotice(current)} No refund will be issued.`, `appointment:${current._id}:reschedule-expired`);
+        await database.collection('appointments').updateOne({ _id: current._id, status: 'cancelled', cancelledBy: 'reschedule-expiration', rescheduleRequest: current.rescheduleRequest }, { $set: { 'rescheduleRequest.status': 'expired' } });
+      });
+    } catch (error) {
+      if (error.status !== 409) failure ||= error;
+    }
+  }
+  if (failure) throw failure;
+}
 
 const mongoUri = process.env.MONGODB_URI;
 const dbName = process.env.MONGODB_DB || "barber_co";
@@ -29,6 +123,7 @@ const defaultSettings = {
   gcash: { enabled: true, accountName: "The Barber Co", accountNumber: "", qrImage: "" },
   maya: { enabled: false, accountName: "The Barber Co", accountNumber: "", qrImage: "" },
   bookingFee: 100,
+  gracePeriodMinutes: 10,
   operatingHours: {
     sunday: { open: "13:00", close: "20:00", closed: false },
     monday: { open: "13:00", close: "20:00", closed: false },
@@ -99,20 +194,14 @@ async function unavailableBarbers(database, date, time, durationMinutes, exclude
   const appointments = await database.collection("appointments").find({
     date,
     barberId: { $nin: ["", null] },
-    status: { $in: ["pending", "confirmed"] },
+    status: 'confirmed',
     ...(excludedAppointmentId ? { _id: { $ne: new ObjectId(excludedAppointmentId) } } : {})
   }).toArray();
-  const holds = await database.collection("appointmentHolds").find({
-    date,
-    barberId: { $nin: ["", null] },
-    expiresAt: { $gt: now },
-    ...(excludedHoldId ? { _id: { $ne: new ObjectId(excludedHoldId) } } : {})
-  }).toArray();
-  if (!appointments.length && !holds.length) return [];
+  if (!appointments.length) return [];
   const services = await database.collection("services").find().toArray();
   const durations = new Map();
   for (const service of services) {
-    const duration = Math.max(30, Number.parseInt(service.duration, 10) || 30);
+    const duration = serviceDuration(service.duration);
     durations.set(service.slug, duration);
     durations.set(String(service._id), duration);
   }
@@ -120,14 +209,9 @@ async function unavailableBarbers(database, date, time, durationMinutes, exclude
   const requestedEnd = requestedStart + durationMinutes;
   const unavailable = appointments.filter((appointment) => {
     const existingStart = minutes(appointment.time);
-    const existingEnd = existingStart + (durations.get(appointment.serviceId) || 30);
+    const existingEnd = existingStart + (Number(appointment.reservedDurationMinutes) || Number(appointment.durationMinutes) || (Number(appointment.unitDurationMinutes) || durations.get(appointment.serviceId) || 30) * (appointment.partySize || 1));
     return requestedStart < existingEnd && requestedEnd > existingStart;
   }).map((appointment) => appointment.barberId);
-  unavailable.push(...holds.filter((hold) => {
-    const existingStart = minutes(hold.time);
-    const existingEnd = existingStart + Number(hold.durationMinutes || 30);
-    return requestedStart < existingEnd && requestedEnd > existingStart;
-  }).map((hold) => hold.barberId));
   return [...new Set(unavailable)];
 }
 
@@ -167,12 +251,7 @@ async function reserveAnyBarber(database, appointmentId, date, time, durationMin
   for (const barber of candidates) {
     const barberId = barber.slug || String(barber._id);
     if (unavailable.has(barberId) || unavailable.has(String(barber._id))) continue;
-    try {
-      await lockAppointmentSlots(database, appointmentId, date, String(barber._id), time, durationMinutes, expiresAt);
-      return barber;
-    } catch (error) {
-      if (error.status !== 409) throw error;
-    }
+    return barber;
   }
   const error = new Error("No barber is available at that time. Choose another time or a specific barber.");
   error.status = 409;
@@ -232,6 +311,7 @@ async function ensureSeed(database) {
         database.collection('accountCodes').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
         database.collection('notifications').createIndex({ userId: 1, createdAt: -1 })
       ]);
+      await cleanLegacyCapacity(database);
       for (const service of seedServices) {
         await database.collection("services").updateOne({ slug: service.slug }, { $setOnInsert: { ...service, createdAt: new Date() } }, { upsert: true });
       }
@@ -305,7 +385,8 @@ function publicQueueTicket(ticket) {
     status: ticket.status,
     source: ticket.source,
     waitMinutes: ticket.waitMinutes,
-    createdAt: ticket.createdAt
+    createdAt: ticket.createdAt,
+    calledAt: ticket.calledAt, scheduledAt: ticket.scheduledAt, durationMinutes: ticket.durationMinutes
   });
 }
 
@@ -377,12 +458,16 @@ async function startServing(database, id = '') {
     throw error;
   }
   try {
-    const current = await database.collection('queue').findOne({ status: 'serving' });
-    if (current) {
-      if (id && String(current._id) === id) return current;
-      throw Object.assign(new Error('Finish the current customer before calling the next customer.'), { status: 409 });
-    }
-    const ticket = await database.collection('queue').findOneAndUpdate({ status: 'waiting', ...(id ? { _id: new ObjectId(id) } : {}) }, { $set: { status: 'serving', calledAt: new Date(), updatedAt: new Date() } }, { sort: { queueNumber: 1 }, returnDocument: 'after' });
+    const current = id && await database.collection('queue').findOne({ _id: new ObjectId(id), status: 'serving' });
+    if (current) return current;
+    const selection = await frontDesk.selectService(database, id);
+    if (!selection) return null;
+    const transition = () => database.collection('queue').findOneAndUpdate({ status: 'waiting', _id: selection.ticket._id }, { $set: { status: 'serving', barberId: selection.barberId, calledAt: new Date(), updatedAt: new Date() } }, { returnDocument: 'after' });
+    const ticket = selection.ticket.appointmentId ? await withAppointmentMutation(database, selection.ticket.appointmentId, async () => {
+      const appointment = await database.collection('appointments').findOne({ _id: new ObjectId(selection.ticket.appointmentId) });
+      if (appointment?.status !== 'confirmed') throw Object.assign(new Error('This appointment is no longer active. Refresh the queue.'), { status: 409 });
+      return transition();
+    }) : await transition();
     if (id && !ticket) throw Object.assign(new Error('This customer is no longer waiting.'), { status: 409 });
     return ticket;
   } finally { await database.collection('counters').updateOne({ _id: 'serving-transition', leaseOwner }, { $set: { busy: false } }); }
@@ -394,6 +479,8 @@ async function handler(req, res) {
   const requestUrl = new URL(req.url, "https://barber.local");
   const path = requestUrl.pathname.replace(/^\/api/, "") || "/";
   const body = ["POST", "PATCH", "DELETE"].includes(req.method) ? await readBody(req) : {};
+  if (req.method === 'GET' && ['/availability', '/appointments/mine', '/admin/appointments'].includes(path)) await sweepRescheduleRequests(database);
+  if (req.method === 'GET' && ['/availability', '/appointments/mine', '/admin/appointments', '/admin/queue', '/queue', '/admin/analytics'].includes(path) || req.method === 'POST' && path === '/admin/queue/next' || req.method === 'PATCH' && path.startsWith('/admin/queue/')) await frontDesk.sweep(database);
 
   if (req.method === "GET" && path === "/health") return send(res, 200, { ok: true });
   if (req.method === 'GET' && path === '/auth/capabilities') return send(res, 200, { email: security.emailReady(), sms: messaging.smsReady(), smsVerification: messaging.smsVerificationReady(), verificationRequired: !allowUnverified });
@@ -562,7 +649,9 @@ async function handler(req, res) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return send(res, 400, { error: "Choose a valid date and time." });
     const service = await database.collection("services").findOne({ $or: [{ slug: serviceId }, ...(ObjectId.isValid(serviceId) ? [{ _id: new ObjectId(serviceId) }] : [])], active: { $ne: false } });
     if (!service) return send(res, 400, { error: "Choose an available service." });
-    const duration = Math.max(30, Number.parseInt(service.duration, 10) || 30);
+    const partySize = Number(requestUrl.searchParams.get('partySize') || 1);
+    if (!Number.isInteger(partySize) || partySize < 1 || partySize > 10) return send(res, 400, { error: 'Choose 1 to 10 people.' });
+    const duration = serviceDuration(service.duration) * partySize;
     return send(res, 200, { unavailableBarberIds: await unavailableBarbers(database, date, time, duration) });
   }
 
@@ -586,7 +675,8 @@ async function handler(req, res) {
       if (!selectedBarber) return send(res, 400, { error: "The selected barber is not available." });
     }
     const settings = mergedSettings(await database.collection("settings").findOne({ _id: "shop" }));
-    const durationMinutes = Math.max(30, Number.parseInt(service.duration, 10) || 30);
+    const quote = partyQuote(body, user, service, settings);
+    const { durationMinutes } = quote;
     const window = bookingWindow(date, time, settings, durationMinutes);
     if (window.error) return send(res, 400, { error: window.error });
     if (!paymentConfigured(settings)) return send(res, 409, { error: "Online booking is unavailable until the administrator adds a payment number or QR code in Shop settings." });
@@ -602,7 +692,7 @@ async function handler(req, res) {
     }
     const hold = {
       _id: new ObjectId(), userId: user._id, customer: user.name, serviceId, barberId, date, time, request: String(body.request || "").trim().slice(0, 1000), durationMinutes,
-      total: Number(service.price) + Math.max(0, Number(settings.bookingFee) || 0),
+      ...quote,
       demoPayment: settings.paymentMode === 'demo',
       expiresAt: new Date(Date.now() + 10 * 60 * 1000), createdAt: new Date()
     };
@@ -611,8 +701,6 @@ async function handler(req, res) {
         selectedBarber = await reserveAnyBarber(database, hold._id, date, time, durationMinutes, hold.expiresAt);
         barberId = selectedBarber.slug || String(selectedBarber._id);
         hold.barberId = barberId;
-      } else {
-        await lockAppointmentSlots(database, hold._id, date, selectedBarber ? String(selectedBarber._id) : "", time, durationMinutes, hold.expiresAt);
       }
     } catch (error) {
       await database.collection("appointmentSlots").deleteMany({ appointmentId: String(hold._id) });
@@ -797,6 +885,7 @@ async function handler(req, res) {
 
   if (path === "/admin/settings" && req.method === "PATCH") {
     await requireRole(req, database, ["admin"]);
+    if (body.gracePeriodMinutes !== undefined && (!Number.isInteger(body.gracePeriodMinutes) || body.gracePeriodMinutes < 0 || body.gracePeriodMinutes > 60)) return send(res, 400, { error: 'Grace period must be 0 to 60 whole minutes.' });
     const paymentMode = body.paymentMode || 'live';
     if (paymentMode === 'demo' && process.env.ALLOW_DEMO_PAYMENTS === 'false') return send(res, 400, { error: 'Demo payments are disabled on this website.' });
     if (!['live', 'demo'].includes(paymentMode)) return send(res, 400, { error: 'Choose demo or real payments.' });
@@ -822,6 +911,7 @@ async function handler(req, res) {
       paymentMode,
       paymentDetailsConfirmed: paymentMode === 'live' && body.paymentDetailsConfirmed === true,
       bookingFee: Math.max(0, Number(body.bookingFee) || 0),
+      gracePeriodMinutes: body.gracePeriodMinutes ?? 10,
       operatingHours,
       closedDates,
       updatedAt: new Date()
@@ -924,6 +1014,7 @@ async function handler(req, res) {
 
   if (req.method === "POST" && path === "/appointments") {
     const user = await requireUser(req, database);
+    if (body.nonRefundableAccepted !== true) return send(res, 400, { error: 'Accept the non-refundable booking policy before booking.' });
     requireBookingEligibility(user);
     const customer = String(body.customer || user.name || "").trim().slice(0, 120);
     if (customer.length < 2) return send(res, 400, { error: "Enter the name or nickname staff should call." });
@@ -939,7 +1030,8 @@ async function handler(req, res) {
     const service = await database.collection("services").findOne({ $or: [{ slug: body.serviceId }, ...(ObjectId.isValid(body.serviceId) ? [{ _id: new ObjectId(body.serviceId) }] : [])], active: { $ne: false } });
     if (!service) return send(res, 400, { error: "Choose an available service." });
     const settings = mergedSettings(await database.collection("settings").findOne({ _id: "shop" }));
-    const durationMinutes = Math.max(30, Number.parseInt(service.duration, 10) || 30);
+    const quote = partyQuote(body, user, service, settings);
+    const { durationMinutes } = quote;
     const window = bookingWindow(date, time, settings, durationMinutes);
     if (window.error) return send(res, 400, { error: window.error });
     const holdId = String(body.holdId || "");
@@ -949,7 +1041,11 @@ async function handler(req, res) {
       expiresAt: { $gt: new Date() }
     }) : null;
     const requestedBarberId = String(body.barberId || "");
-    const barberId = requestedBarberId === "any" && hold ? hold.barberId : requestedBarberId;
+    let barberId = requestedBarberId === "any" && hold ? hold.barberId : requestedBarberId;
+    if (barberId === 'any') {
+      const candidate = await reserveAnyBarber(database, '', date, time, durationMinutes);
+      barberId = candidate.slug || String(candidate._id);
+    }
     if (holdId && (!hold || hold.serviceId !== body.serviceId || (requestedBarberId !== "any" && hold.barberId !== requestedBarberId) || hold.date !== date || hold.time !== time)) {
       return send(res, 409, { error: "Your temporary reservation expired or changed. Return to booking and choose the slot again." });
     }
@@ -963,6 +1059,7 @@ async function handler(req, res) {
       if (unavailable.includes(barberId)) return send(res, 409, { error: "That barber was just booked for this time. Choose another barber or time." });
     }
     const demoPayment = settings.paymentMode === 'demo';
+    if (hold && (hold.partySize !== quote.partySize || JSON.stringify(hold.partyMembers) !== JSON.stringify(quote.partyMembers) || hold.total !== quote.total || hold.durationMinutes !== quote.durationMinutes)) return send(res, 409, { error: 'Your group or service quote changed. Return to booking.' });
     if (!paymentConfigured(settings)) return send(res, 409, { error: 'Online payments are not configured. Please contact the shop.' });
     if (body.paymentMode && body.paymentMode !== settings.paymentMode) return send(res, 409, { error: 'Payment mode changed. Reload the payment page before proceeding.' });
     if (body.paymentRevision && body.paymentRevision !== settings.paymentRevision) return send(res, 409, { error: 'Payment recipient or fee changed. Reload the payment page and check the latest details. If you already paid, contact the shop before paying again.' });
@@ -979,15 +1076,8 @@ async function handler(req, res) {
     const queueNumber = await nextQueueNumber(database);
     const bookingFee = Math.max(0, Number(settings.bookingFee) || 0);
     const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId, date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof, demoPayment, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
-    if (hold && selectedBarber) {
-      const transfer = await database.collection("appointmentSlots").updateMany(
-        { appointmentId: holdId, expiresAt: { $gt: new Date() } },
-        { $set: { appointmentId: String(appointment._id) }, $unset: { expiresAt: "" } }
-      );
-      if (!transfer.modifiedCount) return send(res, 409, { error: "Your temporary reservation expired. Return to booking and choose the slot again." });
-    } else if (selectedBarber) {
-      await lockAppointmentSlots(database, appointment._id, date, String(selectedBarber._id), time, durationMinutes);
-    }
+    Object.assign(appointment, { nonRefundableAccepted: true, nonRefundableAcceptedAt: new Date(), policyVersion: nonRefundablePolicyVersion });
+    Object.assign(appointment, quote);
     try {
       await database.collection("appointments").insertOne(appointment);
       if (hold) await database.collection("appointmentHolds").deleteOne({ _id: hold._id });
@@ -1031,35 +1121,63 @@ async function handler(req, res) {
     return send(res, 200, { paymentProof: appointment.paymentProof });
   }
 
-  if (req.method === 'PATCH' && /^\/(admin\/)?appointments\/[a-f0-9]{24}\/reschedule$/.test(path)) {
+  if (req.method === 'PATCH' && /^\/(admin\/)?appointments\/[a-f0-9]{24}\/(reschedule|reschedule-review)$/.test(path)) {
     const customerRequest = !path.startsWith('/admin/');
+    const review = path.endsWith('/reschedule-review');
+    if (review && customerRequest) return send(res, 404, { error: 'Not found.' });
     const staffNote = customerRequest ? '' : String(body.reason || '').trim().slice(0, 500);
     const actor = customerRequest ? await requireUser(req, database) : await requireRole(req, database, ['admin', 'moderator']);
     const id = path.split('/').at(-2);
     const current = await database.collection('appointments').findOne({ _id: new ObjectId(id) });
     if (customerRequest && (!current || String(current.userId) !== String(actor._id))) return send(res, 404, { error: 'Appointment not found.' });
     if (!current || !['pending', 'confirmed'].includes(current.status)) return send(res, 409, { error: 'Only active appointments can be rescheduled.' });
+    if (current.checkedInAt) return send(res, 409, { error: 'This booking has checked in. Manage the customers in the staff queue instead.' });
+    const revision = { _id: current._id, date: current.date, time: current.time, status: current.status, rescheduleRequest: current.rescheduleRequest || { $exists: false } };
+    if (review) {
+      if (!['approve', 'reject'].includes(body.decision)) return send(res, 400, { error: 'Choose approve or reject.' });
+      if (current.rescheduleRequest?.status !== 'pending') return send(res, 409, { error: 'There is no pending reschedule request.' });
+      if (body.requestedAt !== new Date(current.rescheduleRequest.requestedAt).toISOString()) return send(res, 409, { error: 'This reschedule request changed. Refresh before reviewing.' });
+      revision['rescheduleRequest.expiresAt'] = { $gt: new Date() };
+      if (body.decision === 'reject') {
+        const rescheduleRequest = { ...current.rescheduleRequest, status: 'rejected', reviewedAt: new Date(), reason: staffNote };
+        const changed = await database.collection('appointments').updateOne(revision, { $set: { rescheduleRequest, updatedAt: new Date() } });
+        if (!changed.modifiedCount) return send(res, 409, { error: 'This appointment changed. Refresh and try again.' });
+        await messaging.notify(database, current.userId, `Your reschedule request was rejected. Your original booking remains ${current.date} at ${current.time}.${partyNotice(current)}${staffNote ? ` Reason: ${staffNote}` : ''}`, `appointment:${id}:reschedule-rejected:${new Date(current.rescheduleRequest.requestedAt).toISOString()}`);
+        return send(res, 200, { appointment: normalizeDoc({ ...current, rescheduleRequest }) });
+      }
+    }
+    if (customerRequest && current.rescheduleRequest?.status === 'pending') return send(res, 409, { error: 'A reschedule request is already pending.' });
     if (customerRequest && new Date(`${current.date}T${current.time}:00+08:00`).getTime() <= Date.now()) return send(res, 409, { error: 'This appointment has already started. Contact the shop.' });
-    const date = String(body.date || '');
-    const time = String(body.time || '');
+    const date = String((review ? current.rescheduleRequest.date : body.date) || '');
+    const time = String((review ? current.rescheduleRequest.time : body.time) || '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time) || !(new Date(`${date}T${time}:00+08:00`).getTime() > Date.now())) return send(res, 400, { error: 'Choose a valid future date and time.' });
     if (current.date === date && current.time === time) return send(res, 200, { appointment: normalizeDoc(current) });
     const service = await database.collection('services').findOne({ $or: [{ slug: current.serviceId }, ...(ObjectId.isValid(current.serviceId) ? [{ _id: new ObjectId(current.serviceId) }] : [])] });
     const settings = mergedSettings(await database.collection('settings').findOne({ _id: 'shop' }));
-    const duration = Math.max(30, Number.parseInt(service?.duration, 10) || 30);
+    const duration = appointmentDuration(current, service);
     const window = bookingWindow(date, time, settings, duration);
     if (window.error) return send(res, 400, { error: window.error });
     const unavailable = await unavailableBarbers(database, date, time, duration, '', id);
     if (current.barberId && unavailable.includes(current.barberId)) return send(res, 409, { error: 'This barber is already reserved at that time.' });
     const barber = current.barberId ? await database.collection('barbers').findOne({ $or: [{ slug: current.barberId }, ...(ObjectId.isValid(current.barberId) ? [{ _id: new ObjectId(current.barberId) }] : [])] }) : null;
-    const newSlots = barber ? appointmentSlotIds(date, String(barber._id), time, duration) : [];
+    if (current.barberId && (!barber || ['fired', 'on-leave'].includes(barber.status))) return send(res, 409, { error: 'The selected barber is not available.' });
+    if (customerRequest) {
+      const requestedAt = new Date(Math.max(Date.now(), (new Date(current.rescheduleRequest?.requestedAt).getTime() || 0) + 1));
+      const rescheduleRequest = { date, time, originalDate: current.date, originalTime: current.time, requestedAt, status: 'pending', expiresAt: rescheduleDeadline(current, { date, time }) };
+      const changed = await database.collection('appointments').updateOne(revision, { $set: { rescheduleRequest, updatedAt: new Date() } });
+      if (!changed.modifiedCount) return send(res, 409, { error: 'This appointment changed. Refresh and try again.' });
+      return send(res, 200, { appointment: normalizeDoc({ ...current, rescheduleRequest }) });
+    }
+    const rescheduleRequest = current.rescheduleRequest?.status === 'pending' ? { ...current.rescheduleRequest, status: review ? 'approved' : 'superseded', reviewedAt: new Date(), reason: staffNote } : current.rescheduleRequest;
+    const newSlots = barber && current.status === 'confirmed' ? appointmentSlotIds(date, String(barber._id), time, duration) : [];
     const existing = await database.collection('appointmentSlots').find({ appointmentId: id }).toArray();
     const retained = new Set(existing.map((slot) => slot._id));
     const tempId = String(new ObjectId());
     const extraSlots = newSlots.filter((slot) => !retained.has(slot)).map((_id) => ({ _id, appointmentId: tempId, createdAt: new Date(), expiresAt: new Date(Date.now() + 120000) }));
     try {
       if (extraSlots.length) await database.collection('appointmentSlots').insertMany(extraSlots, { ordered: true });
-      const changed = await database.collection('appointments').updateOne({ _id: current._id, date: current.date, time: current.time, status: current.status }, { $set: { date, time, ...(staffNote ? { staffNote } : {}), updatedAt: new Date() } });
+      if (review) revision['rescheduleRequest.expiresAt'] = { $gt: new Date() };
+      const changed = await database.collection('appointments').updateOne(revision, { $set: { date, time, ...(current.status === 'confirmed' ? { graceDeadline: new Date(frontDesk.startAt({ date, time }).getTime() + (current.gracePeriodMinutes ?? frontDesk.grace(settings)) * 60000) } : {}), ...(rescheduleRequest ? { rescheduleRequest } : {}), ...(staffNote ? { staffNote } : {}), updatedAt: new Date() } });
       if (!changed.modifiedCount) throw Object.assign(new Error('This appointment changed. Refresh and try again.'), { status: 409 });
       await database.collection('appointmentSlots').updateMany({ appointmentId: tempId }, { $set: { appointmentId: id }, $unset: { expiresAt: '' } });
       await database.collection('appointmentSlots').deleteMany({ appointmentId: id, _id: { $nin: newSlots } });
@@ -1068,8 +1186,8 @@ async function handler(req, res) {
       if (error.code === 11000) return send(res, 409, { error: 'This barber was just reserved. Choose another time.' });
       throw error;
     }
-    await messaging.notify(database, current.userId, `Your Barber Co appointment was rescheduled from ${current.date} at ${current.time} to ${date} at ${time}.${staffNote ? ` Reason: ${staffNote}.` : ''} Contact the shop if this does not suit you.`, `appointment:${id}:rescheduled:${date}:${time}`);
-    return send(res, 200, { appointment: normalizeDoc({ ...current, date, time }) });
+    await messaging.notify(database, current.userId, `Your Barber Co appointment was rescheduled from ${current.date} at ${current.time} to ${date} at ${time}.${partyNotice(current)}${staffNote ? ` Reason: ${staffNote}.` : ''} Contact the shop if this does not suit you.`, `appointment:${id}:rescheduled:${date}:${time}`);
+    return send(res, 200, { appointment: normalizeDoc({ ...current, date, time, ...(rescheduleRequest ? { rescheduleRequest } : {}) }) });
   }
 
   if (req.method === 'PATCH' && /^\/appointments\/[a-f0-9]{24}\/cancel$/.test(path)) {
@@ -1082,8 +1200,15 @@ async function handler(req, res) {
     const changed = await database.collection('appointments').updateOne({ _id: current._id, status: current.status, date: current.date, time: current.time }, { $set: { status: 'cancelled', cancelledBy: 'customer', noRefund: true, updatedAt: new Date() } });
     if (!changed.modifiedCount) return send(res, 409, { error: 'This appointment changed. Refresh and try again.' });
     await database.collection('appointmentSlots').deleteMany({ appointmentId: id });
-    await messaging.notify(database, user._id, `Your Barber Co appointment on ${current.date} at ${current.time} was cancelled. No refund will be issued.`, `appointment:${id}:cancelled`);
+    await database.collection('queue').updateMany({ appointmentId: id, status: { $in: ['waiting', 'serving'] } }, { $set: { status: 'cancelled', updatedAt: new Date() } });
+    await messaging.notify(database, user._id, `Your Barber Co appointment on ${current.date} at ${current.time} was cancelled.${partyNotice(current)} No refund will be issued.`, `appointment:${id}:cancelled`);
     return send(res, 200, { appointment: normalizeDoc({ ...current, status: 'cancelled', noRefund: true }) });
+  }
+
+  if (/^\/admin\/appointments\/[a-f0-9]{24}\/check-in$/.test(path) && req.method === 'PATCH') {
+    await requireRole(req, database, ['admin', 'moderator']);
+    const appointment = await frontDesk.checkIn(database, path.split('/')[3], body.memberIndices);
+    return send(res, 200, { appointment: normalizeDoc(appointment) });
   }
 
   if (path.startsWith("/admin/appointments/") && req.method === "PATCH") {
@@ -1094,6 +1219,7 @@ async function handler(req, res) {
     const current = await database.collection('appointments').findOne({ _id: new ObjectId(id) });
     if (!current) return send(res, 404, { error: 'Appointment not found.' });
     const update = { status: body.status, updatedAt: new Date() };
+    if (current.rescheduleRequest?.status === 'pending' && ['confirmed', 'completed'].includes(body.status)) return send(res, 409, { error: 'Review the pending reschedule request first.' });
     const staffNote = body.status === 'cancelled' ? String(body.reason || '').trim().slice(0, 500) : '';
     if (staffNote) update.staffNote = staffNote;
     if (current.status === body.status) return send(res, 200, { appointment: normalizeDoc(current) });
@@ -1103,13 +1229,37 @@ async function handler(req, res) {
       update.paid = true;
       if (!current.paid) update.paidAt = new Date();
     }
-    const changed = await database.collection("appointments").updateOne({ _id: new ObjectId(id), status: current.status }, { $set: update });
-    if (changed?.modifiedCount === 0) return send(res, 409, { error: 'This appointment changed while you were reviewing it. Refresh and try again.' });
+    const acquiring = current.status === 'pending' && body.status === 'confirmed';
+    if (acquiring) {
+      const service = await database.collection('services').findOne({ $or: [{ slug: current.serviceId }, ...(ObjectId.isValid(current.serviceId) ? [{ _id: new ObjectId(current.serviceId) }] : [])] });
+      const duration = appointmentDuration(current, service);
+      const settings = mergedSettings(await database.collection('settings').findOne({ _id: 'shop' }));
+      if (!service || service.active === false) return send(res, 409, { error: 'The selected service is no longer available.' });
+      if (!(new Date(`${current.date}T${current.time}:00+08:00`).getTime() > Date.now())) return send(res, 409, { error: 'Past appointments cannot be approved.' });
+      const window = bookingWindow(current.date, current.time, settings, duration);
+      if (window.error) return send(res, 409, { error: window.error });
+      const barber = current.barberId ? await database.collection('barbers').findOne({ $or: [{ slug: current.barberId }, ...(ObjectId.isValid(current.barberId) ? [{ _id: new ObjectId(current.barberId) }] : [])], status: { $nin: ['fired', 'on-leave'] } }) : await reserveAnyBarber(database, id, current.date, current.time, duration);
+      if (!barber) return send(res, 409, { error: 'The selected barber is not available.' });
+      const unavailable = await unavailableBarbers(database, current.date, current.time, duration, '', id);
+      if (unavailable.includes(barber.slug) || unavailable.includes(String(barber._id))) return send(res, 409, { error: 'This barber is already booked at that time.' });
+      await lockAppointmentSlots(database, id, current.date, String(barber._id), current.time, duration);
+      update.barberId = barber.slug || String(barber._id);
+      update.graceDeadline = new Date(frontDesk.startAt(current).getTime() + frontDesk.grace(settings) * 60000);
+      update.gracePeriodMinutes = frontDesk.grace(settings);
+    }
+    try {
+      const changed = await database.collection("appointments").updateOne({ _id: new ObjectId(id), status: current.status, date: current.date, time: current.time, rescheduleRequest: current.rescheduleRequest || { $exists: false } }, { $set: update });
+      if (changed?.modifiedCount === 0) throw Object.assign(new Error('This appointment changed while you were reviewing it. Refresh and try again.'), { status: 409 });
+    } catch (error) {
+      if (acquiring) await database.collection('appointmentSlots').deleteMany({ appointmentId: id });
+      throw error;
+    }
     if (["completed", "cancelled"].includes(body.status)) {
       await database.collection("appointmentSlots").deleteMany({ appointmentId: id });
+      await database.collection('queue').updateMany({ appointmentId: id, status: { $in: ['waiting', 'serving'] } }, { $set: { status: body.status === 'completed' ? 'done' : 'cancelled', updatedAt: new Date() } });
     }
     const appointment = await database.collection("appointments").findOne({ _id: new ObjectId(id) });
-    await messaging.notify(database, current.userId, `Your Barber Co appointment on ${current.date} at ${current.time} is ${body.status === 'confirmed' ? 'accepted' : body.status}.${staffNote ? ` Reason: ${staffNote}.` : ''}`, `appointment:${id}:${body.status}`);
+    await messaging.notify(database, current.userId, `Your Barber Co appointment on ${current.date} at ${current.time} is ${body.status === 'confirmed' ? 'accepted' : body.status}.${partyNotice(current)}${staffNote ? ` Reason: ${staffNote}.` : ''}`, `appointment:${id}:${body.status}`);
     return send(res, 200, { appointment: normalizeDoc(appointment) });
   }
 
@@ -1198,8 +1348,9 @@ async function handler(req, res) {
     if (body.status != null) update.status = body.status;
     if (customer != null) update.customer = customer;
     if (body.status === "serving") update.calledAt = new Date();
-    if (body.status === "done") Object.assign(update, { paid: true, paidAt: new Date() });
+    if (body.status === "done" && ticket.source !== 'appointment') Object.assign(update, { paid: true, paidAt: new Date() });
     await database.collection("queue").updateOne({ _id: new ObjectId(id) }, { $set: update });
+    if (['done', 'cancelled'].includes(body.status)) await frontDesk.complete(database, ticket, body.status);
     if (body.status === 'serving') await messaging.notify(database, ticket.userId, `It is your turn at The Barber Co. Queue #${ticket.queueNumber}. Please approach the counter.`, `queue:${id}:serving`, { queueTicketId: ticket._id });
     if (body.status === 'cancelled') await messaging.notify(database, ticket.userId, `Your Barber Co queue ticket #${ticket.queueNumber} was cancelled. Contact the counter if this is unexpected.`, `queue:${id}:cancelled`, { queueTicketId: ticket._id });
     return send(res, 200, { ok: true });
@@ -1213,6 +1364,11 @@ async function handler(req, res) {
     if (!ticket) return send(res, 404, { error: 'Queue ticket not found.' });
     if (ticket.status === 'done') return send(res, 200, { ok: true });
     if (ticket.status === 'cancelled') return send(res, 409, { error: 'A cancelled queue ticket cannot be completed.' });
+    if (ticket.source === 'appointment') {
+      await database.collection('queue').updateOne({ _id: ticket._id }, { $set: { status: 'done', updatedAt: new Date() } });
+      await frontDesk.complete(database, ticket, 'done');
+      return send(res, 200, { ok: true });
+    }
     await database.collection("queue").updateOne({ _id: new ObjectId(id), status: ticket.status }, { $set: { status: "done", paid: true, paidAt: new Date(), updatedAt: new Date() } });
     return send(res, 200, { ok: true });
   }
@@ -1227,9 +1383,11 @@ async function handler(req, res) {
       database.collection("services").find().toArray(),
       database.collection("barbers").find().toArray()
     ]);
+    const analytics = buildAnalytics(appointments, queue.filter(item => item.source !== 'appointment'), users, services);
+    analytics.totals.waiting = queue.filter(item => item.status === 'waiting').length;
     return send(res, 200, {
-      ...buildAnalytics(appointments, queue, users, services),
-      barberPerformance: buildBarberPerformance(appointments, queue, barbers, services),
+      ...analytics,
+      barberPerformance: buildBarberPerformance(appointments, queue.filter(item => item.source !== 'appointment'), barbers, services),
       barbers: barbers.map(normalizeDoc),
       services: services.map((service) => ({ ...normalizeDoc(service), bookings: appointments.filter((item) => item.serviceId === String(service._id) || item.serviceId === service.slug).length }))
     });
@@ -1240,9 +1398,18 @@ async function handler(req, res) {
 
 module.exports = async (req, res) => {
   try {
-    await handler(req, res);
+    const path = new URL(req.url, 'https://barber.local').pathname.replace(/^\/api/, '');
+    const mutation = req.method === 'PATCH' && /^\/(?:admin\/)?appointments\/([a-f0-9]{24})(?:\/[^/]+)?$/.exec(path);
+    if (mutation) {
+      const database = await db();
+      await sweepRescheduleRequests(database);
+      await frontDesk.sweep(database);
+      await withAppointmentMutation(database, mutation[1], () => handler(req, res));
+    } else await handler(req, res);
   } catch (error) {
     if (error.retryAfter) res.setHeader('Retry-After', String(error.retryAfter));
     send(res, error.status || 500, { error: error.message || "Server error." });
   }
 };
+module.exports.sweepRescheduleRequests = sweepRescheduleRequests;
+module.exports.sweepAttendance = async () => frontDesk.sweep(await db());

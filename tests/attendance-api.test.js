@@ -1,0 +1,68 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const { Readable } = require('node:stream');
+const { ObjectId } = require('mongodb');
+const jwt = require('jsonwebtoken');
+const { memoryDb } = require('./helpers/memory-db');
+const now = Date.now();
+const phSchedule = offset => {
+  const ph = new Date(now + offset * 60000 + 8 * 3600000).toISOString();
+  return { date: ph.slice(0, 10), time: ph.slice(11, 16) };
+};
+const admin = { _id: new ObjectId(), name: 'Staff', role: 'moderator' };
+const customer = { _id: new ObjectId(), name: 'Customer', role: 'customer' };
+const barber = { _id: new ObjectId(), slug: 'alex', name: 'Alex', status: 'active' };
+const other = { _id: new ObjectId(), slug: 'ben', name: 'Ben', status: 'active' };
+const appointment = { _id: new ObjectId(), ...phSchedule(-1), userId: customer._id, customer: 'Customer', partyMembers: ['Customer'], partySize: 1, durationMinutes: 30, unitDurationMinutes: 30, total: 250, paid: true, paidAt: new Date(now), createdAt: new Date(now), status: 'confirmed', queueNumber: 2, barberId: 'alex', serviceId: 'cut', gracePeriodMinutes: 10, graceDeadline: new Date(now + 9 * 60000) };
+const absent = { ...appointment, _id: new ObjectId(), ...phSchedule(-11), queueNumber: 3, barberId: 'ben', graceDeadline: new Date(now - 60000) };
+const walkin = { _id: new ObjectId(), customer: 'Walk-in', status: 'waiting', queueNumber: 1, source: 'staff', barberId: 'ben', durationMinutes: 30, price: 150, paid: false, serviceId: 'cut', createdAt: new Date(now) };
+const database = memoryDb({ users: [admin, customer], barbers: [barber, other], services: [{ _id: new ObjectId(), slug: 'cut', name: 'Cut', price: 150, duration: '30 min' }], appointments: [appointment, absent], queue: [walkin], settings: [{ _id: 'shop', gracePeriodMinutes: 10 }], appointmentSlots: [{ _id: 'absent-slot', appointmentId: String(absent._id) }], counters: [] });
+const localRequire = require('node:module').createRequire(path.resolve('api/index.js'));
+const notices = [];
+const context = { require: name => name === '../lib/notifications' ? { notify: async (...args) => notices.push(args[2]) } : localRequire(name), module: { exports: {} }, URL, console, process: { env: { JWT_SECRET: 'attendance-test' } }, database };
+vm.runInNewContext(`${fs.readFileSync('api/index.js', 'utf8')}\ndb = async () => database;`, context);
+const handler = context.module.exports;
+async function request(url, body, actor = admin, method = 'PATCH') {
+  const req = Readable.from(body ? [JSON.stringify(body)] : []);
+  Object.assign(req, { method, url: `/api${url}`, headers: { authorization: `Bearer ${jwt.sign({ sub: String(actor._id) }, 'attendance-test')}` } });
+  let data;
+  const res = { setHeader() {}, end(raw) { data = JSON.parse(raw); } };
+  await handler(req, res);
+  return { status: res.statusCode, ...data };
+}
+async function main() {
+  const endpoint = `/admin/appointments/${appointment._id}/check-in`;
+  assert.equal((await request(endpoint, { memberIndices: [0] }, customer)).status, 403);
+  assert.equal((await request(endpoint, { memberIndices: [2] })).status, 400);
+  assert.equal((await request(endpoint, { memberIndices: [0] })).status, 200);
+  assert.equal((await request(endpoint, { memberIndices: [0] })).status, 200);
+  let queue = await request('/admin/queue', null, admin, 'GET');
+  assert.equal(queue.status, 200);
+  assert.equal(queue.queue.filter(item => item.source === 'appointment').length, 1);
+  assert.equal(database.records.appointments.find(item => String(item._id) === String(absent._id)).cancelledBy, 'no-show');
+  assert.equal(database.records.appointmentSlots.length, 0);
+  let next = await request('/admin/queue/next', {}, admin, 'POST');
+  assert.equal(next.status, 200);
+  assert.equal(next.ticket.source, 'appointment', 'due appointment precedes older walk-in');
+  const linkedId = next.ticket.id;
+  next = await request('/admin/queue/next', {}, admin, 'POST');
+  assert.equal(next.status, 200);
+  assert.equal(next.ticket.customer, 'Walk-in', 'another barber continues serving');
+  assert.equal((await request(`/admin/queue/${linkedId}`, { status: 'done' })).status, 200);
+  const completed = database.records.appointments.find(item => String(item._id) === String(appointment._id));
+  assert.equal(completed.status, 'completed');
+  assert.equal(completed.servedMemberCount, 1);
+  assert.equal(completed.total, 250);
+  assert.equal(completed.paid, true);
+  assert.equal(database.records.queue.find(item => String(item._id) === linkedId).paid, false);
+  admin.role = 'admin';
+  const analytics = await request('/admin/analytics', null, admin, 'GET');
+  assert.equal(analytics.status, 200);
+  assert.equal(analytics.totals.revenue, 500, 'retained no-show payment plus completed booking only');
+  assert.equal(analytics.totals.walkins, 1, 'linked booking does not inflate walk-in counts');
+  assert.ok(notices.some(text => text.includes('No refund')));
+  console.log('Attendance API: staff-only check-in, idempotency, no-show release, shared queue priority, simultaneous barbers, completion sync and revenue reconciliation passed');
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

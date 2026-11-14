@@ -7,6 +7,7 @@ if (!canAccess("admin")) {
 
 const protectedAdminEmail = "thebarberco.official@gmail.com";
 let accounts = [];
+const roleLabel = (role) => role === 'moderator' ? 'Staff' : role[0].toUpperCase() + role.slice(1);
 
 function rows() {
   if (!accounts.length) return `<div class="empty-state">No registered accounts yet.</div>`;
@@ -15,7 +16,7 @@ function rows() {
   if (!filtered.length) return `<div class="staff-empty"><strong>No matching accounts</strong></div>`;
   return filtered.map((account) => {
     const protectedAccount = account.email === protectedAdminEmail;
-    return `<div class="appointment-row management-record"><div class="person-cell"><span class="staff-avatar">${BarberCo.initials(account.name)}</span><div><strong>${safeText(account.name)}</strong><small>${safeText(account.email)}</small></div></div><span class="status-pill">${protectedAccount ? 'Protected owner' : safeText(account.role)}</span><select class="permission-select" data-role-select="${account.id}" aria-label="Role for ${safeText(account.name)}" ${protectedAccount ? 'disabled' : ''}>${['customer','moderator','admin'].map((role) => `<option value="${role}" ${account.role === role ? 'selected' : ''}>${role[0].toUpperCase() + role.slice(1)}</option>`).join('')}</select></div>`;
+    return `<div class="appointment-row management-record"><div class="person-cell"><span class="staff-avatar">${BarberCo.initials(account.name)}</span><div><strong>${safeText(account.name)}</strong><small>${safeText(account.email)}</small></div></div><span class="status-pill">${protectedAccount ? 'Protected owner' : safeText(roleLabel(account.role))}</span><select class="permission-select" data-role-select="${account.id}" aria-label="Role for ${safeText(account.name)}" ${protectedAccount ? 'disabled' : ''}>${['customer','moderator','admin'].map((role) => `<option value="${role}" ${account.role === role ? 'selected' : ''}>${roleLabel(role)}</option>`).join('')}</select></div>`;
   }).join("");
 }
 
@@ -35,6 +36,7 @@ function addDeleteControls() {
 async function render() {
   document.querySelector("#app").innerHTML = `${nav("admin")}<section class="app-shell">${adminSidebar("users")}<div class="workspace"><div class="workspace-heading"><div><p class="eyebrow">ACCESS MANAGEMENT</p><h1>Users & permissions</h1><p class="muted">The owner account is protected. Staff roles apply across all devices.</p></div></div><div class="management-layout"><section><div class="panel-heading"><h3>Registered accounts</h3>${icon('Users')}</div><div class="list-toolbar"><label class="search-field">${icon('Search')}<input type="search" data-user-search placeholder="Search name or email" aria-label="Search accounts"></label></div><div class="record-list" data-user-rows><div class="empty-state">Loading accounts...</div></div></section><form class="panel" data-account-form autocomplete="off"><div class="panel-heading"><h3>Create an account</h3>${icon('UserRoundPlus')}</div><label>Name<input name="name" autocomplete="off" required placeholder="Staff name"></label><label>Email<input type="email" name="email" autocomplete="off" required placeholder="staff@email.com"></label><label>Temporary password<input type="password" name="password" autocomplete="new-password" minlength="6" required></label><label>Permission<select name="role"><option value="customer">Customer</option><option value="moderator">Moderator</option><option value="admin">Admin</option></select></label><button class="button primary full" type="submit">${icon('Plus')} Create account</button></form></div></div></section>`;
   initHeader("admin");
+  document.querySelector('[data-account-form] option[value="moderator"]').textContent = 'Staff';
   try {
     const payload = await api("/admin/users");
     accounts = payload.users || [];

@@ -19,13 +19,16 @@ const equal = (a, b) => String(a) === String(b);
 function matches(item, query = {}) {
   return Object.entries(query).every(([key, value]) => {
     if (key === '$or') return value.some((condition) => matches(item, condition));
-    const actual = item[key];
+    const actual = key.split('.').reduce((value, part) => value?.[part], item);
+    if (value && typeof value === 'object' && !(value instanceof ObjectId) && !(value instanceof Date) && !Object.keys(value).some(key => key.startsWith('$'))) return require('node:util').isDeepStrictEqual(actual, value);
     if (value && typeof value === 'object' && !(value instanceof ObjectId) && !(value instanceof Date)) {
       return Object.entries(value).every(([operator, expected]) => {
         if (operator === '$in') return expected.some((candidate) => equal(actual, candidate));
         if (operator === '$nin') return !expected.some((candidate) => equal(actual, candidate));
         if (operator === '$ne') return !equal(actual, expected);
         if (operator === '$gt') return actual > expected;
+        if (operator === '$lt') return actual < expected;
+        if (operator === '$exists') return (actual !== undefined) === expected;
         throw new Error(`Unsupported test query ${operator}`);
       });
     }
@@ -37,7 +40,9 @@ function update(item, changes) {
   for (const key of Object.keys(changes.$unset || {})) delete item[key];
   for (const [key, value] of Object.entries(changes.$inc || {})) item[key] = (item[key] || 0) + value;
 }
+const counterDatabase = require('./helpers/memory-db').memoryDb(records);
 const database = { collection(name) {
+  if (name === 'counters') return counterDatabase.collection(name);
   records[name] ||= [];
   return {
     find(query, options = {}) {
@@ -69,7 +74,7 @@ const context = { require: require('node:module').createRequire(path.join(root, 
 vm.runInNewContext(`${fs.readFileSync(path.join(root, 'api/index.js'), 'utf8')}\ndb = async () => fixtureDatabase;`, context);
 const handler = context.module.exports;
 const token = (role) => jwt.sign({ sub: String(users.find((user) => user.role === role)._id), role }, secret);
-const booking = { serviceId: 'basic', barberId: 'review-barber', date: '2100-03-03', time: '14:00', customer: 'Review admin', request: 'Please leave a little length on top.' };
+const booking = { nonRefundableAccepted: true, serviceId: 'basic', barberId: 'review-barber', date: '2100-03-03', time: '14:00', customer: 'Review admin', request: 'Please leave a little length on top.' };
 const proof = `data:image/png;base64,${fs.readFileSync(path.join(root, 'images/logo.png')).toString('base64')}`;
 
 async function main() {
@@ -102,27 +107,50 @@ async function main() {
     delete records.appointmentHolds[0].customer;
     assert.equal((await request('/admin/appointments')).data.reservations[0].customer, users[0].name, 'Existing holds should show the account name too');
     assert.equal((await request(`/admin/appointments/${held.data.hold.id}`, 'admin', { status: 'confirmed' }, 'PATCH')).status, 404, 'Unpaid holds must not be accepted');
-    assert.equal((await request('/appointment-holds', 'customer', booking)).status, 409, 'Held barber/time must remain reserved');
+    const overlappingHold = await request('/appointment-holds', 'customer', booking);
+    assert.equal(overlappingHold.status, 201, `Checkout holds must allow the same barber and time: ${JSON.stringify(overlappingHold.data)}`);
+    assert.equal(records.appointmentSlots.length, 0, 'Checkout holds must not acquire capacity locks');
+    const availability = () => request(`/availability?date=${booking.date}&time=${booking.time}&serviceId=${booking.serviceId}`, null);
+    assert.deepEqual((await availability()).data.unavailableBarberIds, [], 'Checkout holds must leave availability open');
     const submitted = await request('/appointments', 'admin', { ...booking, barberId: 'any', holdId: held.data.hold.id, paymentMethod: 'GCash', paymentProof: proof });
     assert.equal(submitted.status, 201, JSON.stringify(submitted.data));
+    assert.equal(submitted.data.appointment.nonRefundableAccepted, true);
+    assert.ok(submitted.data.appointment.nonRefundableAcceptedAt);
+    assert.equal(submitted.data.appointment.policyVersion, '2026-11-15');
     assert.equal(submitted.data.appointment.barberId, 'review-barber', 'The assigned barber must remain attached when the hold becomes a booking');
     assert.equal(submitted.data.appointment.request, booking.request, 'The customer request must survive payment submission');
     list = await request('/admin/appointments', 'moderator');
-    assert.equal(list.data.reservations.length, 0);
+    assert.equal(list.data.reservations.length, 1, 'Another customer checkout remains visible after submission');
     assert.equal(list.data.appointments[0].mongoId, submitted.data.appointment.id);
     assert.equal(list.data.appointments[0].status, 'pending');
+    const overlappingSubmission = await request('/appointments', 'customer', { ...booking, holdId: overlappingHold.data.hold.id, paymentMethod: 'GCash', paymentProof: proof });
+    assert.equal(overlappingSubmission.status, 201, 'Pending appointments must allow overlapping submissions');
+    assert.equal(records.appointmentSlots.length, 0, 'Pending appointments must not acquire capacity locks');
+    assert.deepEqual((await availability()).data.unavailableBarberIds, [], 'Pending appointments must leave availability open');
     assert.equal((await request('/appointments/mine')).data.appointments[0].id, submitted.data.appointment.id);
     assert.equal((await request(`/admin/appointments/${submitted.data.appointment.id}`, 'moderator', { status: 'confirmed' }, 'PATCH')).status, 200);
     assert.equal((await request('/appointments/mine')).data.appointments[0].status, 'confirmed');
+    assert.equal(records.appointmentSlots.length, 2, 'Staff approval locks the full service duration');
+    assert.ok((await availability()).data.unavailableBarberIds.includes('review-barber'), 'Confirmed appointments block availability');
+    assert.equal((await request(`/admin/appointments/${overlappingSubmission.data.appointment.id}`, 'moderator', { status: 'confirmed' }, 'PATCH')).status, 409, 'Staff cannot approve an overlapping pending appointment');
+    const refused = records.appointments.find(item => String(item._id) === overlappingSubmission.data.appointment.id);
+    assert.equal(refused.status, 'pending', 'Failed approval must preserve pending status');
+    assert.equal(refused.paid, false, 'Failed approval must not verify payment');
+    assert.ok(records.appointmentSlots.every(slot => slot.appointmentId === submitted.data.appointment.id), 'Failed approval must preserve the winning locks without leaking locks');
+    assert.equal((await request('/appointment-holds', 'customer', booking)).status, 409, 'Confirmed capacity must reject a conflicting checkout');
+    // Remove only the extra regression fixture before the existing exact analytics checks.
+    records.appointments = records.appointments.filter(item => item !== refused);
     const anyBooking = { ...booking, barberId: 'any', time: '15:00' };
     const anyFirst = await request('/appointment-holds', 'admin', anyBooking);
     const anySecond = await request('/appointment-holds', 'customer', anyBooking);
     const anyThird = await request('/appointment-holds', 'moderator', anyBooking);
     assert.equal(anyFirst.status, 201, JSON.stringify(anyFirst.data));
     assert.equal(anySecond.status, 201, JSON.stringify(anySecond.data));
-    assert.notEqual(anyFirst.data.hold.barberId, anySecond.data.hold.barberId, 'Any-barber reservations must select a different available barber');
-    assert.equal(anyThird.status, 409, 'Any-barber reservation must fail when all barbers are reserved');
-    const anyHoldIds = [anyFirst.data.hold.id, anySecond.data.hold.id];
+    assert.equal(anyThird.status, 201, 'Any-barber checkout holds must not exhaust barber capacity');
+    assert.equal(anyFirst.data.hold.barberId, anySecond.data.hold.barberId, 'Overlapping checkout holds may use the same available barber');
+    assert.equal(anyThird.data.hold.barberId, anyFirst.data.hold.barberId);
+    const anyHoldIds = [anyFirst.data.hold.id, anySecond.data.hold.id, anyThird.data.hold.id];
+    assert.ok(records.appointmentSlots.every(slot => !anyHoldIds.includes(slot.appointmentId)), 'Any-barber holds must not acquire locks');
     records.appointmentHolds = records.appointmentHolds.filter((hold) => !anyHoldIds.includes(String(hold._id)));
     records.appointmentSlots = records.appointmentSlots.filter((slot) => !anyHoldIds.includes(slot.appointmentId));
     records.barbers = [barber];
@@ -241,6 +269,8 @@ async function main() {
         await page.screenshot({ path: path.join(root, `demo-payment-${width}-check.png`), fullPage: true });
       }
       await page.getByRole('button', { name: mode === 'demo' ? 'Submit demo booking' : 'Submit for verification' }).click();
+      await page.locator('[data-accept-booking]').check();
+      await page.getByRole('button', { name: 'Confirm and submit', exact: true }).click();
       await page.waitForURL(role === 'admin' ? '**/admin-schedule.html' : '**/user-profile.html#bookings');
       const saved = records.appointments.find((item) => item.time === time);
       assert.ok(saved, 'The browser submission must reach the API database');

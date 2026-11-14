@@ -38,15 +38,23 @@ async function run() {
     }
   };
 
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
   const results = await Promise.allSettled([
-    lockAppointmentSlots(database, "hold-a", "2026-10-01", "barber-a", "13:00", 45, expiresAt),
-    lockAppointmentSlots(database, "hold-b", "2026-10-01", "barber-a", "13:00", 45, expiresAt)
+    lockAppointmentSlots(database, "approval-a", "2026-10-01", "barber-a", "13:00", 45),
+    lockAppointmentSlots(database, "approval-b", "2026-10-01", "barber-a", "13:00", 45)
   ]);
 
   assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
   assert.equal(results.filter((result) => result.status === "rejected" && result.reason.status === 409).length, 1);
-  console.log("booking hold concurrency test passed");
+  assert.equal(slots.size, 3, 'Conflicting approval must retain all winning locks and leave no partial locks');
+  assert.equal(new Set([...slots.values()].map(slot => slot.appointmentId)).size, 1);
+  assert.ok([...slots.values()].every(slot => !slot.expiresAt), 'Approved capacity locks must not expire like checkout holds');
+  const winningSlots = [...slots.entries()];
+  await assert.rejects(
+    lockAppointmentSlots(database, 'partial-approval', '2026-10-01', 'barber-a', '12:45', 45),
+    error => error.status === 409
+  );
+  assert.deepEqual([...slots.entries()], winningSlots, 'A conflict after a partial insert must roll back only the losing approval');
+  console.log("booking approval capacity concurrency test passed");
 }
 
 run().catch((error) => {

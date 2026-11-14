@@ -11,10 +11,27 @@ function escapeValue(value = "") {
 
 let myAppointments = [];
 
+function rescheduleUpdate(item) {
+  const request = item.rescheduleRequest;
+  if (!request) return '';
+  const deadline = new Date(request.expiresAt);
+  const originalLabel = request.originalDate || request.status === 'pending' ? 'Original' : 'Current schedule';
+  const originalDate = request.originalDate || item.date;
+  const originalTime = request.originalTime || item.time;
+  const deadlineText = Number.isNaN(deadline.getTime()) ? 'Unavailable; contact the shop' : `${deadline.toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })} (Asia/Manila)`;
+  return `<div style="grid-column:1/-1"><p><strong>${originalLabel}:</strong> ${escapeValue(originalDate)} at ${escapeValue(originalTime)}<br><strong>Requested:</strong> ${escapeValue(request.date)} at ${escapeValue(request.time)}<br><strong>Reschedule status:</strong> ${escapeValue(request.status === 'pending' ? 'Waiting for staff approval; not accepted yet' : request.status)}<br><strong>Review deadline:</strong> ${escapeValue(deadlineText)}</p>${request.reason ? `<p>Reason: ${escapeValue(request.reason)}</p>` : ''}${request.status === 'pending' ? '<p>The current schedule stays in place until staff approves. If unresolved at the earlier of the original and requested start, the booking is automatically cancelled. No refund will be issued, including any booking fee.</p>' : request.status === 'rejected' ? '<p>Your reschedule request was rejected. The original schedule is retained unless the booking is cancelled.</p>' : ''}</div>`;
+}
+
 function bookingActions(item) {
-  if (!['pending', 'confirmed'].includes(item.status)) return '';
-  if (new Date(`${item.date}T${item.time}:00+08:00`).getTime() <= Date.now()) return '<div style="grid-column:1/-1"><button class="button secondary" disabled>Reschedule</button> <button class="button secondary" disabled>Cancel booking</button><p class="muted">The scheduled start time has passed. Contact the shop to change this booking.</p></div>';
-  return `<div style="grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap"><button class="button secondary" data-reschedule="${escapeValue(item._id || item.id)}">Reschedule</button><button class="button secondary" data-cancel-booking="${escapeValue(item._id || item.id)}">Cancel booking</button></div>`;
+  const group = item.partySize > 1 ? `<p style="grid-column:1/-1"><strong>Group of ${escapeValue(item.partySize)}:</strong> ${(item.partyMembers || []).map(escapeValue).join(', ')}<br>Served consecutively by one barber${item.durationMinutes ? ` / ${escapeValue(item.durationMinutes)} minutes total` : ''}. Rescheduling or cancellation applies to the whole group.</p>` : '';
+  const attendance = item.cancelledBy === 'no-show' ? '<p style="grid-column:1/-1"><strong>No-show / no refund.</strong> The grace period ended without check-in. Your reserved time was released. You may join the walk-in queue if you arrive late.</p>' : item.status === 'confirmed' && item.graceDeadline ? `<p style="grid-column:1/-1">Check in with staff by <strong>${escapeValue(new Date(item.graceDeadline).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }))} (Philippine time)</strong>. Missing this deadline releases your reserved time without a refund.${item.checkedInAt ? '<br>You have checked in. Barber delays will not mark checked-in members as no-shows.' : ''}${item.absentMembers?.length ? `<br>Absent members: ${item.absentMembers.map(member => escapeValue(member.name)).join(', ')}. No refund for missed members.` : ''}</p>` : '';
+  return group + attendance + bookingActionButtons(item);
+}
+
+function bookingActionButtons(item) {
+  if (!['pending', 'confirmed'].includes(item.status)) return rescheduleUpdate(item);
+  if (new Date(`${item.date}T${item.time}:00+08:00`).getTime() <= Date.now()) return `${rescheduleUpdate(item)}<div style="grid-column:1/-1"><button class="button secondary" disabled>Request reschedule</button> <button class="button secondary" disabled>Cancel booking</button><p class="muted">The scheduled start time has passed. Contact the shop to change this booking.</p></div>`;
+  return `${rescheduleUpdate(item)}<div style="grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap"><button class="button secondary" type="button" data-reschedule="${escapeValue(item._id || item.id)}" ${item.rescheduleRequest?.status === 'pending' ? 'disabled' : ''}>Request reschedule</button><button class="button secondary" type="button" data-cancel-booking="${escapeValue(item._id || item.id)}">Cancel booking</button></div>`;
 }
 
 function bookingStatus(status, demo = false) {
@@ -24,7 +41,7 @@ function bookingStatus(status, demo = false) {
 
 function bookingRows() {
   if (!myAppointments.length) return `<div class="empty-state">You have no online bookings yet.</div>`;
-  return myAppointments.map((item) => `<div class="appointment-row"><span>${item.demoPayment ? 'DEMO / ' : ''}Queue #${String(item.queueNumber || 0).padStart(2, "0")}<br><small class="muted">${escapeValue(item.date)} at ${escapeValue(item.time)}</small></span><strong>${escapeValue(item.customer)}<br><small class="muted">${escapeValue(byId(state.services, item.serviceId).name)} - ${peso(item.total || 0)}${item.demoPayment ? ' (not charged)' : ''}</small></strong><span class="status-pill ${escapeValue(item.status)}">${bookingStatus(item.status, item.demoPayment)}</span>${bookingActions(item)}</div>`).join("");
+  return myAppointments.map((item) => `<div class="appointment-row"><span>${item.demoPayment ? 'DEMO / ' : ''}Queue #${String(item.queueNumber || 0).padStart(2, "0")}<br><small class="muted">${escapeValue(item.date)} at ${escapeValue(item.time)}</small></span><strong>${escapeValue(item.customer)}<br><small class="muted">${escapeValue(byId(state.services, item.serviceId).name)} - ${peso(item.total || 0)}${item.demoPayment ? ' (not charged)' : ''}</small></strong><span class="status-pill ${escapeValue(item.status)}">${item.rescheduleRequest?.status === 'pending' && ['pending', 'confirmed'].includes(item.status) ? 'Reschedule awaiting staff approval' : bookingStatus(item.status, item.demoPayment)}</span>${bookingActions(item)}</div>`).join("");
 }
 
 async function refreshBookings({ quiet = false } = {}) {
@@ -32,7 +49,14 @@ async function refreshBookings({ quiet = false } = {}) {
     const payload = await api("/appointments/mine");
     myAppointments = payload.appointments || [];
     const target = document.querySelector("[data-my-bookings]");
-    if (target) target.innerHTML = bookingRows();
+    const rows = bookingRows();
+    if (target && target.innerHTML !== rows) {
+      const focused = target.contains(document.activeElement) ? document.activeElement : null;
+      const action = focused?.hasAttribute('data-cancel-booking') ? 'data-cancel-booking' : 'data-reschedule';
+      const id = focused?.getAttribute(action);
+      target.innerHTML = rows;
+      if (id) Array.from(target.querySelectorAll(`[${action}]`)).find(button => button.getAttribute(action) === id)?.focus();
+    }
   } catch (error) { if (!quiet) toast(error.message || "Bookings could not be loaded."); }
 }
 
@@ -47,6 +71,7 @@ function draw() {
     const reschedule = event.target.closest('[data-reschedule]');
     if (!cancel && !reschedule) return;
     const button = cancel || reschedule;
+    if (button.disabled) return;
     const id = cancel ? cancel.dataset.cancelBooking : reschedule.dataset.reschedule;
     if (cancel) {
       if (!window.confirm('Cancel this booking? No refund will be issued, including any booking fee. This cannot be undone.')) return;
@@ -55,22 +80,46 @@ function draw() {
       catch (error) { toast(error.message); button.disabled = false; }
       return;
     }
-    document.querySelector('[data-reschedule-form]')?.remove();
     const item = myAppointments.find((entry) => String(entry._id || entry.id) === id);
+    if (!item || item.rescheduleRequest?.status === 'pending') return;
+    document.querySelector('[data-reschedule-dialog]')?.close();
+    const modal = document.createElement('dialog');
+    modal.dataset.rescheduleDialog = '';
+    modal.className = 'receipt-dialog';
+    modal.setAttribute('aria-label', 'Request reschedule');
     const form = document.createElement('form');
     form.dataset.rescheduleForm = '';
     form.className = 'form-card';
-    form.innerHTML = `<h3>Reschedule booking</h3><label>Date<input type="date" name="date" min="${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })}" value="${escapeValue(item.date)}" required></label><label>Time<input type="time" name="time" step="1800" value="${escapeValue(item.time)}" required></label><p>The same barber and service are retained. Unavailable times and closed hours cannot be reserved.</p><button class="button primary" type="submit">Save new schedule</button><button class="button secondary" type="button" data-dismiss>Keep current schedule</button><p role="status" data-schedule-error></p>`;
-    bookingSection.querySelector('[data-my-bookings]').before(form);
-    form.querySelector('[data-dismiss]').onclick = () => form.remove();
+    form.innerHTML = `<h3>Request reschedule</h3><p>Current booking: ${escapeValue(item.date)} at ${escapeValue(item.time)} (Asia/Manila).</p><label>Date<input type="date" name="date" min="${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })}" value="${escapeValue(item.date)}" required></label><label>Time<input type="time" name="time" step="1800" value="${escapeValue(item.time)}" required></label><p>This sends a request, not an accepted schedule change. Staff must review it before the earlier of the current and requested start, or the booking is automatically cancelled.</p><p data-request-deadline></p><button class="button primary" type="submit">Send reschedule request</button><button class="button secondary" type="button" data-dismiss>Keep current schedule</button><p role="alert" data-schedule-error></p>`;
+    const updateDeadline = () => {
+      const requested = new Date(`${form.elements.date.value}T${form.elements.time.value}:00+08:00`).getTime();
+      const original = new Date(`${item.date}T${item.time}:00+08:00`).getTime();
+      const deadline = Math.min(original, requested);
+      form.querySelector('[data-request-deadline]').textContent = Number.isFinite(deadline) ? `Review deadline: ${new Date(deadline).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })} (Asia/Manila)` : 'Choose a date and time to see the review deadline.';
+    };
+    form.querySelector('[data-request-deadline]').insertAdjacentHTML('afterend', '<p>No refund will be issued if this booking is cancelled, including any booking fee.</p>');
+    form.addEventListener('input', updateDeadline);
+    updateDeadline();
+    modal.append(form);
+    document.body.append(modal);
+    modal.addEventListener('close', () => modal.remove());
+    form.querySelector('[data-dismiss]').onclick = () => modal.close();
     form.addEventListener('submit', async (submitEvent) => {
       submitEvent.preventDefault();
       const save = submitEvent.submitter;
+      if (save.disabled) return;
+      const values = Object.fromEntries(new FormData(form));
+      const current = myAppointments.find(entry => String(entry._id || entry.id) === id);
+      if (!current || current.rescheduleRequest?.status === 'pending' || !['pending', 'confirmed'].includes(current.status)) {
+        form.querySelector('[data-schedule-error]').textContent = 'This booking has changed. Close this dialog and review the latest booking status.';
+        return;
+      }
+      if (!window.confirm(`Send a reschedule request from ${item.date} at ${item.time} to ${values.date} at ${values.time} (Asia/Manila)?\n${form.querySelector('[data-request-deadline]').textContent}\nStaff approval is required. If unresolved by this deadline, the booking is automatically cancelled. No refund will be issued, including any booking fee. Continue?`)) return;
       save.disabled = true;
-      try { await api(`/appointments/${id}/reschedule`, { method: 'PATCH', body: JSON.stringify(Object.fromEntries(new FormData(form))) }); form.remove(); toast('Booking rescheduled.'); await refreshBookings(); }
+      try { await api(`/appointments/${id}/reschedule`, { method: 'PATCH', body: JSON.stringify(Object.fromEntries(new FormData(form))) }); modal.close(); toast('Reschedule requested. Waiting for staff approval; your current schedule is unchanged.'); await refreshBookings(); }
       catch (error) { form.querySelector('[data-schedule-error]').textContent = error.message; save.disabled = false; }
     });
-    form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    modal.showModal();
   });
   profileGrid.classList.add("account-layout");
   const accountColumn = document.createElement("div");

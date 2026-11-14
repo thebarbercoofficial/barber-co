@@ -131,7 +131,9 @@ async function main() {
   assert.equal((await request({ method: 'PATCH', path: `${customerPath}/reschedule`, role: 'customer', body: { date: '2000-01-01', time: '14:00' } })).status, 400);
   const moved = await request({ method: 'PATCH', path: `${customerPath}/reschedule`, role: 'customer', body: { date: '2099-11-04', time: '14:00' } });
   assert.equal(moved.status, 200, JSON.stringify(moved));
-  assert.equal(booking.date, '2099-11-04');
+  assert.equal(booking.date, '2099-11-03');
+  assert.equal(booking.rescheduleRequest.date, '2099-11-04');
+  assert.equal(booking.rescheduleRequest.status, 'pending');
   assert.equal((await request({ method: 'PATCH', path: `/api/admin/appointments/${booking._id}/archive`, role: 'admin', body: { archived: true } })).status, 409);
   const staffPath = `/api/admin/appointments/${booking._id}`;
   assert.equal((await request({ method: 'PATCH', path: `${staffPath}/reschedule`, role: 'admin', body: { date: '2099-11-05', time: '14:00', reason: 'Barber unavailable' } })).status, 200);

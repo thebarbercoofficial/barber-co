@@ -278,6 +278,15 @@ const BarberCo = (() => {
     window.addEventListener("scroll", updateScrollProgress, { passive: true });
     updateScrollProgress();
     const transaction = /\/(login|register|booking|payment|user-profile)\.html$/.test(location.pathname);
+    if (isAuthenticated() && header) {
+      if (window.BarberCoAlerts) window.BarberCoAlerts.mount();
+      else if (!document.querySelector('[data-alert-script]')) {
+        const script = document.createElement('script');
+        script.src = 'js/site-alerts.js?v=20261115';
+        script.dataset.alertScript = '';
+        document.head.append(script);
+      }
+    }
     document.body.classList.toggle('transaction-page', transaction);
     if (!staff && !transaction) initMotion();
     requestAnimationFrame(() => document.body.classList.add("is-loaded"));

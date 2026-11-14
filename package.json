@@ -11,6 +11,7 @@
     "test:booking-policy": "node tests/booking-policy.test.js && node tests/reschedule-approval-ui.test.js",
     "test:groups": "node tests/group-booking.test.js && node tests/group-booking-ui.test.js",
     "test:attendance": "node tests/front-desk.test.js && node tests/attendance-api.test.js",
+    "test:alerts": "node tests/site-alerts.test.js",
     "test:ui": "node tests/staff-ui.test.js",
     "test:booking": "node tests/booking-review.test.js",
     "test:phone": "node tests/phone-login.test.js",

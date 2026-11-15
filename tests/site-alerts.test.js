@@ -20,6 +20,7 @@ async function main() {
       const context = await browser.newContext({ viewport: { width, height: 900 } });
       let bookings = [{ id: 'one', customer: 'Ada <img src=x onerror=alert(1)>', status: 'pending', date: '2100-03-03', time: '14:00', createdAt: new Date().toISOString() }];
       let contacts = [];
+      const notifications = [];
       let failure = false;
       await context.addInitScript(({ role }) => {
         localStorage.setItem('barberCoToken', 'isolated-token');
@@ -35,8 +36,9 @@ async function main() {
       await context.route('https://fonts.**/**', route => route.abort());
       await context.route('**/api/**', route => {
         const endpoint = new URL(route.request().url()).pathname;
-        if (failure && endpoint.endsWith('/appointments/mine')) return route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"Offline"}' });
-        const data = endpoint.endsWith('/me') ? { user: { id: role, name: 'QA', role, email: 'qa@example.test' } } : endpoint.endsWith('/catalog') ? { services: [], barbers: [] } : endpoint.endsWith('/appointments') || endpoint.endsWith('/appointments/mine') ? { appointments: bookings } : endpoint.endsWith('/contacts') ? { contacts } : endpoint.includes('notifications') ? { notifications: [] } : endpoint.endsWith('/analytics') ? { totals: {}, daily: [], barberPerformance: [] } : endpoint.endsWith('/queue') ? { queue: [] } : { settings: {} };
+        if (failure && endpoint.endsWith('/notifications/mine')) return route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"Offline"}' });
+        if (role === 'customer' && endpoint.endsWith('/notifications/mine') && bookings[0].status !== 'pending' && !notifications.some(item => item._id === bookings[0].status)) notifications.push({ _id: bookings[0].status, message: `Your appointment is ${bookings[0].status}. ${bookings[0].staffNote || ''}`, createdAt: new Date().toISOString() });
+        const data = endpoint.endsWith('/me') ? { user: { id: role, name: 'QA', role, email: 'qa@example.test' } } : endpoint.endsWith('/catalog') ? { services: [], barbers: [] } : endpoint.endsWith('/appointments') || endpoint.endsWith('/appointments/mine') ? { appointments: bookings } : endpoint.endsWith('/contacts') ? { contacts } : endpoint.includes('notifications') ? { notifications } : endpoint.endsWith('/analytics') ? { totals: {}, daily: [], barberPerformance: [] } : endpoint.endsWith('/queue') ? { queue: [] } : { settings: {} };
         return route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
       });
       const page = await context.newPage();
@@ -45,7 +47,7 @@ async function main() {
       const base = `http://127.0.0.1:${server.address().port}`;
       await page.goto(`${base}/${role === 'customer' ? 'index.html' : 'admin-schedule.html'}`);
       await page.locator('[data-alert-bell] svg').waitFor();
-      await page.waitForFunction(() => Object.values(JSON.parse(localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('barberCoAlerts:'))) || '{}').baselines || {}).length === 2);
+      await page.waitForFunction(expected => Object.values(JSON.parse(localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('barberCoAlerts:'))) || '{}').baselines || {}).length === expected, role === 'customer' ? 1 : 2);
       assert.equal(await page.locator('[data-alert-popup]').isVisible(), false, 'First load is quiet');
       await page.locator('[data-alert-bell]').click();
       await page.locator('[data-alert-panel]').waitFor({ state: 'visible' });
@@ -55,6 +57,12 @@ async function main() {
       await page.evaluate(() => BarberCoAlerts.refresh());
       await page.locator('[data-alert-popup]').waitFor({ state: 'visible' });
       assert.equal(await page.locator('.alert-badge').textContent(), '1');
+      if (role === 'customer') {
+        await page.locator('[data-alert-bell]').click();
+        assert.match(await page.locator('[data-alert-panel]').innerText(), /appointment is confirmed/);
+        assert.equal(await page.locator('.alert-entry').first().getAttribute('href'), 'user-profile.html#bookings');
+        await page.locator('[data-alert-close]').click();
+      }
       assert.ok(await page.evaluate(() => window.tones >= 2), 'Two-tone sound after user interaction');
       await page.locator('[data-alert-dismiss]').click();
       const tones = await page.evaluate(() => window.tones);
@@ -106,6 +114,18 @@ async function main() {
         await page.evaluate(() => BarberCoAlerts.refresh());
         assert.equal(await page.locator('[data-alert-popup]').isVisible(), false, 'Other tabs do not repeat an already observed update');
         await second.close();
+      }
+      if (role === 'customer') {
+        notifications.push({ _id: 'offline-reschedule', message: 'The shop proposes a new appointment schedule. Please approve or reject it.', createdAt: new Date().toISOString() });
+        await page.evaluate(() => { for (const key of Object.keys(localStorage)) if (key.startsWith('barberCoAlerts:')) localStorage.removeItem(key); });
+        await page.reload();
+        await page.waitForFunction(() => document.querySelector('.alert-badge')?.textContent === String(3 + (innerWidth === 1440 ? 1 : 0)));
+        assert.equal(await page.locator('[data-alert-popup]').isVisible(), false, 'Saved messages populate the bell quietly on first visit');
+        await page.locator('[data-alert-bell]').click();
+        const history = await page.locator('[data-alert-panel]').innerText();
+        assert.match(history, /appointment is confirmed/);
+        assert.match(history, /appointment is cancelled/);
+        assert.match(history, /approve or reject/);
       }
       assert.deepEqual(errors, []);
       await context.close();

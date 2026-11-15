@@ -17,7 +17,6 @@ document.querySelector("#app").innerHTML = `
         <a href="register.html">Don't have an account? click here</a>
         <button type="button" data-open-forgot>Forgot password?</button>
       </div>
-      <p class="login-note">Staff access is reserved for authorized accounts.</p>
     </section>
 
     <aside class="login-alert" data-login-alert role="alert">

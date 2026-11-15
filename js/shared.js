@@ -309,7 +309,7 @@ const BarberCo = (() => {
       if (window.BarberCoAlerts) window.BarberCoAlerts.mount();
       else if (!document.querySelector('[data-alert-script]')) {
         const script = document.createElement('script');
-        script.src = 'js/site-alerts.js?v=20261115';
+        script.src = 'js/site-alerts.js?v=20261116';
         script.dataset.alertScript = '';
         document.head.append(script);
       }

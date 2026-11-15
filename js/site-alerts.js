@@ -81,7 +81,7 @@
       const identity = `${source}:${record.id}`;
       if (data.fingerprints[identity] === record.version) continue;
       data.fingerprints[identity] = record.version;
-      const event = { ...record, key: `${identity}:${record.version}`, read: first, at: first ? record.at : new Date().toISOString() };
+      const event = { ...record, key: `${identity}:${record.version}`, read: first && source !== 'notifications', at: record.at || new Date().toISOString() };
       data.items = [event, ...items().filter(item => item.key !== event.key)];
       if (!first) events.push(event);
     }
@@ -107,7 +107,7 @@
     let failed = false;
     const events = [];
     try {
-      try {
+      if (staff) try {
         const result = await api(staff ? '/admin/appointments' : '/appointments/mine', { cache: 'no-store' });
         if (!active()) return;
         events.push(...ingest('bookings', bookingRecords(result.appointments || [])));
@@ -116,7 +116,7 @@
         const result = await api(staff ? '/admin/contacts' : '/notifications/mine', { cache: 'no-store' });
         if (!active()) return;
         if (staff) events.push(...ingest('contacts', (result.contacts || []).map(item => ({ id: id(item), version: String(item.createdAt), title: 'New contact message', message: item.name || 'Website visitor', at: item.createdAt, href: 'admin-contacts.html' }))));
-        else events.push(...ingest('queue', (result.notifications || []).filter(item => /your turn|queue #/i.test(item.message || '')).map(item => ({ id: id(item), version: id(item), title: 'Queue update', message: item.message, at: item.createdAt, href: 'queue.html' }))));
+        else events.push(...ingest('notifications', (result.notifications || []).map(item => ({ id: id(item), version: id(item), title: /your turn|queue #/i.test(item.message || '') ? 'Queue update' : 'Booking update', message: item.message, at: item.createdAt, href: item.queueTicketId ? `queue.html?ticket=${encodeURIComponent(String(item.queueTicketId))}` : 'user-profile.html#bookings' }))));
       } catch { failed = true; }
       connectionError = failed ? 'Some updates unavailable. Retrying.' : '';
       render();
@@ -169,7 +169,7 @@
   window.addEventListener('focus', () => void refresh());
   window.addEventListener('resize', positionPanel);
   window.BarberCoAlerts = { mount, refresh };
-  setInterval(refresh, 15000);
+  setInterval(refresh, 8000);
   if (!window.lucide) {
     const script = document.createElement('script'); script.src = 'assets/lucide.min.js'; script.onload = mount; document.head.append(script);
   } else mount();

@@ -14,7 +14,7 @@ const dateText = (value) => {
 document.querySelector('#app').innerHTML = `
   ${nav('admin')}
   <section class="app-shell">${adminSidebar('contacts')}<main class="workspace">
-    <div class="workspace-heading"><div><p class="eyebrow">CUSTOMER MESSAGES</p><h1>Contact inbox</h1><p class="muted">Enquiries sent through the public website.</p></div><div class="heading-actions"><button class="button secondary" type="button" data-refresh>${icon('RefreshCw')} Refresh</button></div></div>
+    <div class="workspace-heading"><div><p class="eyebrow">CUSTOMER MESSAGES</p><h1>Contact inbox</h1></div><div class="heading-actions"><button class="button secondary" type="button" data-refresh>${icon('RefreshCw')} Refresh</button></div></div>
     <p class="connection-error" data-error hidden></p>
     <p class="muted contact-inbox-meta" data-meta>Loading messages...</p>
     <section class="contact-inbox-list" data-list aria-live="polite"><div class="staff-empty">Loading contact messages...</div></section>

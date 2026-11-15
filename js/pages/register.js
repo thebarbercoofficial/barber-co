@@ -6,7 +6,7 @@ document.querySelector("#app").innerHTML = `
   ${nav("login")}
   <section class="section top">
     <div class="auth-layout">
-      <div class="auth-art"><div><p class="eyebrow">Account Registration</p><h2>Create your customer account.</h2><p>Your account keeps your booking details connected to the shop and lets staff see your request.</p></div></div>
+      <div class="auth-art"><div><p class="eyebrow">Account Registration</p><h2>Create your customer account.</h2></div></div>
       <form class="form-card" data-register><p class="eyebrow">Registration Page</p><h2>Register</h2><label>Full name<input name="name" required minlength="2" maxlength="80" autocomplete="name" placeholder="Juan Dela Cruz"></label><label>Mobile number<input type="tel" inputmode="tel" name="phone" required autocomplete="tel" placeholder="09XXXXXXXXX or +639XXXXXXXXX"></label><label>Email<input type="email" name="email" required autocomplete="email" placeholder="customer@email.com"></label><label>Password<input type="password" name="password" required minlength="6" autocomplete="new-password" placeholder="Create password"></label><label><span><input type="checkbox" required> I agree to the terms and conditions</span></label><button class="button primary full" type="submit">Create account and continue</button><p class="muted">Already registered? <a class="inline" href="${loginHref}">Sign in instead</a></p></form>
     </div>
   </section>
@@ -45,7 +45,7 @@ document.querySelector("[data-register]").addEventListener("submit", async (even
 });
 const passwordLabel = document.querySelector('[name="password"]').closest('label');
 passwordLabel.querySelector('input').minLength = 8;
-passwordLabel.insertAdjacentHTML('beforebegin', `<label>Date of birth<input type="date" name="birthDate" required max="${new Date().toLocaleDateString('en-CA')}"><small>Online wallet booking is available to adults under shop policy. Younger customers can join the walk-in queue.</small></label>`);
+passwordLabel.insertAdjacentHTML('beforebegin', `<label>Date of birth<input type="date" name="birthDate" required max="${new Date().toLocaleDateString('en-CA')}"></label>`);
 passwordLabel.insertAdjacentHTML('afterend', '<label>Confirm password<input type="password" name="confirmPassword" required minlength="8" autocomplete="new-password" placeholder="Repeat password"></label>');
 const terms = document.querySelector('[data-register] input[type="checkbox"]').closest('label');
 terms.classList.add('terms-consent');

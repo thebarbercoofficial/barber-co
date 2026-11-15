@@ -28,7 +28,7 @@ async function render() {
     <section class="app-shell">
       ${adminSidebar("services")}
       <div class="workspace">
-        <div class="workspace-heading"><div><p class="eyebrow">SHOP MANAGEMENT</p><h1>Services & pricing</h1><p class="muted">Cut prices and durations used in booking and at the front desk.</p></div><span class="count-badge">${state.services.length} services</span></div>
+        <div class="workspace-heading"><div><p class="eyebrow">SHOP MANAGEMENT</p><h1>Services & pricing</h1></div><span class="count-badge">${state.services.length} services</span></div>
         <div class="management-layout"><section><div class="panel-heading"><h3>Service menu</h3>${icon('Scissors')}</div><div class="record-list" data-service-rows>${renderRows()}</div></section><form class="panel" data-service-form><div class="panel-heading"><h3>Add a service</h3>${icon('Plus')}</div><label>Service name<input name="name" required placeholder="Package name"></label><div class="form-row"><label>Price (PHP)<input type="number" min="0" name="price" required placeholder="150"></label><label>Duration<input name="duration" required placeholder="30 min"></label></div><label>Description<input name="detail" required placeholder="Short description"></label><button class="button primary full" type="submit">${icon('Plus')} Add service</button></form></div>
       </div>
     </section>

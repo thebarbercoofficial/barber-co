@@ -61,16 +61,15 @@ async function render() {
   document.querySelector("#app").innerHTML = `
     ${nav("queue")}
     <section class="section top">
-      <div class="section-heading"><p class="eyebrow">Customer Queue</p><h2>Live appointment status.</h2><p class="muted">Walk-ins can scan the shop QR, join the line, and keep this page open for sound or vibration alerts.</p></div>
+      <div class="section-heading"><p class="eyebrow">Customer Queue</p><h2>Live queue</h2></div>
       <div class="grid-2">
         <form class="form-card" data-walkin>
           <p class="eyebrow">Walk-in QR</p><h2>Join the line</h2>
           <label>Name<input name="customer" required placeholder="Your name"></label>
           <label>Service<select name="serviceId" required>${serviceOptions()}</select></label>
           <label><span data-walkin-email-label>Email for updates (optional)</span><input name="contactEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label>
-          <p class="muted" data-walkin-email-help>Email is optional. Enable updates below only if you want email notifications.</p>
+          <p class="muted" data-walkin-email-help hidden></p>
           <label class="terms-consent"><span><input name="emailConsent" type="checkbox"><span>Email me when staff calls or cancels my ticket.</span></span></label>
-          <p class="muted">For customers already at the shop. No account needed. Choose a cut, get a number, and wait for your name to be called.</p>
           <button class="button primary full" type="submit">Get queue number</button>
           <p role="alert" data-walkin-error></p>
           <button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>
@@ -124,9 +123,7 @@ async function render() {
     guestEmail.closest('label').hidden = !enabled;
     guestEmail.closest('label').style.display = enabled ? '' : 'none';
     guestEmailLabel.textContent = `Email for updates (${enabled ? 'required' : 'optional'})`;
-    guestEmailHelp.textContent = enabled
-      ? 'An email address is required to send your queue updates.'
-      : 'No email needed to join. Leave email updates off if you do not have an email address.';
+    guestEmailHelp.textContent = '';
   };
   guestEmailConsent.addEventListener("change", updateGuestEmailRequirement);
   updateGuestEmailRequirement();
@@ -149,7 +146,7 @@ async function updateTicket(ticketId) {
     const panel = document.querySelector("[data-ticket-panel]");
     if (!panel) return;
     const status = data.ticket.status;
-    if (activeTicketId === ticketId) updateJoinState(['waiting', 'serving'].includes(status), ['waiting', 'serving'].includes(status) ? 'You already have a ticket. Your status is shown here; no need to join again.' : '');
+    if (activeTicketId === ticketId) updateJoinState(['waiting', 'serving'].includes(status));
     const position = status === 'serving' ? 'Now serving' : status === 'waiting' ? `#${data.position} in line` : status === 'done' ? 'Completed' : status === 'cancelled' ? 'Cancelled' : 'Not in line';
     const emailUpdates = localStorage.getItem(`barberCoQueueEmailUpdates:${ticketId}`) === "true";
     panel.innerHTML = `<p class="eyebrow">Your Status</p><h2>Queue #${String(data.ticket.queueNumber).padStart(2, "0")}</h2><div class="summary-list"><div><span>Status</span><strong>${escapeHtml(status === 'done' ? 'Completed' : status)}</strong></div><div><span>Position</span><strong>${position}</strong></div><div><span>People ahead</span><strong>${status === 'waiting' ? data.waitingAhead : '-'}</strong></div></div>${emailUpdates ? '<p class="muted">Email queue updates are enabled.</p>' : ''}${['waiting', 'serving'].includes(status) ? '<button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>' : ''}`;

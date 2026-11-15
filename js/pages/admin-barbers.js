@@ -42,7 +42,7 @@ async function render() {
     <section class="app-shell">
       ${adminSidebar("barbers")}
       <div class="workspace">
-        <div class="workspace-heading"><div><p class="eyebrow">TEAM MANAGEMENT</p><h1>Barbers</h1><p class="muted">Manage the team and availability for online reservations.</p></div><span class="count-badge">${barbers.filter((item) => item.status === 'active').length} active</span></div>
+        <div class="workspace-heading"><div><p class="eyebrow">TEAM MANAGEMENT</p><h1>Barbers</h1></div><span class="count-badge">${barbers.filter((item) => item.status === 'active').length} active</span></div>
         <div class="management-layout"><section><div class="panel-heading"><h3>Your team</h3>${icon('Scissors')}</div><div class="record-list" data-barber-rows>${rows()}</div></section>
         <form class="panel" data-barber-form>
           <div class="panel-heading"><h3>Add a barber</h3>${icon('UserRoundPlus')}</div>

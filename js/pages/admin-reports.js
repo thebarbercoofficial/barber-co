@@ -48,6 +48,14 @@ async function render() {
   duplicateBreakdown.lastElementChild.remove();
   duplicateBreakdown.className = 'report-services';
   BarberAnalytics.mount(analytics);
+  const reportLayout = document.createElement('div');
+  reportLayout.className = 'reports-layout';
+  const performancePanel = document.querySelector('[aria-labelledby="barber-performance-title"]');
+  performancePanel.before(reportLayout);
+  const breakdowns = document.createElement('div');
+  breakdowns.className = 'report-breakdowns';
+  breakdowns.append(performancePanel, duplicateBreakdown);
+  reportLayout.append(document.querySelector('[data-analytics]'), breakdowns);
   let performance = analytics.barberPerformance || [];
   const metricKeys = ['bookings', 'customers', 'waiting', 'revenue'];
   document.querySelectorAll('.metric-grid .metric').forEach((node, index) => { node.dataset.metric = metricKeys[index]; });

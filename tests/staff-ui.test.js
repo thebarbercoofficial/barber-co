@@ -56,7 +56,8 @@ async function fixtures(context, role) {
     else if (endpoint.includes('/users/')) data = { user: { ...accounts.find((item) => item.id === endpoint.split('/').pop()), role: req.postDataJSON().role } };
     else if (endpoint.endsWith('/barbers')) data = { barbers };
     else if (endpoint.endsWith('/services')) data = { services };
-    else if (endpoint.endsWith('/admin/contacts')) data = { contacts: [{ _id: 'contact-1', name: 'Web visitor', email: 'visitor@example.test', message: 'Can I book a Saturday appointment?', createdAt: '2026-11-02T04:00:00.000Z' }] };
+    else if (/\/admin\/contacts\/[^/]+\/reply$/.test(endpoint)) data = { message: 'Reply accepted by email provider.' };
+    else if (endpoint.endsWith('/admin/contacts')) data = { contacts: [{ _id: 'contact-1', name: 'Web visitor', email: 'visitor@example.test', message: 'Can I book a Saturday appointment?', createdAt: '2026-11-02T04:00:00.000Z', replies: [{ message: 'Yes, please select an available time.', status: 'accepted', createdAt: '2026-11-02T04:05:00.000Z' }, { message: 'Let us know if you need help.', status: 'accepted', createdAt: '2026-11-02T04:06:00.000Z' }] }, { _id: 'contact-2', name: 'Second visitor', email: 'second@example.test', message: 'What time do you close?', createdAt: '2026-11-02T03:00:00.000Z' }] };
     else if (endpoint.endsWith('/queue')) data = { queue };
     else if (endpoint.includes('/queue/')) {
       const id = endpoint.split('/').pop();
@@ -92,7 +93,7 @@ async function main() {
   try {
     browser = await chromium.launch({ headless: true, channel: 'chrome' });
     const pages = ['dashboard', 'logbook', 'schedule', 'contacts', 'users', 'barbers', 'services', 'reports', 'profile'];
-    for (const width of process.env.STAFF_UI_WIDTH ? [Number(process.env.STAFF_UI_WIDTH)] : [1920, 1440, 768, 390]) {
+    for (const width of process.env.STAFF_UI_WIDTH ? [Number(process.env.STAFF_UI_WIDTH)] : [2560, 1920, 1440, 768, 390]) {
       const context = await browser.newContext({ viewport: { width, height: 900 } });
       await fixtures(context, 'admin');
       const page = await context.newPage();
@@ -120,12 +121,32 @@ async function main() {
             assert.ok(group.topInset >= 16 && group.leftInset >= 16 && group.rightInset >= 16, `${group.name} must stay inside its box at ${width}px`);
             assert.ok(group.gap >= 15, `${group.name} needs space above its fields at ${width}px`);
           }
+          if (width >= 1500) {
+            const method = await page.locator('[aria-labelledby="gcash-settings-title"]').boundingBox();
+            const schedule = await page.locator('[aria-labelledby="schedule-settings-title"]').boundingBox();
+            assert.ok(Math.abs(method.y - schedule.y) < 2, 'Payment methods and schedule must share the same row without grid gaps');
+          }
         }
         assert.equal(await page.locator('.site-header').evaluate((el) => getComputedStyle(el).backgroundColor), 'rgb(43, 26, 18)', 'Staff header must match the oak theme');
         if (name === 'contacts') {
           assert.equal(await page.locator('.contact-inbox-item').count(), 1);
           assert.ok((await page.locator('.contact-inbox-item').innerText()).includes('Can I book a Saturday appointment?'));
           assert.equal(await page.locator('.contact-inbox-item a[href^="mailto:"]').count(), 1);
+          assert.equal(await page.locator('[data-contact-select]').count(), 2);
+          assert.equal(await page.locator('[data-error]').isVisible(), false, 'No empty error strip');
+          await page.locator('[data-reply] textarea').fill('Keep my draft');
+          await page.locator('[data-contact-select="contact-2"]').click();
+          assert.ok((await page.locator('.inbox-conversation').innerText()).includes('What time do you close?'));
+          await page.locator('[data-contact-select="contact-1"]').click();
+          assert.equal(await page.locator('[data-reply] textarea').inputValue(), 'Keep my draft');
+          await page.locator('[data-inbox-search]').fill('second');
+          assert.equal(await page.locator('[data-contact-select]').count(), 1);
+          await page.locator('[data-inbox-search]').fill('');
+          await page.locator('[data-contact-select="contact-1"]').click();
+          if (width > 680) {
+            const bounds = await page.locator('.contact-inbox-item').boundingBox();
+            assert.ok(bounds.height < 520 && bounds.width < 1080, 'Conversation must remain compact');
+          }
         }
         if (['dashboard', 'reports'].includes(name)) {
           await page.waitForFunction(() => Boolean(Chart.getChart(document.querySelector('[data-trend-chart]'))));
@@ -149,6 +170,16 @@ async function main() {
           await page.waitForTimeout(350);
           const line = await page.locator('canvas').evaluate((canvas) => Chart.getChart(canvas).getDatasetMeta(0).data.map((point) => point.y));
           assert.ok(Math.max(...line) - Math.min(...line) > 20, 'The line must reflect varying data');
+          if (name === 'dashboard' && width >= 1500) {
+            const chart = await page.locator('[data-analytics]').boundingBox();
+            const desk = await page.locator('[data-frontdesk-panel]').boundingBox();
+            assert.ok(Math.abs(chart.y - desk.y) < 2 && desk.x > chart.x + chart.width, 'Wide dashboards must use a separate front desk column');
+          }
+          if (name === 'reports' && width > 1250) {
+            const performance = await page.locator('[aria-labelledby="barber-performance-title"]').boundingBox();
+            const servicesBox = await page.locator('.report-services').boundingBox();
+            assert.ok(servicesBox.y - (performance.y + performance.height) < 30, 'Report breakdowns must not inherit a tall chart row gap');
+          }
         }
         await page.evaluate(() => window.scrollTo(0, 0));
         await page.screenshot({ path: path.join(root, `staff-ui-${name}-${width}-check.png`), fullPage: true });
@@ -301,6 +332,13 @@ async function main() {
     assert.equal(await page.locator('.contact-inbox-item').count(), 1);
     assert.equal(await page.locator('[data-reply]').count(), 1, 'Moderator can reply to customer enquiries');
     assert.equal(await page.locator('[data-archive-contact]').count(), 1, 'Moderator can archive inbox messages');
+    await page.locator('[data-reply] textarea').fill('Staff can reply from this compact inbox.');
+    await page.locator('[data-reply] button').click();
+    await page.waitForFunction(() => document.querySelector('[data-reply] button').textContent === 'Reply accepted');
+    await page.locator('[data-contact-select="contact-2"]').click();
+    await page.locator('[data-contact-select="contact-1"]').click();
+    assert.equal(await page.locator('[data-reply] button').isDisabled(), true, 'Switching conversations must not resend accepted replies');
+    assert.equal(await page.locator('[data-reply] textarea').getAttribute('readonly'), '');
     assert.equal(await page.locator('.sidebar a[href="admin-users.html"]').count(), 0);
     assert.equal(await page.locator('.sidebar a[href="admin-profile.html"]').count(), 0);
     assert.equal(await page.locator('.sidebar a[href="admin-reports.html"]').count(), 0);

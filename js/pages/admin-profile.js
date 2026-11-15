@@ -98,6 +98,15 @@ async function render() {
       </div>
     </section>`;
 
+  const bookingRules = document.createElement('div');
+  bookingRules.className = 'form-row booking-rules';
+  document.querySelectorAll('.settings-form > label').forEach(label => bookingRules.append(label));
+  document.querySelector('.settings-group').append(bookingRules);
+  const scheduleHeader = document.createElement('div');
+  scheduleHeader.className = 'schedule-columns';
+  scheduleHeader.setAttribute('aria-hidden', 'true');
+  scheduleHeader.innerHTML = '<span>Day</span><span>Opens</span><span>Closes</span><span>Closed</span>';
+  document.querySelector('.schedule-settings').prepend(scheduleHeader);
   const updateMode = () => {
     const demo = document.querySelector('[name="demoPayments"]')?.checked || false;
     document.querySelector('[data-payment-mode-note]').textContent = demo ? 'GCash and Maya demo options are active. Demo bookings are labeled and excluded from real booking/revenue analytics. Real details below are saved separately.' : 'Real payments: mobile numbers must use Philippine format. Uploaded QRs must be reusable QRPh payment codes. Account ownership is not automatically verified.';

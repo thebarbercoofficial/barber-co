@@ -119,6 +119,121 @@ body.staff-page .site-header.staff-header { background: var(--oak-deep); border-
 .report-footnotes { border-top: 1px solid #ccc; padding-top: 10px; }
 .printable-report [hidden] { display: none; }
 @page { size: A4; margin: 14mm; }
+/* Dense operational layouts: use columns for work, not stretched message cards. */
+@media screen {
+  .staff-page [hidden] { display: none !important; }
+  .staff-page .workspace { padding: 14px 18px 20px; }
+  .staff-page .workspace h1 { font-size: 21px; margin: 0 0 3px; }
+  .staff-page .workspace-heading { margin-bottom: 12px; gap: 10px; }
+  .staff-page .workspace-heading .eyebrow { display: none; }
+  .staff-page .sidebar { padding-top: 10px; gap: 12px; }
+  .staff-page .sidebar a { min-height: 36px; padding-block: 7px; }
+  .sidebar-shop { padding-bottom: 10px; }
+  .sidebar-footer { margin-top: 16px; }
+  .staff-page .button { min-height: 32px; padding: 7px 10px; }
+  .staff-page input, .staff-page select { min-height: 33px; padding-block: 7px; }
+  .staff-page label { margin-bottom: 8px; gap: 4px; }
+  .staff-page .panel, .staff-page .form-card { padding: 14px; }
+  .staff-page .panel-heading { margin-bottom: 9px; }
+  .staff-page .workspace > .panel, .dashboard-layout .panel { padding: 12px 0; }
+  .staff-page .metric-grid { margin-bottom: 14px; }
+  .staff-page .metric { padding: 11px 14px; gap: 5px; }
+  .staff-page .metric strong { font-size: 24px; }
+  .staff-page .appointment-row { padding: 10px 12px; gap: 10px; }
+  .staff-page .management-record { min-height: 58px; }
+  .staff-page .management-record .staff-avatar { width: 28px; height: 28px; }
+  .staff-page .compact-row { padding: 9px 0; }
+  .staff-page .management-layout { gap: 16px; grid-template-columns: minmax(0, 1fr) 290px; }
+  .staff-page .frontdesk-layout { grid-template-columns: 280px minmax(0, 1fr); gap: 16px; }
+  .staff-page .queue-overview { padding: 11px 0; margin-bottom: 12px; }
+  .staff-page .queue-counters strong { font-size: 22px; }
+  .staff-page .list-toolbar { margin-bottom: 9px; }
+  .staff-page .data-table-scroll th, .staff-page .data-table-scroll td { padding: 8px 10px; }
+  .staff-page .analytics-section { margin-bottom: 12px; padding: 12px 0; }
+  .staff-page .chart-frame { height: 240px; }
+  .staff-page .chart-inspector { margin-bottom: 5px; }
+  .staff-page .settings-layout { grid-template-columns: 1fr; }
+  .staff-page .settings-account { display: none !important; }
+  .staff-page .settings-form { padding: 0; border: 0; background: transparent; gap: 14px; align-items: start; }
+  .staff-page .settings-form > .settings-group { min-width: 0; }
+  .staff-page .settings-form > button { grid-column: 1 / -1; width: auto; justify-self: end; }
+  .staff-page .schedule-setting-row { padding-block: 8px; }
+  .staff-page .upload-box { padding: 10px; }
+  .staff-page .qr-preview { max-width: 120px; max-height: 120px; object-fit: contain; }
+  .reports-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 20px; align-items: start; }
+  .reports-layout > .analytics-section { margin: 0; border-top: 0; padding-top: 0; }
+  .report-breakdowns { min-width: 0; }
+  .staff-page .report-breakdowns > .panel { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; padding: 0 0 12px; }
+  .reports-layout > .report-services { grid-column: 2; margin-top: 12px; }
+  .reports-layout .report-services > .panel { padding: 0; }
+  .reports-layout .report-bars { grid-template-columns: 1fr; gap: 8px; }
+  .reports-layout .barber-performance-table { max-height: 300px; }
+  .contact-inbox-meta { margin: 0 0 8px; }
+  .contact-inbox-list { display: grid; grid-template-columns: 320px minmax(0, 1fr); border: 1px solid var(--line); background: #fff; align-items: start; max-width: 1380px; }
+  .inbox-index { min-width: 0; border-right: 1px solid var(--line); }
+  .staff-page .inbox-index > .search-field { margin: 10px; max-width: none; }
+  .inbox-message-list { max-height: calc(100dvh - 250px); overflow: auto; }
+  .inbox-message { display: grid; width: 100%; padding: 12px 14px; gap: 5px; text-align: left; border: 0; border-top: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; font: inherit; }
+  .inbox-message:hover { background: #f5f5f5; }
+  .inbox-message.is-selected { background: #f7eedf; box-shadow: inset 3px 0 var(--gold); }
+  .inbox-message > span:first-child { display: flex; flex-wrap: wrap; gap: 5px 10px; align-items: center; justify-content: space-between; }
+  .inbox-message strong { font-size: 12px; }
+  .inbox-message small, .inbox-reply-count { font-size: 10px; color: var(--muted); }
+  .inbox-email, .inbox-snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+  .inbox-email { color: var(--muted); }
+  .inbox-conversation { min-width: 0; }
+  .staff-page .contact-inbox-item { padding: 14px 18px; border: 0; position: relative; max-height: calc(100dvh - 210px); overflow: auto; }
+  .staff-page .contact-inbox-item > header { padding-right: 40px; gap: 8px; margin-bottom: 12px; }
+  .staff-page .contact-inbox-item h2 { font-size: 14px; margin-bottom: 4px; }
+  .staff-page .contact-inbox-item > p { margin: 0 0 14px; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .staff-page .contact-reply { padding: 8px 12px; margin: 8px 0; background: #f7f7f8; border-left: 2px solid #b98536; font-size: 12px; }
+  .staff-page .contact-reply p { margin: 4px 0 7px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .staff-page .contact-inbox-item > [data-archive-contact] { position: absolute; right: 12px; top: 12px; }
+  .staff-page .inbox-composer { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .staff-page .inbox-composer textarea { min-height: 72px; resize: vertical; }
+  .staff-page .inbox-composer > button { justify-self: end; }
+  .staff-page .inbox-composer [data-reply-status]:empty { display: none; }
+  .inbox-no-matches { padding: 12px; font-size: 12px; color: var(--muted); }
+  .staff-page .booking-rules { max-width: 760px; margin-top: 12px; }
+  .staff-page .booking-rules > label { align-content: start; }
+  .schedule-columns { display: grid; grid-template-columns: 90px 1fr 1fr 55px; gap: 10px; padding-bottom: 6px; font-size: 10px; color: var(--muted); }
+  .staff-page .schedule-setting-row { grid-template-columns: 90px minmax(0, 1fr) minmax(0, 1fr) 55px; gap: 10px; padding-block: 6px; }
+  .staff-page .schedule-setting-row > label { font-size: 0; gap: 0; }
+  .staff-page .schedule-setting-row input { font-size: 12px; }
+  .staff-page .schedule-setting-row > .check-row { justify-content: center; }
+}
+@media screen and (min-width: 1500px) {
+  .studio-dashboard .dashboard-layout { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(280px, .9fr); gap: 20px; }
+  .studio-dashboard .dashboard-layout > div:first-child { display: contents; }
+  .studio-dashboard [data-frontdesk-panel] { padding-top: 0; }
+  .studio-dashboard .dashboard-layout > div:last-child { padding-left: 18px; }
+  .staff-page .settings-form { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .staff-page .settings-form > .settings-group:first-child { grid-column: 1 / -1; }
+  .staff-page .settings-form > .settings-group:last-of-type { grid-column: 3; grid-row: 2; }
+}
+@media screen and (min-width: 961px) and (max-width: 1499px) {
+  .staff-page .settings-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .staff-page .settings-form > .schedule-group { grid-column: 1 / -1; }
+}
+@media screen and (max-width: 1250px) {
+  .reports-layout { grid-template-columns: 1fr; }
+  .reports-layout > .analytics-section { grid-row: auto; }
+  .reports-layout > .report-services { grid-column: auto; }
+}
+@media screen and (max-width: 680px) {
+  .staff-page .workspace { padding: 14px 12px; }
+  .staff-page .management-layout, .staff-page .frontdesk-layout { grid-template-columns: 1fr; }
+  .staff-page .button { min-height: 36px; }
+  .staff-page input, .staff-page select { min-height: 36px; }
+  .contact-inbox-list { grid-template-columns: 1fr; }
+  .inbox-index { border-right: 0; border-bottom: 1px solid var(--line); }
+  .inbox-message-list { max-height: 210px; }
+  .staff-page .contact-inbox-item { max-height: none; padding: 14px; }
+  .staff-page .settings-form { grid-template-columns: 1fr; }
+  .schedule-columns { display: none; }
+  .staff-page .schedule-setting-row > label { font-size: 11px; }
+  .staff-page .schedule-setting-row { grid-template-columns: 1fr 1fr; }
+}
 @media print {
   body.printing-report { background: white !important; margin: 0 !important; overflow: visible !important; }
   body.printing-report > *:not([data-report-dialog]) { display: none !important; }

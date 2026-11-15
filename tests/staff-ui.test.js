@@ -173,7 +173,8 @@ async function main() {
           if (name === 'dashboard' && width >= 1500) {
             const chart = await page.locator('[data-analytics]').boundingBox();
             const desk = await page.locator('[data-frontdesk-panel]').boundingBox();
-            assert.ok(Math.abs(chart.y - desk.y) < 2 && desk.x > chart.x + chart.width, 'Wide dashboards must use a separate front desk column');
+            const bookings = await page.locator('[data-online-activity]').boundingBox();
+            assert.ok(desk.y >= bookings.y + bookings.height - 1 && desk.x > chart.x, 'Queue belongs below bookings, not in its own mostly empty column');
           }
           if (name === 'reports' && width > 1250) {
             const performance = await page.locator('[aria-labelledby="barber-performance-title"]').boundingBox();
@@ -348,6 +349,29 @@ async function main() {
     await page.waitForURL(/\/(login|admin-logbook)\.html$/);
     console.log('Moderator navigation and admin-only page restriction passed');
     await mod.close();
+    const sparse = await browser.newContext({ viewport: { width: 2560, height: 1280 } });
+    await fixtures(sparse, 'admin');
+    const fullTeam = Array.from({ length: 8 }, (_, i) => ({ ...barbers[i % 2], id: `team-${i}`, name: `Barber ${i + 1}` }));
+    await sparse.route('**/api/admin/queue', route => route.fulfill({ json: { queue: [] } }));
+    await sparse.route('**/api/catalog', route => route.fulfill({ json: { services, barbers: fullTeam } }));
+    await sparse.route('**/api/admin/barbers', route => route.fulfill({ json: { barbers: fullTeam } }));
+    await sparse.route('**/api/admin/analytics', route => route.fulfill({ json: { totals: { customers: 2, bookings: 20, waiting: 0, revenue: 3550 }, daily, services, barbers: fullTeam, barberPerformance } }));
+    await sparse.route('**/api/admin/appointments', route => route.fulfill({ json: { appointments: Array.from({ length: 4 }, (_, i) => ({ ...initialAppointments[i % 2], mongoId: `sparse-${i}`, customer: `Booking customer ${i + 1}` })), reservations: [] } }));
+    const sparsePage = await sparse.newPage();
+    await sparsePage.goto(`${base}/admin-dashboard.html`);
+    await sparsePage.waitForSelector('[data-dashboard-team] .compact-row');
+    await sparsePage.waitForTimeout(350);
+    assert.equal(await sparsePage.locator('.dashboard-roster .compact-row').count(), 8);
+    assert.ok((await sparsePage.locator('[data-frontdesk-panel]').boundingBox()).height < 180, 'Empty queue must collapse to a short status strip');
+    assert.ok((await sparsePage.locator('.dashboard-roster').boundingBox()).height < 260, 'Eight barbers must use multiple roster columns');
+    assert.ok((await sparsePage.locator('[data-quick-service]').boundingBox()).height < 150, 'Quick service uses an inline form');
+    const rosterBounds = await sparsePage.locator('[data-dashboard-team]').boundingBox();
+    const chartBounds = await sparsePage.locator('[data-analytics]').boundingBox();
+    const bookingBounds = await sparsePage.locator('[data-online-activity]').boundingBox();
+    assert.ok(rosterBounds.width > chartBounds.width + bookingBounds.width, 'Roster must use the full row rather than leaving a blank neighboring column');
+    await sparsePage.screenshot({ path: path.join(root, 'staff-ui-dashboard-empty-queue-2560-check.png'), fullPage: true });
+    await sparse.close();
+    console.log('Empty queue with eight barbers fits a compact two-column dashboard');
     const empty = await browser.newContext({ viewport: { width: 390, height: 900 } });
     await fixtures(empty, 'admin');
     await empty.route('**/api/admin/analytics', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ totals: { bookings: 0, customers: 0, waiting: 0, revenue: 0 }, services: [], barbers: [], daily: daily.map((day) => ({ ...day, bookings: 0, walkins: 0, revenue: 0 })) }) }));

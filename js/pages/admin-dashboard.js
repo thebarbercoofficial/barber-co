@@ -81,8 +81,15 @@ async function render() {
   const dashboard = document.querySelector('.dashboard-layout');
   const frontdesk = dashboard.firstElementChild.querySelector('section');
   frontdesk.dataset.frontdeskPanel = '';
+  const team = dashboard.lastElementChild.querySelector('section');
+  team.dataset.dashboardTeam = '';
+  const roster = document.createElement('div');
+  roster.className = 'dashboard-roster';
+  team.querySelectorAll('.compact-row').forEach(row => roster.append(row));
+  team.append(roster);
   dashboard.firstElementChild.prepend(document.querySelector('[data-analytics]'));
-  dashboard.lastElementChild.prepend(onlinePanel);
+  dashboard.lastElementChild.prepend(onlinePanel, frontdesk);
+  dashboard.append(team);
   document.querySelector('.workspace').classList.add('studio-dashboard');
   document.querySelector('[data-call-next]').disabled = !queue.some(item => item.status === 'waiting');
   document.querySelector("[data-call-next]").addEventListener("click", async () => {

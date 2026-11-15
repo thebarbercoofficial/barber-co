@@ -203,9 +203,8 @@ body.staff-page .site-header.staff-header { background: var(--oak-deep); border-
   .staff-page .schedule-setting-row > .check-row { justify-content: center; }
 }
 @media screen and (min-width: 1500px) {
-  .studio-dashboard .dashboard-layout { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(280px, .9fr); gap: 20px; }
-  .studio-dashboard .dashboard-layout > div:first-child { display: contents; }
-  .studio-dashboard [data-frontdesk-panel] { padding-top: 0; }
+  .studio-dashboard .dashboard-layout { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; }
+  .studio-dashboard .dashboard-layout > div:first-child { display: grid; }
   .studio-dashboard .dashboard-layout > div:last-child { padding-left: 18px; }
   .staff-page .settings-form { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .staff-page .settings-form > .settings-group:first-child { grid-column: 1 / -1; }
@@ -259,3 +258,31 @@ body.staff-page .site-header.staff-header { background: var(--oak-deep); border-
 @media (max-width: 960px) { .staff-page .workspace { padding: 20px; } .staff-page .settings-layout { grid-template-columns: 1fr; } .workspace-search { max-width: 350px; } .staff-header-actions { gap: 10px; } }
 @media (max-width: 680px) { .workspace-search { display: none; } body.staff-page .site-header.staff-header { padding-inline: 12px; gap: 8px; } .staff-header-brand { gap: 8px; } .staff-header-actions { gap: 7px; } .staff-page .workspace { padding: 17px 14px 24px; } .staff-page .workspace h1 { font-size: 21px; } .staff-page .metric-grid { gap: 0; } .staff-page .metric { padding: 13px; border-bottom: 1px solid var(--line); } .staff-page .metric:nth-child(2) { border-right: 0; } .staff-page .metric:nth-child(n+3) { border-bottom: 0; } .staff-page .metric strong { font-size: 23px; } .staff-page .metric-label { font-size: 11px; } .staff-page .appointment-record { grid-template-columns: 72px minmax(0, 1fr) auto; } .management-layout, .settings-layout { grid-template-columns: 1fr; } .management-layout > form.panel { position: static; } .staff-page .appointment-record .button-row { justify-content: flex-start; } .workspace-heading > small { margin-left: 0; } }
 @media screen and (max-width: 680px) { .report-bars { grid-template-columns: 1fr; } .report-preview-toolbar { align-items: flex-start; padding: 14px; flex-wrap: wrap; } .report-options { padding-inline: 14px; gap: 12px; } .printable-report { padding: 16px; margin: 10px; } .report-kpis { grid-template-columns: 1fr; } .report-kpis > div { border-right: 0; border-bottom: 1px solid #ddd; } .printable-report table { font-size: 9px; } .printable-report th, .printable-report td { padding: 6px 3px; } }
+@media screen {
+  .studio-dashboard .dashboard-layout > div { align-content: start; }
+  .studio-dashboard [data-dashboard-team] { grid-column: 1 / -1; }
+  .studio-dashboard .dashboard-layout { row-gap: 12px; }
+  .studio-dashboard [data-frontdesk-panel] .staff-empty { display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: center; padding: 10px 0; gap: 8px; text-align: left; }
+  .studio-dashboard [data-frontdesk-panel] .staff-empty > svg { width: 18px; height: 18px; }
+  .studio-dashboard [data-frontdesk-panel] .staff-empty > span { max-width: none; }
+  .studio-dashboard [data-frontdesk-panel] .panel-actions { margin-top: 8px; }
+  .studio-dashboard .dashboard-roster { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; }
+  .studio-dashboard .dashboard-roster .compact-row { min-width: 0; }
+  .studio-dashboard [data-quick-service] { display: grid; grid-template-columns: minmax(0, 1fr) 110px auto; gap: 10px; align-items: end; }
+  .studio-dashboard [data-quick-service] .panel-heading { grid-column: 1 / -1; }
+  .studio-dashboard [data-quick-service] label { margin: 0; }
+  .studio-dashboard [data-quick-service] > button { width: auto; }
+}
+@media screen and (min-width: 1500px) {
+  .studio-dashboard .chart-frame { height: 320px; }
+  .studio-dashboard .compact-row { font-size: 14px; padding-block: 12px; }
+  .studio-dashboard .compact-row small { font-size: 12px; }
+  .studio-dashboard .panel-heading h3 { font-size: 16px; }
+  .studio-dashboard .dashboard-roster { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .studio-dashboard .metric strong { font-size: 30px; }
+}
+@media screen and (max-width: 680px) {
+  .studio-dashboard .dashboard-roster { grid-template-columns: 1fr; }
+  .studio-dashboard [data-quick-service] { grid-template-columns: minmax(0, 1fr) 90px; }
+  .studio-dashboard [data-quick-service] > button { grid-column: 1 / -1; }
+}

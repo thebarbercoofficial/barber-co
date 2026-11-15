@@ -149,6 +149,11 @@ function mergedSettings(settings = {}) {
   const operatingHours = { ...defaultSettings.operatingHours, ...(settings.operatingHours || {}) };
   const gcash = { ...defaultSettings.gcash, ...(settings.gcash || {}) };
   const maya = { ...defaultSettings.maya, ...(settings.maya || {}) };
+  // Saved test-era recipients must not become payable just because demo mode ended.
+  if (settings.paymentMode === 'demo' && settings.paymentDetailsConfirmed !== true) {
+    gcash.enabled = false;
+    maya.enabled = false;
+  }
   const allowDemoPayments = false;
   const paymentMode = 'live';
   for (const day of dayNames) {

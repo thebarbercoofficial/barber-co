@@ -12,7 +12,9 @@ for (const input of [{}, { paymentMode: 'demo' }, { paymentMode: 'demo', gcash: 
   assert.equal(settings.demoMethods, undefined);
   assert.equal(paymentConfigured(settings), false);
 }
-const settings = mergedSettings({ paymentMode: 'demo', gcash: { enabled: true, accountName: 'Shop', accountNumber: '09123456789' } });
+const legacy = mergedSettings({ paymentMode: 'demo', gcash: { enabled: true, accountName: 'Test-era recipient', accountNumber: '09123456789' } });
+assert.equal(paymentConfigured(legacy), false, 'unconfirmed test-era recipient must not become live automatically');
+const settings = mergedSettings({ paymentMode: 'live', paymentDetailsConfirmed: true, gcash: { enabled: true, accountName: 'Shop', accountNumber: '09123456789' } });
 assert.equal(settings.paymentMode, 'live');
 assert.equal(paymentConfigured(settings), true);
 console.log('Live payments only: no demo fallback, legacy demo setting ignored, unconfigured checkout blocked, real method accepted');

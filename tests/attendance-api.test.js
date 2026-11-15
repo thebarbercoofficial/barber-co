@@ -41,12 +41,18 @@ async function main() {
   let queue = await request('/admin/queue', null, admin, 'GET');
   assert.equal(queue.status, 200);
   assert.equal(queue.queue.filter(item => item.source === 'appointment').length, 1);
+  const publicQueue = await request('/queue', null, customer, 'GET');
+  assert.equal(publicQueue.queue.filter(item => item.source === 'appointment').length, 1, 'checked-in booking appears in public display feed');
+  const mine = await request('/appointments/mine', null, customer, 'GET');
+  assert.equal(mine.appointments.find(item => item.mongoId === String(appointment._id)).attendanceStatus, 'in-queue');
   assert.equal(database.records.appointments.find(item => String(item._id) === String(absent._id)).cancelledBy, 'no-show');
   assert.equal(database.records.appointmentSlots.length, 0);
   let next = await request('/admin/queue/next', {}, admin, 'POST');
   assert.equal(next.status, 200);
   assert.equal(next.ticket.source, 'appointment', 'due appointment precedes older walk-in');
   const linkedId = next.ticket.id;
+  const serving = await request('/appointments/mine', null, customer, 'GET');
+  assert.equal(serving.appointments.find(item => item.mongoId === String(appointment._id)).attendanceStatus, 'serving');
   next = await request('/admin/queue/next', {}, admin, 'POST');
   assert.equal(next.status, 200);
   assert.equal(next.ticket.customer, 'Walk-in', 'another barber continues serving');

@@ -72,7 +72,7 @@ async function render() {
   const policyNotice = document.createElement('p');
   document.querySelector('[data-confirm-payment]').insertAdjacentHTML('beforebegin', `<p class="field-help">Check in with staff within ${Number(settings.gracePeriodMinutes ?? 10)} minutes after your appointment. Each group member must arrive. No-shows lose their reserved time without a refund; late customers may join as walk-ins.</p>`);
   policyNotice.className = 'field-help';
-  policyNotice.innerHTML = 'Bookings are non-refundable, including the service payment and booking fee. <a class="inline" href="#booking-terms" data-payment-terms>Read our booking terms and policy</a> before paying.';
+  policyNotice.innerHTML = 'Customer cancellations and no-shows are non-refundable, including the booking fee. If the shop rejects a pending paid request, staff must verify the transfer and arrange a manual refund. <a class="inline" href="#booking-terms" data-payment-terms>Read our booking terms and policy</a> before paying.';
   document.querySelector('.form-card .summary-list').after(policyNotice);
   policyNotice.querySelector('a').onclick = (event) => { event.preventDefault(); BookingPolicy.terms(); };
   if (receiptFile) {

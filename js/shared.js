@@ -441,3 +441,34 @@ const BarberCo = (() => {
 
   return { state, barbers, save, peso, byId, initials, avatar, toast, initHeader, nav, shopEndcap, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, loadSettings, setSession, clearSession, authToken, isAuthenticated, currentRole, canAccess, icon, safeText };
 })();
+
+// A reschedule must move to another future slot, using the shop's time zone.
+window.mountRescheduleTimes = function (form, item) {
+  const input = form.elements.time;
+  const select = document.createElement('select');
+  select.name = 'time';
+  select.required = true;
+  input.replaceWith(select);
+  const refresh = () => {
+    const previous = select.value;
+    const settings = BarberCo.state.shopSettings || {};
+    const day = new Date(`${form.elements.date.value}T12:00:00+08:00`).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', weekday: 'long' }).toLowerCase();
+    const hours = settings.operatingHours?.[day];
+    const duration = Number(item.durationMinutes) || 30;
+    const minutes = value => { const [hour, minute] = String(value).split(':').map(Number); return hour * 60 + minute; };
+    select.replaceChildren(new Option('Choose another time', ''));
+    for (let minute = 0; minute < 24 * 60; minute += 30) {
+      const time = `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+      const original = form.elements.date.value === item.date && time === item.time;
+      const expired = new Date(`${form.elements.date.value}T${time}:00+08:00`).getTime() < Date.now() + 15 * 60000;
+      const option = new Option(`${time}${original ? ' - current booking' : expired ? ' - unavailable' : ''}`, time);
+      const closed = hours && (hours.closed || minute < minutes(hours.open) || minute + duration > minutes(hours.close));
+      option.disabled = original || expired || Boolean(closed) || (settings.closedDates || []).includes(form.elements.date.value);
+      select.add(option);
+    }
+    if ([...select.options].some(option => option.value === previous && !option.disabled)) select.value = previous;
+    form.elements.date.min = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+  };
+  form.elements.date.addEventListener('change', refresh);
+  refresh();
+};

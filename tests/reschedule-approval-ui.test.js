@@ -100,7 +100,9 @@ async function main() {
           assert.match(details.legacy, /Current schedule:/);
           assert.equal(booking.date, initial.date);
           await page.locator('[data-reschedule]').click();
+          assert.equal(await page.locator(`dialog [name="time"] option[value="${initial.time}"]`).evaluate(option => option.disabled), true, 'existing slot cannot be selected');
           await page.locator('dialog [name="date"]').fill('2099-12-22');
+          await page.locator('dialog [name="time"]').selectOption('14:30');
           await page.locator('dialog [name="reason"]').fill('Staff schedule changed.');
           page.once('dialog', dialog => dialog.dismiss());
           await page.getByRole('button', { name: 'Save schedule' }).click();
@@ -118,8 +120,9 @@ async function main() {
           assert.equal(writes.at(-1).body.requestedAt, request.requestedAt);
         } else {
           await page.locator('[data-reschedule]').click();
+          assert.equal(await page.locator(`dialog [name="time"] option[value="${initial.time}"]`).evaluate(option => option.disabled), true, 'customer cannot select unchanged schedule');
           await page.locator('dialog [name="date"]').fill(request.date);
-          await page.locator('dialog [name="time"]').fill(request.time);
+          await page.locator('dialog [name="time"]').selectOption(request.time);
           page.once('dialog', async dialog => {
             assert.match(dialog.message(), /Review deadline:[\s\S]*No refund/);
             await dialog.dismiss();

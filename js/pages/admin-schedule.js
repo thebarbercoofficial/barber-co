@@ -45,6 +45,7 @@ function rescheduleDetails(item) {
 }
 
 function matchesAppointmentFilter(item, filter) {
+  if (['no-show', 'in-queue', 'serving', 'completed', 'cancelled'].includes(filter)) return !item.archived && (item.attendanceStatus || item.status) === filter;
   return (filter === 'archived' ? item.archived === true : item.archived !== true) &&
     (['all', 'archived'].includes(filter) || (filter === 'reschedule-review' ? pendingReschedule(item) : filter === 'history' ? ['completed', 'cancelled'].includes(item.status) : item.status === filter));
 }
@@ -105,6 +106,12 @@ function updatePanel(connectionError = "", force = false) {
   });
   const visibleHistory = appointments.filter(item => ['completed', 'cancelled'].includes(item.status) && (statusFilter === 'archived' ? item.archived === true : item.archived !== true));
   panel?.querySelectorAll('.appointment-record').forEach(row => {
+    const entry = appointments.find(item => String(item.id) === row.dataset.appointmentId);
+    if (entry) {
+      const badge = row.querySelector('.status-pill');
+      if (badge) badge.textContent = ({ 'in-queue': 'In queue', serving: 'Now serving', 'no-show': 'No-show', pending: 'Pending / needs review', completed: 'Completed', cancelled: 'Cancelled', confirmed: 'Accepted' })[entry.attendanceStatus || entry.status] || entry.status;
+      if (entry.refundStatus === 'review-required') row.querySelector('.row-main')?.insertAdjacentHTML('beforeend', '<small><strong>Payment / refund review required.</strong> Verify the transfer and contact the customer to arrange a manual refund. No automatic refund has been sent.</small>');
+    }
     const item = visibleHistory.find(entry => String(entry.id) === row.dataset.appointmentId);
     if (item) row.querySelector('.button-row')?.insertAdjacentHTML('beforeend', `<button class="icon-button" type="button" data-archive-appointment="${item.id}" title="${item.archived ? 'Restore appointment' : 'Archive appointment'}" aria-label="${item.archived ? 'Restore appointment' : 'Archive appointment'}">${icon(item.archived ? 'ArchiveRestore' : 'Archive')}</button>`);
   });
@@ -166,6 +173,9 @@ async function render() {
   lastSnapshot = snapshot(connectionError);
   document.querySelector('.filter-tabs').insertAdjacentHTML('beforeend', '<button type="button" data-filter="archived" aria-pressed="false">Archived<span data-filter-count="archived">0</span></button>');
   document.querySelector('.filter-tabs').insertAdjacentHTML('beforeend', '<button type="button" data-filter="reschedule-review" aria-pressed="false">Reschedule review<span data-filter-count="reschedule-review">0</span></button>');
+  for (const [status, label] of Object.entries({ 'in-queue': 'In queue', serving: 'Now serving', 'no-show': 'No-show', completed: 'Completed', cancelled: 'Cancelled' })) {
+    document.querySelector('.filter-tabs').insertAdjacentHTML('beforeend', `<button type="button" data-filter="${status}" aria-pressed="false">${label}<span data-filter-count="${status}">0</span></button>`);
+  }
   updatePanel(connectionError, true);
   document.querySelector('[data-appointment-search]').addEventListener('input', () => updatePanel(latestConnectionError, true));
   document.querySelectorAll('[data-filter]').forEach((button) => button.addEventListener('click', () => {
@@ -229,6 +239,7 @@ async function render() {
       modal.className = 'receipt-dialog';
       modal.setAttribute('aria-label', 'Reschedule appointment');
       modal.innerHTML = `<form data-reschedule-form><h3>Reschedule appointment</h3><label>Date<input type="date" name="date" required value="${safeText(item.date)}"></label><label>Time<input type="time" name="time" step="1800" required value="${safeText(item.time)}"></label><p data-reschedule-error role="alert"></p><div class="button-row"><button class="button secondary" type="button" data-close>Cancel</button><button class="button primary" type="submit">Save schedule</button></div></form>`;
+      window.mountRescheduleTimes(modal.querySelector('form'), item);
       const reasonLabel = document.createElement('label');
       reasonLabel.textContent = 'Reason / message to customer';
       const reasonInput = document.createElement('textarea');

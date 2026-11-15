@@ -79,6 +79,9 @@ async function render() {
 
   document.querySelector("[data-walkin]").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const button = event.target.querySelector('[type="submit"]');
+    if (button.disabled) return;
+    button.disabled = true;
     const data = new FormData(event.target);
     try {
       const payload = await api("/queue/walkin", {
@@ -90,6 +93,7 @@ async function render() {
       location.href = `queue.html?ticket=${payload.ticket.id}`;
     } catch (error) {
       toast(error.message || "The queue could not be reached. Please ask the front desk for help.");
+        button.disabled = false;
     }
   });
 

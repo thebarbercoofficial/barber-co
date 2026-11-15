@@ -12,8 +12,7 @@ function escapeAttr(value = "") {
 }
 
 function localDateValue(date = new Date()) {
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+  return new Date(date.getTime() + 8 * 3600000).toISOString().slice(0, 10);
 }
 
 const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -193,13 +192,14 @@ async function render() {
     const service = byId(state.services, document.querySelector('[name="service"]').value);
     const duration = durationMinutes(service.duration) * partySize();
     const today = localDateValue();
-    const now = new Date(Date.now() + 5 * 60 * 1000);
-    const earliestToday = Math.ceil((now.getHours() * 60 + now.getMinutes()) / 30) * 30;
+    const now = new Date(Date.now() + 15 * 60 * 1000 + 8 * 3600000);
+    const earliestToday = Math.ceil((now.getUTCHours() * 60 + now.getUTCMinutes()) / 30) * 30;
     const first = Math.max(toMinutes(shopHours.open), date === today ? earliestToday : 0);
     const last = toMinutes(shopHours.close) - duration;
     const slots = [];
     for (let value = Math.ceil(first / 30) * 30; value <= last; value += 30) {
       const slot = `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+      if (new Date(`${date}T${slot}:00+08:00`).getTime() < Date.now() + 15 * 60000) continue;
       slots.push(`<option value="${slot}">${timeLabel(slot)}</option>`);
     }
     timeInput.innerHTML = slots.length ? `<option value="">Choose a time</option>${slots.join("")}` : `<option value="">No remaining times</option>`;
@@ -233,9 +233,9 @@ async function render() {
     const data = new FormData(event.target);
     const partyMembers = data.getAll('partyMember').map((name) => String(name).trim());
     if (!validParty() || partyMembers.length !== partySize() || partyMembers.some((name) => !name)) return toast('Enter a party size from 1 to 10 and a name for every person.');
-    const appointmentTime = new Date(`${data.get("date")}T${data.get("time")}:00`);
-    if (!Number.isFinite(appointmentTime.getTime()) || appointmentTime <= new Date()) {
-      toast("Choose a date and time that has not already passed.");
+    const appointmentTime = new Date(`${data.get("date")}T${data.get("time")}:00+08:00`);
+    if (!Number.isFinite(appointmentTime.getTime()) || appointmentTime.getTime() < Date.now() + 15 * 60000) {
+      toast("Choose a Philippine time at least 15 minutes from now.");
       return;
     }
     if (timeInput.disabled || !timeInput.value || timeInput.selectedOptions[0]?.disabled) return toast("Choose an available date and time during shop hours.");

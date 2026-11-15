@@ -15,7 +15,8 @@ function ticketCard(item, featured = false, index = 0) {
 function draw(queue) {
   const inService = queue.filter((item) => item.status === 'serving');
   const serving = inService[0];
-  const waiting = queue.filter((item) => item.status === "waiting").sort((a, b) => a.queueNumber - b.queueNumber);
+  const due = item => item.source === 'appointment' && new Date(item.scheduledAt).getTime() <= Date.now();
+  const waiting = queue.filter((item) => item.status === "waiting").sort((a, b) => Number(due(b)) - Number(due(a)) || a.queueNumber - b.queueNumber);
   const signature = JSON.stringify(queue.map((item) => [item.id, item.customer, item.status, item.waitMinutes, item.cutName]));
   if (signature === lastSignature) {
     const clock = document.querySelector("[data-tv-clock]");

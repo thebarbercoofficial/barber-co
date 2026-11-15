@@ -33,9 +33,18 @@ async function main() {
   await desk.complete(db, db.records.queue[0], 'done');
   assert.equal(db.records.appointments.find(item => String(item._id) === String(present._id)).status, 'completed');
   assert.equal(db.records.appointmentSlots.length, 0);
-  assert.equal(notices.length, 2);
+  assert.equal(notices.filter(text => text.includes('did not check in')).length, 2);
+  assert.equal(notices.filter(text => text.includes('is checked in')).length, 1);
+  assert.equal(notices.filter(text => text.includes('is completed')).length, 1);
+  const noticeCount = notices.length;
   await desk.sweep(db, new Date(now.getTime() + 720000));
-  assert.equal(notices.length, 2, 'no repeated forfeiture notifications');
+  assert.equal(notices.length, noticeCount, 'no repeated forfeiture notifications');
+
+  const concurrent = reservation({ partySize: 2, partyMembers: ['One', 'Two'], durationMinutes: 60 });
+  const concurrentDb = memoryDb({ appointments: [concurrent], queue: [] });
+  await Promise.all([desk.checkIn(concurrentDb, String(concurrent._id), [0], now), desk.checkIn(concurrentDb, String(concurrent._id), [1], now)]);
+  assert.equal(Object.keys(concurrentDb.records.appointments[0].arrivals).length, 2, 'concurrent group arrivals are preserved');
+  assert.equal(concurrentDb.records.queue.length, 2);
 
   const upcoming = reservation({ time: '14:30', graceDeadline: new Date('2100-03-03T06:40:00Z') });
   const walkin = { _id: new ObjectId(), status: 'waiting', customer: 'Walk-in', queueNumber: 1, serviceId: 'cut', durationMinutes: 30, barberId: 'alex' };

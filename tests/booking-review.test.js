@@ -282,7 +282,7 @@ async function main() {
       await review.locator('[data-filter="pending"]').click();
       await review.locator('.appointment-record').filter({ hasText: booking.request }).waitFor({ state: 'visible', timeout: 10000 });
       assert.ok((await review.locator('.appointment-record').filter({ hasText: booking.request }).innerText()).includes('Customer request:'), 'Open staff screen should show the new booking and request without reloading');
-      await dashboard.locator('.dashboard-layout > div:first-child > section:nth-of-type(2) .compact-row').filter({ hasText: booking.request }).filter({ hasText: time }).waitFor({ state: 'visible', timeout: 10000 });
+      await dashboard.locator('[data-online-activity] .compact-row').filter({ hasText: booking.request }).filter({ hasText: time }).waitFor({ state: 'visible', timeout: 10000 });
       for (const screen of [dashboard, reports]) {
         await screen.waitForFunction((count) => document.querySelector('[data-metric="bookings"] strong')?.textContent === String(count), records.appointments.length, { timeout: 10000 });
         assert.ok((await screen.locator('[data-metric="bookings"] small').innerText()).includes(`${records.appointments.filter((item) => item.demoPayment).length} test bookings`));

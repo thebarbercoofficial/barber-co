@@ -25,7 +25,8 @@ function rescheduleUpdate(item) {
 function bookingActions(item) {
   const group = item.partySize > 1 ? `<p style="grid-column:1/-1"><strong>Group of ${escapeValue(item.partySize)}:</strong> ${(item.partyMembers || []).map(escapeValue).join(', ')}<br>Served consecutively by one barber${item.durationMinutes ? ` / ${escapeValue(item.durationMinutes)} minutes total` : ''}. Rescheduling or cancellation applies to the whole group.</p>` : '';
   const attendance = item.cancelledBy === 'no-show' ? '<p style="grid-column:1/-1"><strong>No-show / no refund.</strong> The grace period ended without check-in. Your reserved time was released. You may join the walk-in queue if you arrive late.</p>' : item.status === 'confirmed' && item.graceDeadline ? `<p style="grid-column:1/-1">Check in with staff by <strong>${escapeValue(new Date(item.graceDeadline).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }))} (Philippine time)</strong>. Missing this deadline releases your reserved time without a refund.${item.checkedInAt ? '<br>You have checked in. Barber delays will not mark checked-in members as no-shows.' : ''}${item.absentMembers?.length ? `<br>Absent members: ${item.absentMembers.map(member => escapeValue(member.name)).join(', ')}. No refund for missed members.` : ''}</p>` : '';
-  return group + attendance + bookingActionButtons(item);
+  const refund = item.refundStatus === 'review-required' ? '<p style="grid-column:1/-1"><strong>Payment review required:</strong> The shop rejected this request. Staff must verify your transfer and arrange a manual refund. No automatic wallet refund has been sent. Contact the shop with your payment reference.</p>' : '';
+  return group + attendance + refund + bookingActionButtons(item);
 }
 
 function bookingActionButtons(item) {
@@ -35,6 +36,7 @@ function bookingActionButtons(item) {
 }
 
 function bookingStatus(status, demo = false) {
+  if (['in-queue', 'serving', 'no-show'].includes(status)) return ({ 'in-queue': 'In queue', serving: 'Now serving', 'no-show': 'No-show' })[status];
   if (demo) return status === 'confirmed' ? 'Demo booking accepted' : status === 'completed' ? 'Demo completed' : status === 'cancelled' ? 'Demo cancelled' : 'Demo awaiting staff approval';
   return status === "confirmed" ? "Accepted and payment verified" : status === "completed" ? "Completed" : status === "cancelled" ? "Cancelled" : "Waiting for staff approval";
 }
@@ -57,6 +59,10 @@ async function refreshBookings({ quiet = false } = {}) {
       target.innerHTML = rows;
       if (id) Array.from(target.querySelectorAll(`[${action}]`)).find(button => button.getAttribute(action) === id)?.focus();
     }
+    target?.querySelectorAll('.appointment-row').forEach((row, index) => {
+      const item = myAppointments[index];
+      if (['in-queue', 'serving', 'no-show'].includes(item?.attendanceStatus)) row.querySelector('.status-pill').textContent = bookingStatus(item.attendanceStatus, item.demoPayment);
+    });
   } catch (error) { if (!quiet) toast(error.message || "Bookings could not be loaded."); }
 }
 
@@ -91,6 +97,7 @@ function draw() {
     form.dataset.rescheduleForm = '';
     form.className = 'form-card';
     form.innerHTML = `<h3>Request reschedule</h3><p>Current booking: ${escapeValue(item.date)} at ${escapeValue(item.time)} (Asia/Manila).</p><label>Date<input type="date" name="date" min="${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })}" value="${escapeValue(item.date)}" required></label><label>Time<input type="time" name="time" step="1800" value="${escapeValue(item.time)}" required></label><p>This sends a request, not an accepted schedule change. Staff must review it before the earlier of the current and requested start, or the booking is automatically cancelled.</p><p data-request-deadline></p><button class="button primary" type="submit">Send reschedule request</button><button class="button secondary" type="button" data-dismiss>Keep current schedule</button><p role="alert" data-schedule-error></p>`;
+    window.mountRescheduleTimes(form, item);
     const updateDeadline = () => {
       const requested = new Date(`${form.elements.date.value}T${form.elements.time.value}:00+08:00`).getTime();
       const original = new Date(`${item.date}T${item.time}:00+08:00`).getTime();

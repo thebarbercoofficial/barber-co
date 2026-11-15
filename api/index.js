@@ -7,6 +7,7 @@ const { phoneUsers, availablePhone } = require('../lib/phone-login');
 const security = require('../lib/account-security');
 const messaging = require('../lib/notifications');
 const { validateReceipt } = require('../lib/receipt');
+const bookingGuards = require('../lib/booking-guards');
 const allowUnverified = process.env.ALLOW_UNVERIFIED_ACCOUNTS === 'true';
 const nonRefundablePolicyVersion = '2026-11-15';
 const frontDesk = require('../lib/front-desk')({ withAppointmentMutation, notify: (...args) => messaging.notify(...args), serviceDuration, nextQueueNumber });
@@ -197,7 +198,7 @@ async function unavailableBarbers(database, date, time, durationMinutes, exclude
     status: 'confirmed',
     ...(excludedAppointmentId ? { _id: { $ne: new ObjectId(excludedAppointmentId) } } : {})
   }).toArray();
-  if (!appointments.length) return [];
+  const serving = await database.collection('queue').find({ status: 'serving' }).toArray();
   const services = await database.collection("services").find().toArray();
   const durations = new Map();
   for (const service of services) {
@@ -212,7 +213,19 @@ async function unavailableBarbers(database, date, time, durationMinutes, exclude
     const existingEnd = existingStart + (Number(appointment.reservedDurationMinutes) || Number(appointment.durationMinutes) || (Number(appointment.unitDurationMinutes) || durations.get(appointment.serviceId) || 30) * (appointment.partySize || 1));
     return requestedStart < existingEnd && requestedEnd > existingStart;
   }).map((appointment) => appointment.barberId);
-  return [...new Set(unavailable)];
+  const requestedAt = new Date(`${date}T${time}:00+08:00`).getTime();
+  for (const ticket of serving) {
+    const called = new Date(ticket.calledAt || ticket.updatedAt || now).getTime();
+    const duration = Number(ticket.durationMinutes) || durations.get(ticket.serviceId) || 30;
+    const expectedEnd = Math.max(called + duration * 60000, now.getTime() + 15 * 60000);
+    if (requestedAt < expectedEnd && requestedAt + durationMinutes * 60000 > called) {
+      if (ticket.barberId) unavailable.push(ticket.barberId);
+      else unavailable.push(...(await database.collection('barbers').find({ status: { $nin: ['fired', 'on-leave'] } }).toArray()).flatMap(barber => [barber.slug, String(barber._id)]).filter(Boolean));
+    }
+  }
+  const roster = await database.collection('barbers').find().toArray();
+  for (const barber of roster) if ([barber.slug, String(barber._id)].some(id => unavailable.includes(id))) unavailable.push(barber.slug, String(barber._id));
+  return [...new Set(unavailable.filter(Boolean))];
 }
 
 function appointmentSlotIds(date, barberId, time, durationMinutes) {
@@ -677,6 +690,8 @@ async function handler(req, res) {
     const settings = mergedSettings(await database.collection("settings").findOne({ _id: "shop" }));
     const quote = partyQuote(body, user, service, settings);
     const { durationMinutes } = quote;
+    bookingGuards.requireFuture(date, time);
+    await bookingGuards.requireCustomerCapacity(database, user._id, date, time, durationMinutes);
     const window = bookingWindow(date, time, settings, durationMinutes);
     if (window.error) return send(res, 400, { error: window.error });
     if (!paymentConfigured(settings)) return send(res, 409, { error: "Online booking is unavailable until the administrator adds a payment number or QR code in Shop settings." });
@@ -1032,6 +1047,8 @@ async function handler(req, res) {
     const settings = mergedSettings(await database.collection("settings").findOne({ _id: "shop" }));
     const quote = partyQuote(body, user, service, settings);
     const { durationMinutes } = quote;
+    bookingGuards.requireFuture(date, time);
+    await bookingGuards.requireCustomerCapacity(database, user._id, date, time, durationMinutes);
     const window = bookingWindow(date, time, settings, durationMinutes);
     if (window.error) return send(res, 400, { error: window.error });
     const holdId = String(body.holdId || "");
@@ -1091,21 +1108,23 @@ async function handler(req, res) {
   if (req.method === "GET" && path === "/appointments/mine") {
     const user = await requireUser(req, database);
     const appointments = await database.collection("appointments").find({ userId: user._id }, { projection: { paymentProof: 0 } }).sort({ createdAt: -1 }).limit(50).toArray();
-    return send(res, 200, { appointments: appointments.map(normalizeDoc) });
+    const tickets = await database.collection('queue').find({ source: 'appointment', userId: user._id }).toArray();
+    return send(res, 200, { appointments: appointments.map(item => normalizeDoc({ ...item, attendanceStatus: bookingGuards.attendance(item, tickets) })) });
   }
 
   if (path === "/admin/appointments") {
     await requireRole(req, database, ["admin", "moderator"]);
     if (req.method === "GET") {
-      const [appointments, holds, settings] = await Promise.all([
+      const [appointments, holds, settings, tickets] = await Promise.all([
         database.collection("appointments").find({}, { projection: { paymentProof: 0 } }).sort({ createdAt: -1 }).toArray(),
         database.collection("appointmentHolds").find({ expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 }).toArray(),
-        database.collection("settings").findOne({ _id: "shop" })
+        database.collection("settings").findOne({ _id: "shop" }),
+        database.collection('queue').find({ source: 'appointment' }).toArray()
       ]);
       const owners = holds.length ? await database.collection("users").find({ _id: { $in: holds.map((hold) => hold.userId) } }, { projection: { name: 1 } }).toArray() : [];
       res.setHeader("Cache-Control", "no-store");
       return send(res, 200, {
-        appointments: appointments.map((item) => ({ ...normalizeDoc(item), hasPaymentProof: item.hasPaymentProof !== false })),
+        appointments: appointments.map(item => ({ ...normalizeDoc(item), attendanceStatus: bookingGuards.attendance(item, tickets), hasPaymentProof: item.hasPaymentProof !== false })),
         reservations: holds.map((hold) => ({ ...normalizeDoc(hold), customer: hold.customer || owners.find((user) => String(user._id) === String(hold.userId))?.name || "Customer", status: "awaiting-payment" })),
         paymentMode: mergedSettings(settings || {}).paymentMode,
         paymentConfigured: paymentConfigured(mergedSettings(settings || {}))
@@ -1151,10 +1170,12 @@ async function handler(req, res) {
     const date = String((review ? current.rescheduleRequest.date : body.date) || '');
     const time = String((review ? current.rescheduleRequest.time : body.time) || '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time) || !(new Date(`${date}T${time}:00+08:00`).getTime() > Date.now())) return send(res, 400, { error: 'Choose a valid future date and time.' });
-    if (current.date === date && current.time === time) return send(res, 200, { appointment: normalizeDoc(current) });
+    if (current.date === date && current.time === time) return send(res, 409, { error: 'Choose a different date or time. The current schedule cannot be requested again.' });
+    bookingGuards.requireFuture(date, time);
     const service = await database.collection('services').findOne({ $or: [{ slug: current.serviceId }, ...(ObjectId.isValid(current.serviceId) ? [{ _id: new ObjectId(current.serviceId) }] : [])] });
     const settings = mergedSettings(await database.collection('settings').findOne({ _id: 'shop' }));
     const duration = appointmentDuration(current, service);
+    await bookingGuards.requireCustomerCapacity(database, current.userId, date, time, duration, id);
     const window = bookingWindow(date, time, settings, duration);
     if (window.error) return send(res, 400, { error: window.error });
     const unavailable = await unavailableBarbers(database, date, time, duration, '', id);
@@ -1219,6 +1240,7 @@ async function handler(req, res) {
     const current = await database.collection('appointments').findOne({ _id: new ObjectId(id) });
     if (!current) return send(res, 404, { error: 'Appointment not found.' });
     const update = { status: body.status, updatedAt: new Date() };
+    if (body.status === 'cancelled' && current.status === 'pending' && !current.demoPayment) Object.assign(update, { refundStatus: 'review-required', noRefund: false, cancelledBy: 'shop' });
     if (current.rescheduleRequest?.status === 'pending' && ['confirmed', 'completed'].includes(body.status)) return send(res, 409, { error: 'Review the pending reschedule request first.' });
     const staffNote = body.status === 'cancelled' ? String(body.reason || '').trim().slice(0, 500) : '';
     if (staffNote) update.staffNote = staffNote;
@@ -1233,6 +1255,7 @@ async function handler(req, res) {
     if (acquiring) {
       const service = await database.collection('services').findOne({ $or: [{ slug: current.serviceId }, ...(ObjectId.isValid(current.serviceId) ? [{ _id: new ObjectId(current.serviceId) }] : [])] });
       const duration = appointmentDuration(current, service);
+      await bookingGuards.requireCustomerCapacity(database, current.userId, current.date, current.time, duration, id);
       const settings = mergedSettings(await database.collection('settings').findOne({ _id: 'shop' }));
       if (!service || service.active === false) return send(res, 409, { error: 'The selected service is no longer available.' });
       if (!(new Date(`${current.date}T${current.time}:00+08:00`).getTime() > Date.now())) return send(res, 409, { error: 'Past appointments cannot be approved.' });
@@ -1259,7 +1282,7 @@ async function handler(req, res) {
       await database.collection('queue').updateMany({ appointmentId: id, status: { $in: ['waiting', 'serving'] } }, { $set: { status: body.status === 'completed' ? 'done' : 'cancelled', updatedAt: new Date() } });
     }
     const appointment = await database.collection("appointments").findOne({ _id: new ObjectId(id) });
-    await messaging.notify(database, current.userId, `Your Barber Co appointment on ${current.date} at ${current.time} is ${body.status === 'confirmed' ? 'accepted' : body.status}.${partyNotice(current)}${staffNote ? ` Reason: ${staffNote}.` : ''}`, `appointment:${id}:${body.status}`);
+    await messaging.notify(database, current.userId, `Your Barber Co appointment on ${current.date} at ${current.time} is ${body.status === 'confirmed' ? 'accepted' : body.status}.${partyNotice(current)}${staffNote ? ` Reason: ${staffNote}.` : ''}${update.refundStatus ? ' The shop must verify your transfer and arrange a manual refund for a rejected paid request. No automatic wallet refund has been sent.' : ''}`, `appointment:${id}:${body.status}`);
     return send(res, 200, { appointment: normalizeDoc(appointment) });
   }
 
@@ -1267,6 +1290,8 @@ async function handler(req, res) {
     const account = req.headers.authorization ? await requireUser(req, database) : null;
     const customer = String(body.customer || "").trim().slice(0, 120);
     if (customer.length < 2) return send(res, 400, { error: "Enter the customer's name." });
+    const guestKey = bookingGuards.guestKey(req, account, body);
+    await bookingGuards.requireGuestAllowance(database, guestKey, account, customer);
     const contact = queueContact(body);
     if (contact.emailConsent && !security.emailReady()) return send(res, 503, { error: 'Email updates are unavailable right now. Join the line without email updates.' });
     const service = body.serviceId ? await database.collection("services").findOne({ $or: [{ slug: body.serviceId }, ...(ObjectId.isValid(body.serviceId) ? [{ _id: new ObjectId(body.serviceId) }] : [])], active: { $ne: false } }) : null;
@@ -1274,8 +1299,8 @@ async function handler(req, res) {
     const waiting = await database.collection("queue").countDocuments({ status: { $in: ["waiting", "serving"] } });
     const queueNumber = await nextQueueNumber(database);
     const ticket = { _id: new ObjectId(), customer, phone: "", ...contact, serviceId: service?.slug || "", barberId: "", cutName: service?.name || "To be assigned", price: Number(service?.price || 0), waitMinutes: waiting * 30, source: "shop-qr", queueNumber, status: "waiting", paid: false, createdAt: new Date() };
+    Object.assign(ticket, { guestKey, ...(account ? { userId: account._id } : {}) });
     await database.collection("queue").insertOne(ticket);
-    if (account) await database.collection('queue').updateOne({ _id: ticket._id }, { $set: { userId: account._id } });
     return send(res, 201, { ticket: publicQueueTicket(ticket), emailUpdatesEnabled: contact.emailConsent });
   }
 
@@ -1404,7 +1429,10 @@ module.exports = async (req, res) => {
       const database = await db();
       await sweepRescheduleRequests(database);
       await frontDesk.sweep(database);
-      await withAppointmentMutation(database, mutation[1], () => handler(req, res));
+      await withAppointmentMutation(database, 'booking-capacity', () => withAppointmentMutation(database, mutation[1], () => handler(req, res)));
+    } else if (req.method === 'POST' && ['/appointments', '/appointment-holds', '/queue/walkin', '/admin/queue/next'].includes(path) || req.method === 'PATCH' && path.startsWith('/admin/queue/')) {
+      const database = await db();
+      await withAppointmentMutation(database, 'booking-capacity', () => handler(req, res));
     } else await handler(req, res);
   } catch (error) {
     if (error.retryAfter) res.setHeader('Retry-After', String(error.retryAfter));

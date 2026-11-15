@@ -16,3 +16,28 @@ const settings = mergedSettings({ paymentMode: 'demo', gcash: { enabled: true, a
 assert.equal(settings.paymentMode, 'live');
 assert.equal(paymentConfigured(settings), true);
 console.log('Live payments only: no demo fallback, legacy demo setting ignored, unconfigured checkout blocked, real method accepted');
+
+async function browserCheck() {
+  const browser = await require('playwright').chromium.launch({ channel: 'chrome', headless: true });
+  try {
+    for (const width of [390, 1440]) for (const script of ['booking', 'payment']) {
+      const page = await browser.newPage({ viewport: { width, height: 900 } });
+      await page.setContent('<div id="app"></div>');
+      await page.evaluate(() => {
+        window.BarberCo = {
+          state: { services: [], user: { name: 'Test' }, booking: { date: '2100-03-03', time: '14:00' } }, barbers: [],
+          nav: () => '', initHeader() {}, byId: () => ({}), peso: () => '', save() {}, toast() {},
+          isAuthenticated: () => true, canAccess: () => false,
+          loadCatalog: async () => {}, loadSettings: async () => ({ paymentMode: 'live' })
+        };
+      });
+      await page.addScriptTag({ path: require('node:path').resolve(`js/pages/${script}.js`) });
+      await page.getByRole('heading', { name: 'Payment method is currently unavailable.' }).waitFor();
+      assert.equal(await page.locator('[data-confirm-payment], [data-payment]').count(), 0);
+      assert.doesNotMatch(await page.locator('#app').innerText(), /demo|sample receipt/i);
+      await page.close();
+    }
+    console.log('Booking and checkout unavailable states verified on mobile and desktop without demo controls');
+  } finally { await browser.close(); }
+}
+browserCheck().catch(error => { console.error(error); process.exitCode = 1; });

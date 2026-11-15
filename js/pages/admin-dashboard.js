@@ -78,6 +78,12 @@ async function render() {
   const onlinePanel = document.querySelector('.dashboard-layout > div:first-child > section:nth-of-type(2)');
   onlinePanel.dataset.onlineActivity = '';
   onlinePanel.innerHTML = `<div class="panel-heading"><h3>Online bookings <span class="count-badge">${schedule.appointments.filter((item) => ['pending', 'confirmed'].includes(item.status)).length + reservations.length}</span></h3><a class="text-action" href="admin-schedule.html">Review ${icon('ArrowUpRight')}</a></div>${onlineBookingRows(schedule.appointments, reservations)}`;
+  const dashboard = document.querySelector('.dashboard-layout');
+  const frontdesk = dashboard.firstElementChild.querySelector('section');
+  frontdesk.dataset.frontdeskPanel = '';
+  dashboard.firstElementChild.prepend(document.querySelector('[data-analytics]'));
+  dashboard.lastElementChild.prepend(onlinePanel);
+  document.querySelector('.workspace').classList.add('studio-dashboard');
   document.querySelector('[data-call-next]').disabled = !queue.some(item => item.status === 'waiting');
   document.querySelector("[data-call-next]").addEventListener("click", async () => {
     try {
@@ -106,7 +112,7 @@ async function render() {
   if (results[1].status === 'fulfilled') updateBookingMetric(schedule.appointments);
   document.querySelector('[data-metric="revenue"] small').textContent = 'All time / recorded paid / excludes tests';
   document.querySelector('[data-metric="customers"] small').textContent = 'Customer accounts / excludes staff';
-  document.querySelector('[data-metric="waiting"] .metric-label').firstChild.textContent = 'Waiting walk-ins';
+  document.querySelector('[data-metric="waiting"] .metric-label').firstChild.textContent = 'Waiting customers';
   document.querySelector('[data-metric="waiting"] small').textContent = 'Waiting only / excludes now serving';
   document.querySelector('.workspace-heading').insertAdjacentHTML('beforeend', '<small data-dashboard-sync role="status">Live updates connected</small>');
 }
@@ -133,11 +139,10 @@ async function refreshDashboard() {
       BarberAnalytics.refresh?.(analytics);
       receivedUpdate = true;
     }
-    const panels = document.querySelectorAll('.dashboard-layout > div:first-child > section');
     let active = null;
     if (lineResult.status === 'fulfilled') {
       active = lineResult.value.queue.filter((item) => ['waiting', 'serving'].includes(item.status));
-      const panel = panels[0];
+      const panel = document.querySelector('[data-frontdesk-panel]');
       panel.querySelector('.count-badge').textContent = active.length;
       panel.querySelectorAll('.compact-row,.staff-empty').forEach((node) => node.remove());
       const markup = active.slice(0, 6).map((item) => `<div class="compact-row"><span class="ticket-number">#${String(item.queueNumber).padStart(2, '0')}</span><div class="row-main"><strong>${safeText(item.customer)}</strong><small>${safeText(item.cutName || 'Service to be assigned')}</small></div><span class="status-pill ${item.status}">${item.status === 'serving' ? 'Serving' : 'Waiting'}</span></div>`).join('') || `<div class="staff-empty">${icon('ListOrdered')}<strong>The line is clear</strong></div>`;

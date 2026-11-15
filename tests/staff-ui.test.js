@@ -150,8 +150,20 @@ async function main() {
           const line = await page.locator('canvas').evaluate((canvas) => Chart.getChart(canvas).getDatasetMeta(0).data.map((point) => point.y));
           assert.ok(Math.max(...line) - Math.min(...line) > 20, 'The line must reflect varying data');
         }
+        await page.evaluate(() => window.scrollTo(0, 0));
         await page.screenshot({ path: path.join(root, `staff-ui-${name}-${width}-check.png`), fullPage: true });
         if (width > 960) {
+          await page.locator('[data-staff-toggle]').click();
+          await page.waitForFunction(() => Math.round(document.querySelector('.sidebar').getBoundingClientRect().width) === 76);
+          assert.equal(await page.locator('[data-staff-toggle]').getAttribute('aria-expanded'), 'false');
+          assert.ok(await page.locator('.sidebar a[aria-label="Appointments"]').count());
+          await page.locator('[data-staff-toggle]').click();
+          await page.locator('[data-workspace-search]').fill('Services');
+          assert.equal(await page.locator('[data-workspace-results] a').count(), 1);
+          assert.equal(await page.locator('[data-workspace-results] a').getAttribute('href'), 'admin-services.html');
+          await page.keyboard.press('Escape');
+          assert.equal(await page.locator('[data-workspace-results]').isVisible(), false);
+          await page.locator('[data-workspace-search]').fill('');
           await page.evaluate(() => window.scrollTo(0, 600));
           assert.equal(await page.locator('.sidebar').evaluate((el) => Math.round(el.getBoundingClientRect().top)), 64, 'Sidebar shifts on scroll');
         } else {
@@ -176,6 +188,43 @@ async function main() {
       const barberCsv = fs.readFileSync(await barberDownload.path(), 'utf8');
       assert.ok(barberCsv.includes('Luis Reyes') && !barberCsv.includes('Alex Santos'));
       assert.ok(barberCsv.includes('Completed cuts') && !barberCsv.includes('Demo bookings'));
+      await page.locator('[data-chart-range]').selectOption('7');
+      await page.locator('[data-print-report]').click();
+      await page.locator('[data-report-dialog]').waitFor({ state: 'visible' });
+      assert.equal(await page.locator('[data-print-section="daily"] tbody tr').count(), 7);
+      const printed = await page.locator('[data-printable-report]').innerText();
+      assert.ok(printed.includes('Luis Reyes') && !printed.includes('Alex Santos'), 'Print honors barber search');
+      assert.ok(printed.includes('Barber performance / all time'), 'All-time data must not be presented as period data');
+      const sevenDayTotal = daily.slice(-7).reduce((sum, row) => sum + row.revenue, 0);
+      assert.ok((await page.locator('.report-kpis').innerText()).includes(sevenDayTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })));
+      await page.locator('[data-report-section="services"]').uncheck();
+      assert.equal(await page.locator('[data-print-section="services"]').isVisible(), false);
+      await page.evaluate(() => { window.printCalls = 0; window.print = () => { window.printCalls++; }; });
+      await page.locator('[data-report-print]').click();
+      assert.equal(await page.evaluate(() => window.printCalls), 1);
+      await page.emulateMedia({ media: 'print' });
+      assert.equal(await page.locator('#app').isVisible(), false, 'Navigation and workspace are excluded from print');
+      assert.equal(await page.locator('[data-printable-report]').isVisible(), true);
+      assert.equal(await page.locator('.report-preview-toolbar').isVisible(), false);
+      if (width === 1920) {
+        const directory = path.join(root, 'outputs/studio');
+        fs.mkdirSync(directory, { recursive: true });
+        const pdf = await page.pdf({ path: path.join(directory, 'report-preview.pdf'), preferCSSPageSize: true, printBackground: true });
+        assert.ok(pdf.length > 1000, 'Printable PDF must contain content');
+        await page.screenshot({ path: path.join(directory, 'report-print-check.png'), fullPage: true });
+      }
+      await page.emulateMedia({ media: 'screen' });
+      await page.locator('[data-report-close]').click();
+      assert.equal(await page.locator('[data-report-dialog]').isVisible(), false);
+      if (width === 1920) {
+        await page.locator('[data-chart-range]').selectOption('365');
+        await page.locator('[data-print-report]').click();
+        assert.equal(await page.locator('[data-print-section="daily"] tbody tr').count(), 365);
+        await page.emulateMedia({ media: 'print' });
+        await page.pdf({ path: path.join(root, 'outputs/studio/report-full-year.pdf'), preferCSSPageSize: true, printBackground: true });
+        await page.emulateMedia({ media: 'screen' });
+        await page.locator('[data-report-close]').click();
+      }
       assert.doesNotMatch(await page.locator('.workspace').innerText(), /demo/i);
       await page.locator('[data-barber-search]').fill('missing');
       assert.ok((await page.locator('[data-barber-rows]').innerText()).includes('No barbers match'));
@@ -274,6 +323,7 @@ async function main() {
     await emptyPage.waitForSelector('[data-chart-message]:visible');
     assert.equal(await emptyPage.locator('[data-chart-message]').textContent(), 'Daily analytics could not be loaded.');
     assert.equal(await emptyPage.locator('[data-chart-export]').isDisabled(), true);
+    assert.equal(await emptyPage.locator('[data-print-report]').isDisabled(), true);
     assert.equal(await emptyPage.locator('[data-chart-rows] tr').count(), 0);
     console.log('Empty charts and backend-error states passed without fabricated data');
     await empty.close();

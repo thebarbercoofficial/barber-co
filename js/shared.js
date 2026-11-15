@@ -247,9 +247,36 @@ const BarberCo = (() => {
       });
     }
     const staffToggle = document.querySelector('[data-staff-toggle]');
+    if (staff && localStorage.getItem('barberCoSidebarCompact') === 'true') document.body.classList.add('staff-sidebar-compact');
+    staffToggle?.setAttribute('aria-expanded', String(window.innerWidth > 960 && !document.body.classList.contains('staff-sidebar-compact')));
     staffToggle?.addEventListener('click', () => {
+      if (window.innerWidth > 960) {
+        const compact = document.body.classList.toggle('staff-sidebar-compact');
+        localStorage.setItem('barberCoSidebarCompact', String(compact));
+        staffToggle.setAttribute('aria-expanded', String(!compact));
+        window.dispatchEvent(new Event('resize'));
+        return;
+      }
       const open = document.body.classList.toggle('staff-menu-open');
       staffToggle.setAttribute('aria-expanded', String(open));
+    });
+    const workspaceSearch = document.querySelector('[data-workspace-search]');
+    workspaceSearch?.addEventListener('input', () => {
+      const query = workspaceSearch.value.trim().toLowerCase();
+      const results = document.querySelector('[data-workspace-results]');
+      const links = Array.from(document.querySelectorAll('.sidebar a')).filter(link => link.textContent.toLowerCase().includes(query));
+      results.innerHTML = links.map(link => `<a href="${safeText(link.getAttribute('href'))}">${safeText(link.textContent.trim())}${icon('ArrowUpRight')}</a>`).join('') || '<p>No matching pages</p>';
+      results.hidden = !query;
+      workspaceSearch.setAttribute('aria-expanded', String(Boolean(query)));
+    });
+    workspaceSearch?.addEventListener('keydown', event => {
+      const results = document.querySelector('[data-workspace-results]');
+      if (event.key === 'Escape') { results.hidden = true; workspaceSearch.setAttribute('aria-expanded', 'false'); }
+      if (event.key === 'ArrowDown' && !results.hidden) { event.preventDefault(); results.querySelector('a')?.focus(); }
+      if (event.key === 'Enter' && !results.hidden && results.querySelector('a')) location.href = results.querySelector('a').href;
+    });
+    if (workspaceSearch) document.addEventListener('click', event => {
+      if (!event.target.closest('.workspace-search')) { document.querySelector('[data-workspace-results]').hidden = true; workspaceSearch.setAttribute('aria-expanded', 'false'); }
     });
     document.querySelector('[data-sidebar-dismiss]')?.addEventListener('click', () => {
       document.body.classList.remove('staff-menu-open');
@@ -318,7 +345,8 @@ const BarberCo = (() => {
     if (active === 'admin') {
       const roleLabel = role === 'moderator' ? 'Staff' : 'Administrator';
       return `<header class="site-header staff-header" data-header>
-        <div class="staff-header-brand"><button class="icon-button staff-menu-toggle" type="button" data-staff-toggle aria-label="Open staff navigation" aria-expanded="false" aria-controls="staff-sidebar">${icon('Menu')}</button><a class="brand" href="${role === 'moderator' ? 'admin-logbook.html' : 'admin-dashboard.html'}"><img class="brand-logo" src="images/logo.png" alt="The Barber Co"><span>The Barber Co<small>SHOP WORKSPACE</small></span></a></div>
+        <div class="staff-header-brand"><button class="icon-button staff-menu-toggle" type="button" data-staff-toggle aria-label="Toggle staff navigation" title="Toggle staff navigation" aria-expanded="true" aria-controls="staff-sidebar">${icon('Menu')}</button><a class="brand" href="${role === 'moderator' ? 'admin-logbook.html' : 'admin-dashboard.html'}"><img class="brand-logo" src="images/logo.png" alt="The Barber Co"><span>The Barber Co<small>STUDIO</small></span></a></div>
+        <div class="workspace-search">${icon('Search')}<input type="search" data-workspace-search placeholder="Search workspace" aria-label="Search workspace pages" aria-controls="workspace-search-results" aria-expanded="false" autocomplete="off"><div id="workspace-search-results" data-workspace-results hidden></div></div>
         <div class="staff-header-actions"><a class="header-link" href="queue-display.html" target="_blank" rel="noreferrer" title="Open TV queue display">${icon('Monitor')}<span>Queue display</span></a><a class="header-link" href="index.html" title="Open public website">${icon('ExternalLink')}<span>View website</span></a><span class="staff-account">${avatar(safeText(state.user.name || 'Staff'), safeText(state.user.photo || ''), 'staff-avatar')}<span><strong>${safeText(state.user.name || 'Staff')}</strong><small>${roleLabel}</small></span></span><button class="icon-button" type="button" data-logout aria-label="Log out" title="Log out">${icon('LogOut')}</button></div>
       </header>`;
     }
@@ -387,7 +415,7 @@ const BarberCo = (() => {
     const icons = { dashboard: 'LayoutDashboard', logbook: 'ListOrdered', contacts: 'Mail', users: 'Users', profile: 'Settings2', services: 'Scissors', barbers: 'ContactRound', reports: 'ChartNoAxesCombined', schedule: 'CalendarDays', public: 'ExternalLink' };
     const operations = links.filter(([, key]) => ['dashboard', 'logbook', 'schedule', 'contacts'].includes(key));
     const management = links.filter(([, key]) => !['dashboard', 'logbook', 'schedule', 'contacts', 'public'].includes(key));
-    const group = (title, items) => items.length ? `<div class="sidebar-group"><p>${title}</p>${items.map(([href, key, label]) => `<a class="${active === key ? 'active' : ''}" href="${href}" ${active === key ? 'aria-current="page"' : ''}>${icon(icons[key])}<span>${label}</span></a>`).join('')}</div>` : '';
+    const group = (title, items) => items.length ? `<div class="sidebar-group"><p>${title}</p>${items.map(([href, key, label]) => `<a class="${active === key ? 'active' : ''}" href="${href}" title="${safeText(label)}" aria-label="${safeText(label)}" ${active === key ? 'aria-current="page"' : ''}>${icon(icons[key])}<span>${label}</span></a>`).join('')}</div>` : '';
     return `<button class="sidebar-backdrop" type="button" data-sidebar-dismiss aria-label="Close staff navigation"></button><aside class="sidebar" id="staff-sidebar"><div class="sidebar-shop"><img src="images/logo.png" alt=""><div>Carmona shop<small>${currentRole() === 'moderator' ? 'Front desk' : 'Administration'}</small></div><span class="shop-indicator" title="Staff workspace"></span></div>${group('DAILY OPERATIONS', operations)}${group('SHOP MANAGEMENT', management)}<div class="sidebar-footer"><a href="index.html">${icon('ExternalLink')}<span>Public website</span></a><small>The Barber Co / Since 2022</small></div></aside>`;
   }
 

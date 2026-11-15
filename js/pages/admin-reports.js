@@ -35,6 +35,18 @@ async function render() {
     </section>
   `;
   initHeader("admin");
+  const printButton = document.createElement('button');
+  printButton.type = 'button';
+  printButton.className = 'button primary';
+  printButton.dataset.printReport = '';
+  printButton.innerHTML = `${icon('Printer')} Print report`;
+  printButton.disabled = Boolean(connectionError || !analytics.daily?.length);
+  document.querySelector('.workspace-heading > .count-badge').replaceWith(printButton);
+  printButton.addEventListener('click', () => BarberReport.open(analytics, { days: Number(document.querySelector('[data-chart-range]').value), barbers: filteredRows(), query: document.querySelector('[data-barber-search]').value.trim() }));
+  document.querySelector('.workspace-heading .muted').textContent = 'Daily activity, recorded collections and team performance.';
+  const duplicateBreakdown = document.querySelector('.workspace > .grid-2');
+  duplicateBreakdown.lastElementChild.remove();
+  duplicateBreakdown.className = 'report-services';
   BarberAnalytics.mount(analytics);
   let performance = analytics.barberPerformance || [];
   const metricKeys = ['bookings', 'customers', 'waiting', 'revenue'];
@@ -90,9 +102,9 @@ async function render() {
       performance = analytics.barberPerformance || [];
       updatePerformance();
       document.querySelector('[data-barber-export]').disabled = false;
+      printButton.disabled = !analytics.daily?.length;
       const maximum = Math.max(1, ...analytics.services.map((item) => item.bookings || 0));
       document.querySelector('.report-bars').innerHTML = analytics.services.map((item) => `<div class="bar"><span><b>${safeText(item.name)}</b><b>${item.bookings || 0}</b></span><i style="width:${Math.min(100, (item.bookings || 0) / maximum * 100)}%"></i></div>`).join('');
-      document.querySelector('.summary-list').innerHTML = analytics.services.map((item) => `<div><span>${safeText(item.name)}</span><strong>${item.bookings || 0} bookings</strong></div>`).join('');
       BarberAnalytics.refresh(analytics);
       sync.textContent = `Updated ${new Date().toLocaleTimeString()}`;
     } catch (error) {

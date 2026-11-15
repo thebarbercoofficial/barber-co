@@ -1,0 +1,128 @@
+/* Staff workspace only. Public pages and printed reports keep their own theme. */
+@media screen {
+  body.staff-page {
+    color-scheme: dark;
+    --paper: #191817;
+    --panel: #242220;
+    --ink: #f2efea;
+    --muted: #b7b1a9;
+    --line: #45403b;
+    --line-dark: #45403b;
+    --copper: #e4b67e;
+    --surface-raised: #302b27;
+    --chart-grid: #45403b;
+    background: var(--paper);
+    color: var(--ink);
+    accent-color: var(--gold);
+  }
+  .staff-page .app-shell { background: var(--paper); }
+  .staff-page .sidebar { background: #211d1a; border-color: var(--line); }
+  .staff-page .sidebar a:hover { background: #332b24; }
+  .staff-page .sidebar a.active { background: #443425; color: #f1cb92; }
+  .staff-page .sidebar-footer { margin-top: auto; }
+  .staff-page .panel, .staff-page .form-card, .staff-page .settings-group,
+  .staff-page .queue-list, .staff-page .record-list, .staff-page .appointment-row,
+  .staff-page .contact-inbox-list, .staff-page .contact-inbox-item,
+  .staff-page .metric-grid, .staff-page .queue-overview,
+  .staff-page .chart-frame, .staff-page .data-table-scroll { background: var(--panel); color: var(--ink); }
+  .staff-page .workspace > .panel, .staff-page .dashboard-layout .panel,
+  .staff-page .report-breakdowns > .panel, .staff-page .report-services > .panel,
+  .staff-page .settings-form { background: transparent; }
+  .staff-page .metric { background: transparent; }
+  .staff-page .workspace a:not(.button) { color: var(--copper); }
+  .staff-page .button.secondary, .staff-page .icon-button,
+  .staff-page .alert-icon { background: var(--surface-raised); color: var(--ink); border-color: #5d5145; }
+  .staff-page .button.secondary:hover, .staff-page .icon-button:hover,
+  .staff-page .alert-icon:hover { background: #45382b; border-color: var(--gold); }
+  .staff-page .button.primary { color: #21180f; }
+  .staff-page .button.primary:hover { background: #e1af62; }
+  .staff-page .icon-button.danger-icon { color: #f49a95; }
+  .staff-page .icon-button.danger-icon:hover { background: #482927; }
+  .staff-page input, .staff-page select, .staff-page textarea {
+    background: #1c1b19; color: var(--ink); border-color: #62564a;
+  }
+  .staff-page input::placeholder, .staff-page textarea::placeholder { color: #aaa298; opacity: 1; }
+  .staff-page input:autofill { box-shadow: inset 0 0 0 1000px #302b27; -webkit-text-fill-color: #f2efea; }
+  .staff-page :focus-visible { outline: 2px solid #edbe7b; outline-offset: 3px; }
+  .staff-page input[type="checkbox"], .staff-page input[type="radio"] { accent-color: #deb16e; }
+  .staff-page .upload-box { background: #2a2520; border-color: #887052; }
+  .staff-page .upload-box input::file-selector-button { background: #45382b; color: #f2efea; border: 1px solid #887052; padding: 6px 10px; border-radius: 4px; margin-right: 10px; }
+  .staff-page .status-pill, .staff-page .count-badge, .staff-page .live-badge,
+  .staff-page .live-pill, .staff-page .filter-tabs button span { background: #40362a; color: #edc68c; }
+  .staff-page .status-pill.waiting, .staff-page .status-pill.pending { background: #45391f; color: #f1cc7e; }
+  .staff-page .status-pill.serving, .staff-page .status-pill.confirmed,
+  .staff-page .status-pill.active { background: #223c32; color: #9dd9b9; }
+  .staff-page .status-pill.cancelled, .staff-page .status-pill.on-leave { background: #442c2c; color: #f2b0a8; }
+  .staff-page .staff-avatar { background: #3c3025; color: #efc78d; }
+  .staff-page .filter-tabs button, .staff-page .chart-tabs button { color: var(--muted); }
+  .staff-page .filter-tabs button.active { color: #f1cb92; border-color: #e0af67; }
+  .staff-page .filter-tabs button:hover { background: #302b27; }
+  .staff-page .chart-tabs { background: #302b27; }
+  .staff-page .chart-tabs button.active { background: #4a3828; color: #f4d2a3; }
+  .staff-page .data-table-scroll thead, .staff-page .data-table-scroll tfoot { background: #342d26; }
+  .staff-page .data-table-scroll tbody tr:hover { background: #302b27; }
+  .staff-page .chart-inspector output, .staff-page .queue-barber { color: var(--muted); }
+  .staff-page .connection-error { background: #382721; border-color: #8d5840; color: #f1c2a6; }
+  .staff-page .inbox-message { background: var(--panel); color: var(--ink); }
+  .staff-page .inbox-message:hover { background: #302b27; }
+  .staff-page .inbox-message.is-selected { background: #413224; }
+  .staff-page .contact-reply { background: #302b27; border-color: #deb16e; }
+  .staff-page [data-workspace-results] { background: var(--panel); color: var(--ink); border-color: var(--line); }
+  .staff-page [data-workspace-results] a { color: var(--ink); }
+  .staff-page [data-workspace-results] a:hover, .staff-page [data-workspace-results] a:focus-visible { background: #413224; }
+  .staff-page dialog:not(.report-preview) { background: var(--panel); color: var(--ink); border-color: #887052; color-scheme: dark; }
+  .staff-page dialog::backdrop { background: #000b; }
+  .staff-page .site-alert-panel, .staff-page .site-alert-popup { background: var(--panel); color: var(--ink); border-color: #62564a; }
+  .staff-page .alert-panel-heading, .staff-page .alert-panel-tools,
+  .staff-page .alert-entry { border-color: var(--line); color: var(--ink); }
+  .staff-page .alert-entry:hover { background: #302b27; }
+  .staff-page .alert-entry.unread { background: #23372e; border-left-color: #88c9a7; }
+  .staff-page .alert-panel-tools button, .staff-page .site-alert-popup a { color: #a4dcbc; }
+  .staff-page .alert-panel-tools span { color: #edb49c; }
+  .staff-page .alert-empty, .staff-page .alert-entry time { color: var(--muted); }
+  .staff-page .report-preview { color-scheme: light; --ink: #222; --muted: #666; --line: #ddd; }
+  .staff-page .report-preview .button.secondary, .staff-page .report-preview .icon-button { background: white; color: #222; border-color: #bbb; }
+  .staff-page .report-preview input { color-scheme: light; }
+}
+@media screen and (min-width: 1261px) {
+  .staff-page .management-layout { grid-template-columns: minmax(0, 1fr) minmax(340px, .38fr); gap: 24px; }
+  .staff-page .frontdesk-layout { grid-template-columns: 340px minmax(0, 1fr); gap: 24px; }
+  .staff-page .management-record { min-height: 86px; }
+  .staff-page .appointment-row { padding: 18px; font-size: 15px; gap: 14px; }
+  .staff-page .appointment-row small, .staff-page .queue-barber { font-size: 12px; }
+  .staff-page .appointment-date strong { font-size: 14px; }
+  .staff-page .management-record .staff-avatar { width: 42px; height: 42px; font-size: 13px; }
+  .staff-page .management-layout > form.panel { padding: 20px; }
+  .staff-page .filter-tabs button { min-height: 44px; font-size: 13px; padding: 10px 12px; }
+  .staff-page .filter-tabs button span { font-size: 11px; }
+  .staff-page .status-pill { font-size: 12px; }
+  .staff-page .settings-group { padding: 22px; }
+  .staff-page .settings-form > .settings-group:first-child { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); column-gap: 32px; align-items: start; }
+  .staff-page .settings-form > .settings-group:first-child > .settings-group-title { grid-column: 1 / -1; }
+  .staff-page .settings-form > .settings-group:first-child > p,
+  .staff-page .settings-form > .settings-group:first-child > label { grid-column: 1; }
+  .staff-page .settings-form > .settings-group:first-child > .booking-rules { grid-column: 2; grid-row: 2 / 5; margin-top: 0; max-width: none; }
+  .staff-page .settings-group-title { font-size: 16px; }
+  .staff-page .settings-group p, .staff-page .settings-group small,
+  .staff-page .workspace-heading p.muted { font-size: 13px; }
+  .staff-page .permission-select { font-size: 13px; width: 145px; }
+  .staff-page .button.small { font-size: 13px; }
+  .staff-page .text-action, .staff-page .panel-heading a { font-size: 13px; }
+  .staff-page .data-table-scroll th, .staff-page .data-table-scroll td { padding: 12px; font-size: 13px; }
+  .staff-page .reports-layout .chart-frame { height: 350px; }
+  .staff-page .bar span { font-size: 13px; }
+  .staff-page .period-totals, .staff-page .analytics-note { font-size: 12px; }
+  .staff-page .contact-inbox-list { max-width: none; grid-template-columns: minmax(300px, .38fr) minmax(0, 1fr); }
+  .staff-page .inbox-message { padding: 18px; gap: 8px; }
+  .staff-page .inbox-message strong { font-size: 14px; }
+  .staff-page .inbox-message small, .staff-page .inbox-reply-count,
+  .staff-page .contact-inbox-item time { font-size: 12px; }
+  .staff-page .contact-inbox-item { padding: 20px 24px; }
+  .staff-page .contact-inbox-item h2 { font-size: 18px; }
+  .staff-page .contact-inbox-item > p, .staff-page .contact-reply,
+  .staff-page .contact-inbox-item header a { font-size: 14px; }
+  .staff-page .inbox-composer textarea { min-height: 100px; font-size: 14px; }
+}
+@media print {
+  body.staff-page { color-scheme: light; --ink: #222; --muted: #666; --line: #ddd; }
+}

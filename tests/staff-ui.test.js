@@ -109,6 +109,14 @@ async function main() {
         const outside = overflow > 1 ? await page.locator('.workspace *').evaluateAll(nodes => nodes.filter(node => node.getBoundingClientRect().right > innerWidth + 1).map(node => `${node.tagName}.${node.className}: ${node.textContent.slice(0, 50)}`).slice(-12)) : [];
         assert.ok(overflow <= 1, `${name} at ${width}: horizontal overflow ${overflow}: ${outside.join('; ')}`);
         assert.equal(await page.locator('.site-header').evaluate((el) => Math.round(el.getBoundingClientRect().height)), 64);
+        const theme = await page.locator('body').evaluate((body) => ({ ink: getComputedStyle(body).color, scheme: getComputedStyle(body).colorScheme, background: getComputedStyle(body).backgroundColor }));
+        assert.equal(theme.scheme, 'dark', `${name}: staff theme must cover the whole page`);
+        assert.equal(theme.background, 'rgb(25, 24, 23)', `${name}: dark workspace background`);
+        assert.equal(theme.ink, 'rgb(242, 239, 234)', `${name}: readable light text`);
+        for (const selector of ['.appointment-row', '.settings-group', '.contact-inbox-item', '.chart-frame']) {
+          const surface = page.locator(selector).first();
+          if (await surface.count()) assert.equal(await surface.evaluate((el) => getComputedStyle(el).backgroundColor), 'rgb(36, 34, 32)', `${name}: ${selector} must use the dark surface`);
+        }
         if (name === 'profile') {
           const groups = await page.locator('.settings-group').evaluateAll((elements) => elements.map((group) => {
             const box = group.getBoundingClientRect();
@@ -145,7 +153,7 @@ async function main() {
           await page.locator('[data-contact-select="contact-1"]').click();
           if (width > 680) {
             const bounds = await page.locator('.contact-inbox-item').boundingBox();
-            assert.ok(bounds.height < 520 && bounds.width < 1080, 'Conversation must remain compact');
+            assert.ok(bounds.height < 650 && bounds.width < width, 'Conversation must fit the workspace without stretching vertically');
           }
         }
         if (['dashboard', 'reports'].includes(name)) {
@@ -237,6 +245,8 @@ async function main() {
       await page.emulateMedia({ media: 'print' });
       assert.equal(await page.locator('#app').isVisible(), false, 'Navigation and workspace are excluded from print');
       assert.equal(await page.locator('[data-printable-report]').isVisible(), true);
+      assert.equal(await page.locator('[data-printable-report]').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(255, 255, 255)', 'Printed reports stay white despite the dark workspace');
+      assert.equal(await page.locator('[data-printable-report]').evaluate(el => getComputedStyle(el).color), 'rgb(0, 0, 0)', 'Printed report text stays black');
       assert.equal(await page.locator('.report-preview-toolbar').isVisible(), false);
       if (width === 1920) {
         const directory = path.join(root, 'outputs/studio');

@@ -3,9 +3,9 @@ const BarberAnalytics = (() => {
   let currentChart;
   let refreshData = () => {};
   const series = {
-    revenue: { label: 'Collected revenue', color: '#b77b2c', money: true },
-    bookings: { label: 'Online bookings', color: '#a7562f' },
-    walkins: { label: 'Walk-ins', color: '#315b4c' }
+    revenue: { label: 'Collected revenue', color: '#e2ae61', money: true },
+    bookings: { label: 'Online bookings', color: '#ef9c83' },
+    walkins: { label: 'Walk-ins', color: '#8bc8ac' }
   };
   const dateLabel = (date) => new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' }).format(new Date(`${date}T00:00:00+08:00`));
 
@@ -34,6 +34,9 @@ const BarberAnalytics = (() => {
       return;
     }
     const canvas = root.querySelector('canvas');
+    const theme = getComputedStyle(document.body);
+    const axisColor = theme.getPropertyValue('--muted').trim() || '#796b5e';
+    const gridColor = theme.getPropertyValue('--chart-grid').trim() || '#ede4d6';
     const slider = root.querySelector('[data-chart-day]');
     let metric = 'revenue';
     let days = [];
@@ -69,8 +72,8 @@ const BarberAnalytics = (() => {
           onClick: (_event, points) => { if (points[0]) inspect(points[0].index); },
           plugins: { legend: { display: false }, tooltip: { displayColors: false, backgroundColor: '#241a13', titleColor: '#fffaf1', bodyColor: '#eee2d0', padding: 12, callbacks: { label: (context) => `${series[metric].label}: ${series[metric].money ? peso(context.parsed.y) : context.parsed.y}` } } },
           scales: {
-            x: { grid: { display: false }, ticks: { color: '#796b5e', maxTicksLimit: 7, maxRotation: 0, font: { size: 10 } }, border: { color: '#dfd2bf' } },
-            y: { beginAtZero: true, grid: { color: '#ede4d6' }, border: { display: false }, ticks: { color: '#796b5e', precision: selected.money ? 2 : 0, font: { size: 10 } } }
+            x: { grid: { display: false }, ticks: { color: axisColor, maxTicksLimit: 7, maxRotation: 0, font: { size: 12 } }, border: { color: gridColor } },
+            y: { beginAtZero: true, grid: { color: gridColor }, border: { display: false }, ticks: { color: axisColor, precision: selected.money ? 2 : 0, font: { size: 12 } } }
           }
         }
       });

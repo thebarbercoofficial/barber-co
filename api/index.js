@@ -2,7 +2,7 @@ const { MongoClient, ObjectId } = require("mongodb");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { buildAnalytics, buildBarberPerformance } = require('../lib/analytics');
-const { sanitizeMethod, validateQrImage, realPaymentConfigured, demoMethods, normalizeMobile } = require('../lib/payment-settings');
+const { sanitizeMethod, validateQrImage, realPaymentConfigured, normalizeMobile } = require('../lib/payment-settings');
 const { phoneUsers, availablePhone } = require('../lib/phone-login');
 const security = require('../lib/account-security');
 const messaging = require('../lib/notifications');
@@ -149,11 +149,8 @@ function mergedSettings(settings = {}) {
   const operatingHours = { ...defaultSettings.operatingHours, ...(settings.operatingHours || {}) };
   const gcash = { ...defaultSettings.gcash, ...(settings.gcash || {}) };
   const maya = { ...defaultSettings.maya, ...(settings.maya || {}) };
-  const allowDemoPayments = process.env.ALLOW_DEMO_PAYMENTS !== 'false';
-  const hasRealPayment = realPaymentConfigured({ gcash, maya });
-  let paymentMode = settings.paymentMode || (hasRealPayment ? 'live' : 'demo');
-  if (!hasRealPayment && allowDemoPayments) paymentMode = 'demo';
-  if (!allowDemoPayments) paymentMode = 'live';
+  const allowDemoPayments = false;
+  const paymentMode = 'live';
   for (const day of dayNames) {
     const hours = operatingHours[day] || defaultSettings.operatingHours[day];
     operatingHours[day] = {
@@ -169,7 +166,6 @@ function mergedSettings(settings = {}) {
     paymentMode,
     paymentRevision: security.digest(JSON.stringify({ paymentMode, gcash, maya, bookingFee: settings.bookingFee ?? defaultSettings.bookingFee })),
     allowDemoPayments,
-    demoMethods,
     operatingHours,
     closedDates: Array.isArray(settings.closedDates) ? settings.closedDates : []
   };
@@ -408,7 +404,7 @@ function tokenFor(user) {
 }
 
 function paymentConfigured(settings) {
-  return settings.paymentMode === 'demo' || realPaymentConfigured(settings);
+  return realPaymentConfigured(settings);
 }
 
 function requireBookingEligibility(user) {
@@ -902,12 +898,10 @@ async function handler(req, res) {
     await requireRole(req, database, ["admin"]);
     if (body.gracePeriodMinutes !== undefined && (!Number.isInteger(body.gracePeriodMinutes) || body.gracePeriodMinutes < 0 || body.gracePeriodMinutes > 60)) return send(res, 400, { error: 'Grace period must be 0 to 60 whole minutes.' });
     const paymentMode = body.paymentMode || 'live';
-    if (paymentMode === 'demo' && process.env.ALLOW_DEMO_PAYMENTS === 'false') return send(res, 400, { error: 'Demo payments are disabled on this website.' });
-    if (!['live', 'demo'].includes(paymentMode)) return send(res, 400, { error: 'Choose demo or real payments.' });
+    if (paymentMode !== 'live') return send(res, 400, { error: 'Demo payments are no longer supported. Configure a real GCash or Maya payment method.' });
     if (paymentMode === 'live' && body.paymentDetailsConfirmed !== true) return send(res, 400, { error: 'Confirm that you checked the payment recipient in GCash/Maya before enabling real payments.' });
     const gcash = await sanitizeMethod(body.gcash, 'GCash', paymentMode);
     const maya = await sanitizeMethod(body.maya, 'Maya', paymentMode);
-    if (paymentMode === 'live' && !realPaymentConfigured({ gcash, maya })) return send(res, 400, { error: 'Enable at least one configured payment method before switching to real payments.' });
     const operatingHours = {};
     for (const day of dayNames) {
       const supplied = body.operatingHours?.[day] || defaultSettings.operatingHours[day];

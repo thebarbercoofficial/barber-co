@@ -62,7 +62,6 @@ async function render() {
           <form class="form-card settings-form" data-payment-settings>
             <div class="settings-group schedule-group">
               <h3 class="settings-group-title">Payment mode</h3>
-              ${settings.allowDemoPayments ? `<label class="check-row"><input type="checkbox" name="demoPayments" ${settings.paymentMode === 'demo' ? 'checked' : ''}> Test payments (no real money)</label>` : ''}
               <p class="muted" data-payment-mode-note></p>
               <label class="check-row" data-recipient-confirmation><input type="checkbox" name="paymentDetailsConfirmed" ${settings.paymentDetailsConfirmed ? 'checked' : ''}> I checked the recipient in GCash/Maya and confirmed these details belong to the shop.</label>
             </div>
@@ -75,7 +74,6 @@ async function render() {
               <label class="upload-box">Choose GCash QR image<input type="file" accept="image/jpeg,image/png,image/webp" data-qr="gcash"><small>Use the QR image from the official GCash account. Maximum 2 MB.</small></label>
               <div data-qr-preview="gcash">${draft.gcashQr ? `<img class="qr-preview" src="${safeText(draft.gcashQr)}" alt="Saved GCash QR code">` : `<div class="empty-state">No GCash QR uploaded yet.</div>`}</div>
               <button class="button secondary small" type="button" data-qr-clear="gcash">Remove QR</button>
-              <div data-demo-preview><p class="muted">Demo GCash / no money transfer</p><img class="qr-preview" src="images/demo-gcash-qr.png" alt="Non-payable demo GCash QR"></div>
             </div>
             <div class="settings-group" role="group" aria-labelledby="maya-settings-title">
               <h3 class="settings-group-title" id="maya-settings-title">Maya</h3>
@@ -84,7 +82,6 @@ async function render() {
               <label class="upload-box">Choose Maya QR image<input type="file" accept="image/jpeg,image/png,image/webp" data-qr="maya"><small>Use the QR image from the official Maya account. Maximum 2 MB.</small></label>
               <div data-qr-preview="maya">${draft.mayaQr ? `<img class="qr-preview" src="${safeText(draft.mayaQr)}" alt="Saved Maya QR code">` : `<div class="empty-state">No Maya QR uploaded yet.</div>`}</div>
               <button class="button secondary small" type="button" data-qr-clear="maya">Remove QR</button>
-              <div data-demo-preview><p class="muted">Demo Maya / no money transfer</p><img class="qr-preview" src="images/demo-maya-qr.png" alt="Non-payable demo Maya QR"></div>
             </div>
             <div class="settings-group schedule-group" role="group" aria-labelledby="schedule-settings-title">
               <h3 class="settings-group-title" id="schedule-settings-title">Booking schedule</h3>
@@ -108,7 +105,7 @@ async function render() {
   scheduleHeader.innerHTML = '<span>Day</span><span>Opens</span><span>Closes</span><span>Closed</span>';
   document.querySelector('.schedule-settings').prepend(scheduleHeader);
   const updateMode = () => {
-    const demo = document.querySelector('[name="demoPayments"]')?.checked || false;
+    const demo = false;
     document.querySelector('[data-payment-mode-note]').textContent = demo ? 'GCash and Maya demo options are active. Demo bookings are labeled and excluded from real booking/revenue analytics. Real details below are saved separately.' : 'Real payments: mobile numbers must use Philippine format. Uploaded QRs must be reusable QRPh payment codes. Account ownership is not automatically verified.';
     document.querySelector('[data-recipient-confirmation]').style.display = demo ? 'none' : '';
     document.querySelector('[name="paymentDetailsConfirmed"]').required = !demo;
@@ -148,7 +145,7 @@ async function render() {
       const payload = await api("/admin/settings", {
         method: "PATCH",
         body: JSON.stringify({
-          paymentMode: data.has('demoPayments') ? 'demo' : 'live',
+          paymentMode: 'live',
           paymentDetailsConfirmed: data.has('paymentDetailsConfirmed'),
           bookingFee: Number(data.get("bookingFee")),
           gracePeriodMinutes: Number(data.get('gracePeriodMinutes')),

@@ -31,14 +31,15 @@ async function render() {
     initHeader('booking');
     return;
   }
-  const demo = settings.paymentMode === 'demo';
-  const paymentSettings = demo ? settings.demoMethods || {} : settings;
+  const demo = false;
+  const paymentSettings = settings.paymentMode === 'demo' ? {} : settings;
   const methods = [
     { id: "GCash", ...(paymentSettings.gcash || {}) },
     { id: "Maya", ...(paymentSettings.maya || {}) }
   ].filter((method) => method.enabled !== false && (method.accountNumber || method.qrImage));
   if (!methods.length) {
     document.querySelector("#app").innerHTML = `${nav("booking")}<section class="section top"><div class="panel"><p class="eyebrow">Payment unavailable</p><h2>Online payment is not configured yet.</h2><p class="muted">Checkout does not block this time for other customers. No booking has been submitted for staff approval.</p>${BarberCo.canAccess('admin') ? '<a class="button primary" href="admin-profile.html">Set up payments</a><a class="button secondary" href="admin-schedule.html">View appointments</a>' : '<p class="muted">Please contact the shop or join the walk-in queue instead.</p>'}<a class="button secondary" href="queue.html?walkin=1">Join as walk-in</a></div></section>`;
+    document.querySelector('.panel h2').textContent = 'Payment method is currently unavailable.';
     initHeader("booking");
     return;
   }

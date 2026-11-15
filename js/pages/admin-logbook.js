@@ -45,6 +45,11 @@ function updateQueueUI() {
   const rows = document.querySelector("[data-queue-rows]");
   const markup = queueRows();
   if (rows && markup !== rowSnapshot) { rows.innerHTML = markup; rowSnapshot = markup; }
+  rows?.querySelectorAll('[data-status$=":done"]').forEach(button => {
+    const ticket = liveQueue.find(item => String(item.mongoId || item.id) === button.dataset.status.split(':')[0]);
+    button.disabled = ticket?.status !== 'serving';
+    button.title = button.disabled ? 'Serve the customer before completing the service' : 'Confirm service and payment';
+  });
   const stamp = document.querySelector("[data-last-sync]");
   if (stamp) stamp.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
   const nextButton = document.querySelector("[data-next]");
@@ -88,6 +93,7 @@ async function initialize() {
           <label>Barber<select name="barberId"><option value="">Assign later</option>${barbers.filter((barber) => !["fired", "on-leave"].includes(barber.status)).map((barber) => `<option value="${barber.id}">${barber.name}</option>`).join("")}</select></label>
           <label>Notes<input name="notes" placeholder="No phone, prefers scissors, paid cash, etc."></label>
           <button class="button primary full" type="submit">${icon('Plus')} Add to queue</button>
+          <p role="alert" data-add-error></p>
         </form>
         <section class="queue-list-section"><div class="panel-heading"><h3>Customer line</h3><span class="live-pill">Live queue</span></div><div class="list-toolbar"><label class="search-field">${icon('Search')}<input type="search" data-queue-search placeholder="Find a customer" aria-label="Search queue by name or number"></label><select data-queue-filter aria-label="Filter queue status"><option value="active">Active customers</option><option value="waiting">Waiting</option><option value="serving">Serving</option><option value="done">Completed</option><option value="cancelled">Cancelled</option></select></div><div class="queue-list" data-queue-rows><div class="staff-empty">Loading the shared queue...</div></div></section>
       </div>
@@ -96,6 +102,7 @@ async function initialize() {
   document.querySelector('[name="serviceId"]').addEventListener("change", (event) => {
     document.querySelector('[name="price"]').value = byId(state.services, event.target.value).price || 0;
   });
+  document.querySelector('[name="price"]').value = byId(state.services, document.querySelector('[name="serviceId"]').value).price || 0;
   const guestEmail = document.querySelector('[data-logbook-form] [name="contactEmail"]');
   const guestEmailConsent = document.querySelector('[data-logbook-form] [name="emailConsent"]');
   guestEmailConsent.addEventListener("change", () => { guestEmail.required = guestEmailConsent.checked; });
@@ -104,7 +111,9 @@ async function initialize() {
 
   document.querySelector("[data-logbook-form]").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const button = event.submitter;
+    const button = event.submitter || event.target.querySelector('[type="submit"]');
+    if (button.disabled) return;
+    document.querySelector('[data-add-error]').textContent = '';
     const data = new FormData(event.target);
     const service = byId(state.services, data.get("serviceId"));
     button.disabled = true;
@@ -114,7 +123,7 @@ async function initialize() {
       event.target.reset();
       document.querySelector('[name="price"]').value = byId(state.services, document.querySelector('[name="serviceId"]').value).price || 0;
       await refreshQueue();
-    } catch (error) { toast(error.message || "Customer could not be added."); }
+    } catch (error) { document.querySelector('[data-add-error]').textContent = error.message || 'Customer could not be added.'; toast(error.message || "Customer could not be added."); }
     finally { button.disabled = false; }
   });
 
@@ -133,6 +142,11 @@ async function initialize() {
     const renameButton = event.target.closest("[data-rename]");
     if (!statusButton && !renameButton) return;
     const button = statusButton || renameButton;
+    if (button.disabled) return;
+    if (statusButton?.dataset.status.endsWith(':done')) {
+      const ticket = liveQueue.find(item => String(item.mongoId || item.id) === statusButton.dataset.status.split(':')[0]);
+      if (!window.confirm(ticket?.source === 'appointment' ? 'Confirm this booked service is finished? Payment stays recorded on the appointment; no second payment is added.' : 'Confirm this service is finished and payment has been collected? This records collected revenue for this walk-in.')) return;
+    }
     button.disabled = true;
     try {
       if (renameButton) {

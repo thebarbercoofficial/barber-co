@@ -3,6 +3,15 @@ const params = new URLSearchParams(location.search);
 const savedTicketId = localStorage.getItem("barberCoQueueTicketId");
 let alertsEnabled = false;
 let lastTicketStatus = "";
+let activeTicketId = params.get('ticket') || savedTicketId;
+let joinBusy = false;
+
+function updateJoinState(active, message = '') {
+  const button = document.querySelector('[data-walkin] [type="submit"]');
+  if (button) { button.disabled = active || joinBusy; button.textContent = active ? 'Your ticket is already in the queue' : 'Get queue number'; }
+  const notice = document.querySelector('[data-walkin-error]');
+  if (notice) notice.textContent = message;
+}
 
 function escapeHtml(value = "") {
   return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -63,6 +72,7 @@ async function render() {
           <label class="terms-consent"><span><input name="emailConsent" type="checkbox"><span>Email me when staff calls or cancels my ticket.</span></span></label>
           <p class="muted">For customers already at the shop. No account needed. Choose a cut, get a number, and wait for your name to be called.</p>
           <button class="button primary full" type="submit">Get queue number</button>
+          <p role="alert" data-walkin-error></p>
           <button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>
         </form>
         <div class="panel" data-ticket-panel>
@@ -81,19 +91,24 @@ async function render() {
     event.preventDefault();
     const button = event.target.querySelector('[type="submit"]');
     if (button.disabled) return;
+    joinBusy = true;
     button.disabled = true;
+    document.querySelector('[data-walkin-error]').textContent = '';
     const data = new FormData(event.target);
     try {
       const payload = await api("/queue/walkin", {
         method: "POST",
         body: JSON.stringify({ customer: data.get("customer"), serviceId: data.get("serviceId"), contactEmail: data.get("contactEmail"), emailConsent: data.get("emailConsent") === "on" })
       });
-      localStorage.setItem("barberCoQueueTicketId", payload.ticket.id);
-      if (payload.emailUpdatesEnabled) localStorage.setItem(`barberCoQueueEmailUpdates:${payload.ticket.id}`, "true");
+      try {
+        localStorage.setItem("barberCoQueueTicketId", payload.ticket.id);
+        if (payload.emailUpdatesEnabled) localStorage.setItem(`barberCoQueueEmailUpdates:${payload.ticket.id}`, "true");
+      } catch { /* The ticket URL still works when browser storage is full. */ }
       location.href = `queue.html?ticket=${payload.ticket.id}`;
     } catch (error) {
+      joinBusy = false;
       toast(error.message || "The queue could not be reached. Please ask the front desk for help.");
-        button.disabled = false;
+      updateJoinState(false, error.message || 'The queue could not be reached. Please ask the front desk for help.');
     }
   });
 
@@ -123,7 +138,7 @@ async function render() {
     ringDevice();
   });
 
-  if (ticketId) updateTicket(ticketId);
+  if (ticketId) { updateJoinState(true, 'Checking your existing ticket before joining again.'); updateTicket(ticketId); }
   refreshPublicQueue();
   initHeader("queue");
 }
@@ -134,12 +149,14 @@ async function updateTicket(ticketId) {
     const panel = document.querySelector("[data-ticket-panel]");
     if (!panel) return;
     const status = data.ticket.status;
+    if (activeTicketId === ticketId) updateJoinState(['waiting', 'serving'].includes(status), ['waiting', 'serving'].includes(status) ? 'You already have a ticket. Your status is shown here; no need to join again.' : '');
     const position = status === 'serving' ? 'Now serving' : status === 'waiting' ? `#${data.position} in line` : status === 'done' ? 'Completed' : status === 'cancelled' ? 'Cancelled' : 'Not in line';
     const emailUpdates = localStorage.getItem(`barberCoQueueEmailUpdates:${ticketId}`) === "true";
     panel.innerHTML = `<p class="eyebrow">Your Status</p><h2>Queue #${String(data.ticket.queueNumber).padStart(2, "0")}</h2><div class="summary-list"><div><span>Status</span><strong>${escapeHtml(status === 'done' ? 'Completed' : status)}</strong></div><div><span>Position</span><strong>${position}</strong></div><div><span>People ahead</span><strong>${status === 'waiting' ? data.waitingAhead : '-'}</strong></div></div>${emailUpdates ? '<p class="muted">Email queue updates are enabled.</p>' : ''}${['waiting', 'serving'].includes(status) ? '<button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>' : ''}`;
     if (lastTicketStatus && lastTicketStatus !== "serving" && data.ticket.status === "serving") ringDevice();
     lastTicketStatus = data.ticket.status;
-  } catch {
+  } catch (error) {
+    if (error.status === 404 && activeTicketId === ticketId) { activeTicketId = null; updateJoinState(false); }
     const panel = document.querySelector("[data-ticket-panel]");
     if (panel) panel.innerHTML = '<p class="eyebrow">Your Status</p><h2>Ticket status unavailable</h2><p>Please check with the counter. Retrying automatically.</p>';
   }

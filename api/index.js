@@ -1363,6 +1363,7 @@ async function handler(req, res) {
     if (!ticket) return send(res, 404, { error: 'Queue ticket not found.' });
     if (body.status && ticket.status === body.status) return send(res, 200, { ok: true });
     if (['done', 'cancelled'].includes(ticket.status) && body.status) return send(res, 409, { error: 'This customer has already left the active queue.' });
+    if (body.status === 'done' && ticket.status !== 'serving') return send(res, 409, { error: 'Serve this customer before completing the service and recording payment.' });
     if (body.status === 'serving') {
       const served = await startServing(database, id);
       await messaging.notify(database, served.userId, `It is your turn at The Barber Co. Queue #${served.queueNumber}. Please approach the counter.`, `queue:${id}:serving`, { queueTicketId: served._id });

@@ -286,3 +286,35 @@ body.staff-page .site-header.staff-header { background: var(--oak-deep); border-
   .studio-dashboard [data-quick-service] { grid-template-columns: minmax(0, 1fr) 90px; }
   .studio-dashboard [data-quick-service] > button { grid-column: 1 / -1; }
 }
+@media screen and (min-width: 1261px) {
+  body.staff-page { --staff-sidebar: 248px; }
+  .staff-page .sidebar a { min-height: 50px; padding: 12px 20px; font-size: 14px; }
+  .staff-page .sidebar a svg { width: 22px; height: 22px; }
+  .staff-page .sidebar-group { margin-bottom: 18px; }
+  .staff-page .sidebar-group > p { font-size: 11px; margin-block: 16px 10px; }
+  .staff-page .sidebar-shop { padding-block: 20px; font-size: 14px; }
+  .staff-page .sidebar-footer { margin-top: auto; padding-bottom: 16px; }
+  .staff-page .sidebar-footer small { font-size: 12px; }
+  .staff-page .workspace { padding: 20px 24px 24px; font-size: 14px; }
+  .staff-page .workspace h1 { font-size: 26px; }
+  .staff-page .panel-heading h3 { font-size: 18px; }
+  .staff-page .button { min-height: 40px; padding: 9px 14px; font-size: 13px; }
+  .staff-page input:not([type="checkbox"]):not([type="range"]),
+  .staff-page select { min-height: 40px; font-size: 14px; }
+  .staff-page label { font-size: 13px; }
+  .staff-page .metric { padding: 18px 20px; }
+  .staff-page .metric-label { font-size: 14px; }
+  .staff-page .metric strong { font-size: 34px; margin-block: 12px; }
+  .staff-page .metric small { font-size: 12px; }
+  .studio-dashboard .compact-row { min-height: 76px; padding-block: 16px; font-size: 15px; }
+  .studio-dashboard .compact-row small { font-size: 13px; line-height: 1.5; }
+  .studio-dashboard .status-pill { font-size: 12px; }
+  .studio-dashboard .dashboard-layout { row-gap: 20px; }
+  .studio-dashboard .chart-frame { height: 350px; }
+  .studio-dashboard .chart-inspector, .studio-dashboard .analytics-note { font-size: 12px; }
+  .studio-dashboard [data-frontdesk-panel] .staff-empty { font-size: 14px; }
+}
+@media screen and (min-width: 1500px) and (min-height: 1050px) {
+  .studio-dashboard .chart-frame { height: 440px; }
+  .studio-dashboard .dashboard-roster .compact-row { min-height: 88px; }
+}

@@ -366,6 +366,11 @@ async function main() {
     assert.ok((await sparsePage.locator('.dashboard-roster').boundingBox()).height < 260, 'Eight barbers must use multiple roster columns');
     assert.ok((await sparsePage.locator('[data-quick-service]').boundingBox()).height < 150, 'Quick service uses an inline form');
     const rosterBounds = await sparsePage.locator('[data-dashboard-team]').boundingBox();
+    const desktopSizing = await sparsePage.locator('.sidebar a').first().evaluate((link) => ({ height: link.getBoundingClientRect().height, font: parseFloat(getComputedStyle(link).fontSize) }));
+    assert.ok(desktopSizing.height >= 50 && desktopSizing.font >= 14, 'Desktop navigation must remain readable instead of shrinking to tiny rows');
+    const footerBounds = await sparsePage.locator('.sidebar-footer').boundingBox();
+    assert.ok(footerBounds.y + footerBounds.height >= 1240, 'Sidebar footer belongs at the bottom of the viewport');
+    assert.ok(rosterBounds.y + rosterBounds.height >= 1150, 'Tall desktop dashboard should use the available height');
     const chartBounds = await sparsePage.locator('[data-analytics]').boundingBox();
     const bookingBounds = await sparsePage.locator('[data-online-activity]').boundingBox();
     assert.ok(rosterBounds.width > chartBounds.width + bookingBounds.width, 'Roster must use the full row rather than leaving a blank neighboring column');

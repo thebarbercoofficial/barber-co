@@ -33,6 +33,14 @@ async function request(url, body, actor = admin, method = 'PATCH') {
   return { status: res.statusCode, ...data };
 }
 async function main() {
+  const stale = Readable.from([JSON.stringify({ customer: 'Guest with expired login', serviceId: 'cut' })]);
+  Object.assign(stale, { method: 'POST', url: '/api/queue/walkin', headers: { authorization: 'Bearer expired-token' }, socket: { remoteAddress: '127.0.0.2' } });
+  let guestResult;
+  const guestResponse = { setHeader() {}, end(raw) { guestResult = JSON.parse(raw); } };
+  await handler(stale, guestResponse);
+  assert.equal(guestResponse.statusCode, 201, JSON.stringify(guestResult));
+  assert.ok(database.records.queue.some(ticket => ticket.customer === 'Guest with expired login'));
+  database.records.queue = database.records.queue.filter(ticket => ticket.customer !== 'Guest with expired login');
   const endpoint = `/admin/appointments/${appointment._id}/check-in`;
   assert.equal((await request(endpoint, { memberIndices: [0] }, customer)).status, 403);
   assert.equal((await request(endpoint, { memberIndices: [2] })).status, 400);

@@ -88,6 +88,10 @@ async function sweepRescheduleRequests(database, now = new Date()) {
     if (!(rescheduleDeadline(current, current.rescheduleRequest) <= now)) continue;
     try {
       await withAppointmentMutation(database, String(current._id), async () => {
+        if (current.rescheduleRequest.initiatedBy === 'staff') {
+          await database.collection('appointments').updateOne({ _id: current._id, rescheduleRequest: current.rescheduleRequest }, { $set: { 'rescheduleRequest.status': 'expired', updatedAt: now } });
+          return;
+        }
         // Keep the request pending until side effects finish so a failed sweep can retry.
         if (current.status !== 'cancelled') {
           const changed = await database.collection('appointments').updateOne({ _id: current._id, status: current.status, date: current.date, time: current.time, rescheduleRequest: current.rescheduleRequest }, { $set: { status: 'cancelled', cancelledBy: 'reschedule-expiration', noRefund: true, updatedAt: now } });
@@ -1142,7 +1146,6 @@ async function handler(req, res) {
   if (req.method === 'PATCH' && /^\/(admin\/)?appointments\/[a-f0-9]{24}\/(reschedule|reschedule-review)$/.test(path)) {
     const customerRequest = !path.startsWith('/admin/');
     const review = path.endsWith('/reschedule-review');
-    if (review && customerRequest) return send(res, 404, { error: 'Not found.' });
     const staffNote = customerRequest ? '' : String(body.reason || '').trim().slice(0, 500);
     const actor = customerRequest ? await requireUser(req, database) : await requireRole(req, database, ['admin', 'moderator']);
     const id = path.split('/').at(-2);
@@ -1154,6 +1157,7 @@ async function handler(req, res) {
     if (review) {
       if (!['approve', 'reject'].includes(body.decision)) return send(res, 400, { error: 'Choose approve or reject.' });
       if (current.rescheduleRequest?.status !== 'pending') return send(res, 409, { error: 'There is no pending reschedule request.' });
+      if (customerRequest !== (current.rescheduleRequest.initiatedBy === 'staff')) return send(res, 403, { error: 'The other side must review this reschedule request.' });
       if (body.requestedAt !== new Date(current.rescheduleRequest.requestedAt).toISOString()) return send(res, 409, { error: 'This reschedule request changed. Refresh before reviewing.' });
       revision['rescheduleRequest.expiresAt'] = { $gt: new Date() };
       if (body.decision === 'reject') {
@@ -1164,7 +1168,7 @@ async function handler(req, res) {
         return send(res, 200, { appointment: normalizeDoc({ ...current, rescheduleRequest }) });
       }
     }
-    if (customerRequest && current.rescheduleRequest?.status === 'pending') return send(res, 409, { error: 'A reschedule request is already pending.' });
+    if (!review && current.rescheduleRequest?.status === 'pending') return send(res, 409, { error: 'A reschedule request is already pending.' });
     if (customerRequest && new Date(`${current.date}T${current.time}:00+08:00`).getTime() <= Date.now()) return send(res, 409, { error: 'This appointment has already started. Contact the shop.' });
     const date = String((review ? current.rescheduleRequest.date : body.date) || '');
     const time = String((review ? current.rescheduleRequest.time : body.time) || '');
@@ -1181,11 +1185,12 @@ async function handler(req, res) {
     if (current.barberId && unavailable.includes(current.barberId)) return send(res, 409, { error: 'This barber is already reserved at that time.' });
     const barber = current.barberId ? await database.collection('barbers').findOne({ $or: [{ slug: current.barberId }, ...(ObjectId.isValid(current.barberId) ? [{ _id: new ObjectId(current.barberId) }] : [])] }) : null;
     if (current.barberId && (!barber || ['fired', 'on-leave'].includes(barber.status))) return send(res, 409, { error: 'The selected barber is not available.' });
-    if (customerRequest) {
+    if (!review) {
       const requestedAt = new Date(Math.max(Date.now(), (new Date(current.rescheduleRequest?.requestedAt).getTime() || 0) + 1));
-      const rescheduleRequest = { date, time, originalDate: current.date, originalTime: current.time, requestedAt, status: 'pending', expiresAt: rescheduleDeadline(current, { date, time }) };
+      const rescheduleRequest = { date, time, originalDate: current.date, originalTime: current.time, requestedAt, initiatedBy: customerRequest ? 'customer' : 'staff', reason: staffNote, status: 'pending', expiresAt: rescheduleDeadline(current, { date, time }) };
       const changed = await database.collection('appointments').updateOne(revision, { $set: { rescheduleRequest, updatedAt: new Date() } });
       if (!changed.modifiedCount) return send(res, 409, { error: 'This appointment changed. Refresh and try again.' });
+      if (!customerRequest) await messaging.notify(database, current.userId, `The shop proposes moving your booking to ${date} at ${time}. Open My bookings to accept or keep your original schedule (${current.date} at ${current.time}). Reason: ${staffNote}`, `appointment:${id}:reschedule-proposed:${requestedAt.toISOString()}`);
       return send(res, 200, { appointment: normalizeDoc({ ...current, rescheduleRequest }) });
     }
     const rescheduleRequest = current.rescheduleRequest?.status === 'pending' ? { ...current.rescheduleRequest, status: review ? 'approved' : 'superseded', reviewedAt: new Date(), reason: staffNote } : current.rescheduleRequest;
@@ -1286,7 +1291,11 @@ async function handler(req, res) {
   }
 
   if (req.method === "POST" && path === "/queue/walkin") {
-    const account = req.headers.authorization ? await requireUser(req, database) : null;
+    let account = null;
+    if (req.headers.authorization) {
+      try { account = await requireUser(req, database); }
+      catch (error) { if (error.status !== 401) throw error; }
+    }
     const customer = String(body.customer || "").trim().slice(0, 120);
     if (customer.length < 2) return send(res, 400, { error: "Enter the customer's name." });
     const guestKey = bookingGuards.guestKey(req, account, body);

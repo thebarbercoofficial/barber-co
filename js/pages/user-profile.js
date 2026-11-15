@@ -14,6 +14,7 @@ let myAppointments = [];
 function rescheduleUpdate(item) {
   const request = item.rescheduleRequest;
   if (!request) return '';
+  if (request.initiatedBy === 'staff') return `<div style="grid-column:1/-1"><p><strong>Shop reschedule proposal:</strong> ${escapeValue(request.date)} at ${escapeValue(request.time)}<br>${escapeValue(request.reason || '')}</p><p>Status: ${escapeValue(request.status)}. Your original schedule stays unchanged unless you accept. An unanswered proposal expires without cancelling your original booking.</p>${request.status === 'pending' && ['pending', 'confirmed'].includes(item.status) ? `<button class="button primary" data-customer-review="${escapeValue(item.id)}" data-decision="approve">Accept new schedule</button> <button class="button secondary" data-customer-review="${escapeValue(item.id)}" data-decision="reject">Keep original schedule</button>` : ''}</div>`;
   const deadline = new Date(request.expiresAt);
   const originalLabel = request.originalDate || request.status === 'pending' ? 'Original' : 'Current schedule';
   const originalDate = request.originalDate || item.date;
@@ -61,6 +62,7 @@ async function refreshBookings({ quiet = false } = {}) {
     }
     target?.querySelectorAll('.appointment-row').forEach((row, index) => {
       const item = myAppointments[index];
+      if (item?.rescheduleRequest?.status === 'pending' && item.rescheduleRequest.initiatedBy === 'staff') row.querySelector('.status-pill').textContent = 'Reschedule awaiting your approval';
       if (['in-queue', 'serving', 'no-show'].includes(item?.attendanceStatus)) row.querySelector('.status-pill').textContent = bookingStatus(item.attendanceStatus, item.demoPayment);
     });
   } catch (error) { if (!quiet) toast(error.message || "Bookings could not be loaded."); }
@@ -73,6 +75,16 @@ function draw() {
   const profileGrid = document.querySelector(".grid-2");
   const bookingSection = document.querySelector("#bookings");
   bookingSection.addEventListener('click', async (event) => {
+    const review = event.target.closest('[data-customer-review]');
+    if (review) {
+      const item = myAppointments.find(entry => String(entry.id) === review.dataset.customerReview);
+      if (review.disabled || !item || item.rescheduleRequest?.initiatedBy !== 'staff') return;
+      if (!window.confirm(review.dataset.decision === 'approve' ? `Accept ${item.rescheduleRequest.date} at ${item.rescheduleRequest.time} (Philippine time)? This replaces your original schedule.` : 'Reject this proposal and keep your original schedule?')) return;
+      review.disabled = true;
+      try { await api(`/appointments/${item.id}/reschedule-review`, { method: 'PATCH', body: JSON.stringify({ decision: review.dataset.decision, requestedAt: item.rescheduleRequest.requestedAt }) }); await refreshBookings(); toast('Reschedule response recorded.'); }
+      catch (error) { toast(error.message); review.disabled = false; }
+      return;
+    }
     const cancel = event.target.closest('[data-cancel-booking]');
     const reschedule = event.target.closest('[data-reschedule]');
     if (!cancel && !reschedule) return;

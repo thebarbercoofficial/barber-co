@@ -46,7 +46,7 @@ async function main() {
               if (body.decision === 'approve') { booking.date = request.date; booking.time = request.time; }
             } else if (endpoint.endsWith('/reschedule')) {
               if (role === 'customer') booking.rescheduleRequest = { ...request, ...body };
-              else Object.assign(booking, body);
+              else booking.rescheduleRequest = { ...request, ...body, initiatedBy: 'staff' };
             } else if (endpoint.endsWith('/cancel')) booking.status = 'cancelled';
             data = { appointment: booking };
           } else if (endpoint.endsWith('/me')) data = { user };
@@ -105,12 +105,15 @@ async function main() {
           await page.locator('dialog [name="time"]').selectOption('14:30');
           await page.locator('dialog [name="reason"]').fill('Staff schedule changed.');
           page.once('dialog', dialog => dialog.dismiss());
-          await page.getByRole('button', { name: 'Save schedule' }).click();
+          await page.getByRole('button', { name: 'Send reschedule request' }).click();
           assert.equal(writes.length, 2);
           page.once('dialog', dialog => dialog.accept());
-          await page.getByRole('button', { name: 'Save schedule' }).click();
+          await page.getByRole('button', { name: 'Send reschedule request' }).click();
           await page.waitForFunction(() => !document.querySelector('dialog'));
           assert.equal(writes.at(-1).body.reason, 'Staff schedule changed.');
+          assert.equal(booking.date, initial.date);
+          assert.equal(await page.locator('[data-reschedule-review]').count(), 0);
+          assert.match(await bookingPanel.innerText(), /Waiting for customer approval/);
           booking = { ...initial, rescheduleRequest: { ...request } };
           await page.reload();
           await page.locator('[data-decision="approve"]').click();
@@ -141,6 +144,21 @@ async function main() {
           await page.waitForFunction(() => !document.querySelector('[data-cancel-booking]'));
           assert.equal(booking.status, 'cancelled');
           assert.equal(writes.at(-1).body.acceptNoRefund, true);
+          booking = { ...initial, rescheduleRequest: { ...request, initiatedBy: 'staff' } };
+          await page.reload();
+          await page.getByRole('button', { name: 'Keep original schedule', exact: true }).waitFor();
+          page.once('dialog', dialog => dialog.accept());
+          await page.getByRole('button', { name: 'Keep original schedule', exact: true }).click();
+          await page.waitForFunction(() => !document.querySelector('[data-customer-review]'));
+          assert.equal(booking.date, initial.date);
+          assert.equal(booking.rescheduleRequest.status, 'rejected');
+          booking = { ...initial, rescheduleRequest: { ...request, initiatedBy: 'staff' } };
+          await page.reload();
+          page.once('dialog', dialog => dialog.accept());
+          await page.getByRole('button', { name: 'Accept new schedule', exact: true }).click();
+          await page.waitForFunction(() => !document.querySelector('[data-customer-review]'));
+          assert.equal(booking.date, request.date);
+          assert.equal(booking.rescheduleRequest.status, 'approved');
         }
         assert.deepEqual(errors, []);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${role} overflow at ${width}`);

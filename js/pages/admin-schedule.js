@@ -38,6 +38,7 @@ function attendanceDetails(item) {
 function rescheduleDetails(item) {
   const request = item.rescheduleRequest;
   if (!request) return '';
+  if (request.initiatedBy === 'staff') return `<small><strong>Shop proposal:</strong> ${safeText(request.date)} at ${safeText(request.time)} / ${safeText(request.status)}</small><small>${safeText(request.reason || '')}</small><small>Customer approval is required. Until accepted, the original schedule remains. An unanswered proposal expires without cancelling the original booking.</small>`;
   const deadline = new Date(request.expiresAt);
   const originalLabel = request.originalDate || request.status === 'pending' ? 'Original' : 'Current schedule';
   const deadlineText = Number.isNaN(deadline.getTime()) ? 'Unavailable; refresh before reviewing' : `${deadline.toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })} (Asia/Manila)`;
@@ -123,7 +124,8 @@ function updatePanel(connectionError = "", force = false) {
       row.querySelectorAll('[data-status]').forEach(button => {
         if (!button.dataset.status.endsWith(':cancelled')) button.remove();
       });
-      row.querySelector('.status-pill').textContent = 'Reschedule needs review';
+      row.querySelector('.status-pill').textContent = item.rescheduleRequest.initiatedBy === 'staff' ? 'Waiting for customer approval' : 'Reschedule needs review';
+      if (item.rescheduleRequest.initiatedBy !== 'staff')
       row.querySelector('.button-row')?.insertAdjacentHTML('afterbegin', `<button class="button primary small" type="button" data-reschedule-review="${safeText(id)}" data-decision="approve">${icon('Check')} Approve reschedule</button><button class="button secondary small" type="button" data-reschedule-review="${safeText(id)}" data-decision="reject">${icon('X')} Reject reschedule</button>`);
     } else {
       row.querySelector('.button-row')?.insertAdjacentHTML('afterbegin', `<button class="icon-button" type="button" data-reschedule="${safeText(id)}" title="Reschedule appointment" aria-label="Reschedule appointment">${icon('CalendarClock')}</button>`);
@@ -249,15 +251,16 @@ async function render() {
       reasonInput.placeholder = 'Explain why the appointment needs to change';
       reasonLabel.append(reasonInput);
       modal.querySelector('[data-reschedule-error]').before(reasonLabel);
+      modal.querySelector('[type="submit"]').textContent = 'Send reschedule request';
       modal.querySelector('[data-close]').onclick = () => modal.close();
       modal.addEventListener('close', () => modal.remove());
       modal.querySelector('form').onsubmit = async (submit) => {
         submit.preventDefault();
         if (submit.submitter.disabled) return;
         const values = Object.fromEntries(new FormData(submit.target));
-        if (!window.confirm(`Reschedule ${item.customer} from ${item.date} at ${item.time} to ${values.date} at ${values.time} (Asia/Manila)?\nReason: ${values.reason}\nThis changes the booking immediately.`)) return;
+        if (!window.confirm(`Propose moving ${item.customer} from ${item.date} at ${item.time} to ${values.date} at ${values.time} (Asia/Manila)?\nReason: ${values.reason}\nCustomer approval is required. The original schedule stays unchanged until accepted.`)) return;
         submit.submitter.disabled = true;
-        try { await api(`/admin/appointments/${item.id}/reschedule`, { method: 'PATCH', body: JSON.stringify(Object.fromEntries(new FormData(submit.target))) }); modal.close(); toast('Appointment rescheduled. Customer update recorded.'); await refreshAppointments({ force: true }); }
+        try { await api(`/admin/appointments/${item.id}/reschedule`, { method: 'PATCH', body: JSON.stringify(Object.fromEntries(new FormData(submit.target))) }); modal.close(); toast('Request sent. Waiting for customer approval.'); await refreshAppointments({ force: true }); }
         catch (error) { modal.querySelector('[data-reschedule-error]').textContent = error.message; submit.submitter.disabled = false; }
       };
       document.body.append(modal);

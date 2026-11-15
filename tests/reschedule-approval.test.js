@@ -68,7 +68,19 @@ async function main() {
   assert.equal((await request(review(), { decision: 'approve', requestedAt: version }, 1)).status, 409);
   current = fixture();
   assert.equal((await request(`/admin/appointments/${current._id}/reschedule`, target, 1)).status, 200);
+  assert.equal(current.date, '2100-03-03');
+  version = current.rescheduleRequest.requestedAt.toISOString();
+  assert.equal((await request(review(), { decision: 'approve', requestedAt: version }, 1)).status, 403);
+  assert.equal((await request(`/appointments/${current._id}/reschedule-review`, { decision: 'approve', requestedAt: version }, 2)).status, 404);
+  assert.equal((await request(`/appointments/${current._id}/reschedule-review`, { decision: 'approve', requestedAt: version })).status, 200);
   assert.equal(current.date, target.date);
+  current = fixture();
+  await request(`/admin/appointments/${current._id}/reschedule`, target, 1);
+  await api.sweepRescheduleRequests(database, new Date(current.rescheduleRequest.expiresAt));
+  assert.equal(current.date, '2100-03-03');
+  assert.equal(current.status, 'confirmed');
+  assert.equal(current.rescheduleRequest.status, 'expired');
+  assert.equal(database.records.appointmentSlots.length, 2);
   for (const proposed of [{ date: '2100-03-02', time: '15:00' }, target]) {
     current = fixture();
     result = await request(endpoint(), proposed);

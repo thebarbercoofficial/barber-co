@@ -13,6 +13,44 @@ let appointments = [];
 let reservations = [];
 let paymentReady = true;
 let demoMode = false;
+let mutationVersion = 0;
+let activeMutations = 0;
+const pendingAppointmentIds = new Set();
+
+function appointmentView(item) {
+  return { ...item, paymentProof: item.paymentProof || (item.hasPaymentProof ? `#receipt-${item.mongoId || item.id}` : ''), id: item.mongoId || item.id, time: item.time || 'Next available', status: item.status || 'pending' };
+}
+
+async function saveAppointment(path, body, confirmedUpdate) {
+  const pendingId = path.split('/')[3];
+  if (pendingAppointmentIds.has(pendingId)) throw new Error('This booking is already being saved.');
+  pendingAppointmentIds.add(pendingId);
+  activeMutations++;
+  mutationVersion++;
+  updatePanel(latestConnectionError, true);
+  try {
+    const data = await api(path, { method: 'PATCH', body: JSON.stringify(body) });
+    if (!data.appointment && data.ok && confirmedUpdate) data.appointment = confirmedUpdate;
+    if (!data.appointment) throw new Error('The saved appointment could not be confirmed. Refresh before trying again.');
+    const id = String(data.appointment.mongoId || data.appointment.id);
+    const previous = appointments.find(item => String(item.id) === id) || {};
+    const updated = appointmentView({ ...previous, ...data.appointment });
+    if (updated.status !== 'confirmed') updated.attendanceStatus = updated.status;
+    else if (Object.keys(updated.arrivals || {}).length && updated.attendanceStatus !== 'serving') updated.attendanceStatus = 'in-queue';
+    else if (updated.attendanceStatus !== 'serving') updated.attendanceStatus = 'confirmed';
+    appointments = appointments.map(item => String(item.id) === id ? updated : item);
+    mutationVersion++;
+    updatePanel('', true);
+    window.dispatchEvent(new CustomEvent('barberco:appointment-saved', { detail: updated }));
+    const stamp = document.querySelector('[data-last-updated]');
+    if (stamp) stamp.textContent = 'Saved just now';
+    return data;
+  } finally {
+    activeMutations--;
+    pendingAppointmentIds.delete(pendingId);
+    updatePanel(latestConnectionError, true);
+  }
+}
 
 function pendingReschedule(item) {
   return ['pending', 'confirmed'].includes(item.status) && item.rescheduleRequest?.status === 'pending';
@@ -33,8 +71,9 @@ function attendanceDetails(item) {
   if (item.cancelledBy === 'no-show') return '<small><strong>No-show / no refund.</strong> Reserved time released.</small>';
   if (item.status !== 'confirmed') return '';
   const names = item.partyMembers || [item.customer];
-  const deadline = item.graceDeadline ? new Date(item.graceDeadline).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : 'Loading deadline';
-  return `<small>Check-in deadline: ${safeText(deadline)} (Philippine time)</small>${names.map((name, index) => `<small>${safeText(name)}: ${item.arrivals?.[index] ? 'Checked in' : item.attendanceClosedAt ? 'Absent / no refund' : `<button class="button secondary small" type="button" data-check-in="${safeText(item.id)}" data-member-index="${index}">Check in</button>`}</small>`).join('')}<small><a href="admin-logbook.html">Open staff queue</a></small>`;
+  const opensAt = new Date(`${item.date}T${item.time}:00+08:00`).getTime() - 30 * 60000;
+  if (Date.now() < opensAt) return `<small>Arrival opens ${safeText(new Date(opensAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }))}</small>`;
+  return names.map((name, index) => `<small class="appointment-arrival">${names.length > 1 ? `${safeText(name)}: ` : ''}${item.arrivals?.[index] ? '<a class="text-action" href="admin-logbook.html">View in queue</a>' : item.attendanceClosedAt || (item.graceDeadline && Date.now() >= new Date(item.graceDeadline).getTime()) ? 'Arrival window closed' : `<button class="button secondary small" type="button" data-check-in="${safeText(item.id)}" data-member-index="${index}" title="Confirm the customer has arrived at the shop">Customer arrived</button>`}</small>`).join('');
 }
 
 function rescheduleDetails(item) {
@@ -54,15 +93,18 @@ function matchesAppointmentFilter(item, filter) {
 }
 
 async function loadAppointments(refreshCatalog = false) {
+  const version = mutationVersion;
   try {
     if (refreshCatalog) loadCatalog().then(() => updatePanel(latestConnectionError, true)).catch(() => {});
     const data = await api("/admin/appointments");
-    appointments = (data.appointments || []).filter(item => !item.demoPayment).map((item) => ({ ...item, paymentProof: item.paymentProof || (item.hasPaymentProof ? `#receipt-${item.mongoId || item.id}` : ''), id: item.mongoId || item.id, time: item.time || "Next available", status: item.status || "pending" }));
+    if (version !== mutationVersion || activeMutations) return null;
+    appointments = (data.appointments || []).filter(item => !item.demoPayment).map(appointmentView);
     reservations = (data.reservations || []).filter(item => !item.demoPayment);
     paymentReady = data.paymentConfigured !== false;
     demoMode = false;
     return "";
   } catch (error) {
+    if (version !== mutationVersion || activeMutations) return null;
     if (error.status === 401 || error.status === 403) {
       BarberCo.clearSession();
       location.replace("login.html");
@@ -79,7 +121,7 @@ function appointmentRows(connectionError = "") {
     return reservations.filter((item) => !query || `${item.customer} ${item.date} ${item.request || ''}`.toLowerCase().includes(query)).map((item) => `<div class="appointment-row appointment-record"><div class="appointment-date"><strong>${safeText(item.date)}</strong><small>${safeText(BarberCo.timeLabel(item.time))}</small></div><div class="row-main"><strong>${safeText(item.customer)}</strong>${item.demoPayment ? '<small class="text-action">DEMO / no real payment</small>' : ''}<small>${safeText(byId(state.services, item.serviceId).name)} / ${safeText(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned barber')}</small>${item.request ? `<small class="appointment-request"><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}</div><div><strong>${peso(item.total || 0)}</strong><small class="muted">Not yet submitted</small></div><span class="status-pill pending">Awaiting payment</span><small class="muted">Hold ends ${safeText(new Date(item.expiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</small></div>`).join('') || `<div class="staff-empty">${icon('Clock')}<strong>No active payment holds</strong></div>`;
   }
   const items = visibleAppointments(query);
-  return items.map((item) => `<div class="appointment-row appointment-record"><div class="appointment-date"><strong>${safeText(item.date || 'Unscheduled')}</strong><small>${safeText(BarberCo.timeLabel(item.time))} / #${String(item.queueNumber || '').padStart(2, '0')}</small></div><div class="row-main"><strong>${safeText(item.customer)}</strong>${item.demoPayment ? '<small class="text-action">DEMO / no real payment</small>' : ''}<small>${safeText(byId(state.services, item.serviceId).name)} / ${safeText(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned barber')}</small>${item.bookingPaymentMethod === 'onsite' ? '<small>Pay at shop / no advance payment received</small>' : ''}${item.request ? `<small class="appointment-request"><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}${item.paymentProof ? `<a class="text-action" href="${item.paymentProof}" target="_blank" rel="noreferrer">${icon('Image')} Payment proof</a>` : ''}</div><div><strong>${peso(item.total || 0)}</strong><small class="muted">${item.demoPayment ? 'Demo total' : item.bookingPaymentMethod === 'onsite' ? `Due at shop: ${peso(item.servicePaid ? 0 : item.cashDue || item.total)}` : 'Booking total'}</small></div><span class="status-pill ${item.status}">${item.status === 'pending' ? 'Needs review' : item.status === 'confirmed' ? 'Accepted' : item.status}</span><span class="button-row">${item.status === 'pending' ? `<button class="button primary small" type="button" data-status="${item.mongoId || item.id}:confirmed">${icon('Check')} ${item.demoPayment ? 'Accept demo' : item.bookingPaymentMethod === 'onsite' ? 'Accept booking' : 'Verify / accept'}</button>` : ''}${item.status === 'confirmed' ? `<button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:completed">Complete</button>` : ''}${!['completed', 'cancelled', 'disapproved'].includes(item.status) ? `<button class="icon-button danger-icon" type="button" data-status="${item.mongoId || item.id}:cancelled" aria-label="Cancel appointment" title="Cancel appointment">${icon('X')}</button>` : ''}</span></div>`).join('') || `<div class="staff-empty">${icon('CalendarDays')}<strong>No ${statusFilter === 'pending' ? 'pending ' : ''}appointments${query ? ' match your search' : ' here'}</strong><span>Submitted bookings appear here for payment verification.</span></div>`;
+  return items.map((item) => `<div class="appointment-row appointment-record"><div class="appointment-date"><strong>${safeText(item.date || 'Unscheduled')}</strong><small>${safeText(BarberCo.timeLabel(item.time))} / #${String(item.queueNumber || '').padStart(2, '0')}</small></div><div class="row-main"><strong>${safeText(item.customer)}</strong>${item.demoPayment ? '<small class="text-action">DEMO / no real payment</small>' : ''}<small>${safeText(byId(state.services, item.serviceId).name)} / ${safeText(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned barber')}</small>${item.bookingPaymentMethod === 'onsite' ? '<small>Pay at shop / no advance payment received</small>' : ''}${item.request ? `<small class="appointment-request"><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}${item.paymentProof ? `<a class="text-action" href="${item.paymentProof}" target="_blank" rel="noreferrer">${icon('Image')} Payment proof</a>` : ''}</div><div><strong>${peso(item.total || 0)}</strong><small class="muted">${item.demoPayment ? 'Demo total' : item.bookingPaymentMethod === 'onsite' ? `Due at shop: ${peso(item.servicePaid ? 0 : item.cashDue || item.total)}` : 'Booking total'}</small></div><span class="status-pill ${item.status}">${item.status === 'pending' ? 'Needs review' : item.status === 'confirmed' ? 'Accepted' : item.status}</span><span class="button-row">${item.status === 'pending' ? `<button class="button primary small" type="button" data-status="${item.mongoId || item.id}:confirmed">${icon('Check')} ${'Verify'}</button>` : ''}${item.status === 'confirmed' ? `<button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:completed">Complete</button>` : ''}${!['completed', 'cancelled', 'disapproved'].includes(item.status) ? `<button class="icon-button danger-icon" type="button" data-status="${item.mongoId || item.id}:cancelled" aria-label="Cancel appointment" title="Cancel appointment">${icon('X')}</button>` : ''}</span></div>`).join('') || `<div class="staff-empty">${icon('CalendarDays')}<strong>No ${statusFilter === 'pending' ? 'pending ' : ''}appointments${query ? ' match your search' : ' here'}</strong><span>Submitted bookings appear here for payment verification.</span></div>`;
 }
 
 function snapshot(connectionError = "") {
@@ -150,6 +192,12 @@ function updatePanel(connectionError = "", force = false) {
         complete.disabled = item.attendanceStatus !== 'serving';
         complete.title = complete.disabled ? 'Serve the customer from the staff logbook first' : 'Finish service and confirm any remaining payment';
       }
+      row.querySelectorAll('[data-status$=":confirmed"], [data-status$=":completed"]').forEach(button => button.classList.add('appointment-action'));
+      if (pendingAppointmentIds.has(String(item.id))) {
+        row.setAttribute('aria-busy', 'true');
+        row.querySelectorAll('button').forEach(button => { button.disabled = true; });
+        row.querySelectorAll('.appointment-action').forEach(button => { button.textContent = 'Saving...'; });
+      }
     }
   });
   if (focusAction) Array.from(panel.querySelectorAll(`[${focusAction}]`)).find(button => button.getAttribute(focusAction) === focusValue && button.dataset.decision === focusDecision)?.focus();
@@ -166,10 +214,10 @@ function updatePanel(connectionError = "", force = false) {
 }
 
 async function refreshAppointments({ force = false, refreshCatalog = false } = {}) {
-  if (refreshInProgress) return;
+  if (refreshInProgress || activeMutations) return;
   refreshInProgress = true;
   const connectionError = await loadAppointments(refreshCatalog);
-  updatePanel(connectionError, force);
+  if (connectionError !== null) updatePanel(connectionError, force);
   const updated = document.querySelector("[data-last-updated]");
   if (updated && !connectionError) updated.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
   refreshInProgress = false;
@@ -207,9 +255,8 @@ async function render() {
     if (arrival) {
       arrival.disabled = true;
       try {
-        await api(`/admin/appointments/${arrival.dataset.checkIn}/check-in`, { method: 'PATCH', body: JSON.stringify({ memberIndices: [Number(arrival.dataset.memberIndex)] }) });
+        await saveAppointment(`/admin/appointments/${arrival.dataset.checkIn}/check-in`, { memberIndices: [Number(arrival.dataset.memberIndex)] });
         toast('Customer checked in and added to the staff queue.');
-        await loadAppointments(); updatePanel('', true);
       } catch (error) { toast(error.message); }
       finally { arrival.disabled = false; }
       return;
@@ -231,10 +278,9 @@ async function render() {
         if (button.disabled) return;
         button.disabled = true;
         try {
-          await api(`/admin/appointments/${item.id}/reschedule-review`, { method: 'PATCH', body: JSON.stringify({ decision, requestedAt: item.rescheduleRequest.requestedAt, reason: modal.querySelector('[name="reason"]').value.trim() }) });
+          await saveAppointment(`/admin/appointments/${item.id}/reschedule-review`, { decision, requestedAt: item.rescheduleRequest.requestedAt, reason: modal.querySelector('[name="reason"]').value.trim() });
           modal.close();
           toast(decision === 'approve' ? 'Reschedule approved.' : 'Reschedule rejected. Original schedule retained.');
-          await refreshAppointments({ force: true });
         } catch (error) { modal.querySelector('[data-review-error]').textContent = error.message; button.disabled = false; }
       };
       document.body.append(modal);
@@ -246,7 +292,7 @@ async function render() {
       const item = appointments.find(entry => entry.id === archive.dataset.archiveAppointment);
       if (archive.disabled || !item || !window.confirm(item.archived ? 'Restore this appointment to the list?' : 'Archive this appointment? Booking and payment history stay intact. You can restore it from Archived.')) return;
       archive.disabled = true;
-      try { await api(`/admin/appointments/${item.id}/archive`, { method: 'PATCH', body: JSON.stringify({ archived: !item.archived }) }); await refreshAppointments({ force: true }); }
+      try { await saveAppointment(`/admin/appointments/${item.id}/archive`, { archived: !item.archived }, { id: item.id, archived: !item.archived }); }
       catch (error) { toast(error.message); archive.disabled = false; }
       return;
     }
@@ -277,7 +323,7 @@ async function render() {
         const values = Object.fromEntries(new FormData(submit.target));
         if (!window.confirm(`Propose moving ${item.customer} from ${item.date} at ${BarberCo.timeLabel(item.time)} to ${values.date} at ${BarberCo.timeLabel(values.time)} (Asia/Manila)?\nReason: ${values.reason}\nCustomer approval is required. The original schedule stays unchanged until accepted.`)) return;
         submit.submitter.disabled = true;
-        try { await api(`/admin/appointments/${item.id}/reschedule`, { method: 'PATCH', body: JSON.stringify(Object.fromEntries(new FormData(submit.target))) }); modal.close(); toast('Request sent. Waiting for customer approval.'); await refreshAppointments({ force: true }); }
+        try { await saveAppointment(`/admin/appointments/${item.id}/reschedule`, Object.fromEntries(new FormData(submit.target))); modal.close(); toast('Request sent. Waiting for customer approval.'); }
         catch (error) { modal.querySelector('[data-reschedule-error]').textContent = error.message; submit.submitter.disabled = false; }
       };
       document.body.append(modal);
@@ -331,9 +377,8 @@ async function render() {
     }
     button.disabled = true;
     try {
-      await api(`/admin/appointments/${id}`, { method: "PATCH", body: JSON.stringify({ status, reason, ...collection }) });
-      toast(`Appointment marked ${status}. Customer update recorded; message delivery is not guaranteed.`);
-      await refreshAppointments({ force: true });
+      await saveAppointment(`/admin/appointments/${id}`, { status, reason, ...collection });
+      toast(status === 'confirmed' ? 'Booking verified.' : status === 'completed' ? 'Service finished.' : 'Booking updated.');
     } catch (error) {
       toast(error.message || "Status could not be updated.");
       button.disabled = false;

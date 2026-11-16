@@ -110,12 +110,12 @@
     const events = [];
     try {
       if (staff) try {
-        const result = await api(staff ? '/admin/appointments' : '/appointments/mine', { cache: 'no-store' });
+        const result = await api('/admin/appointment-events');
         if (!active()) return;
         events.push(...ingest('bookings', bookingRecords(result.appointments || [])));
       } catch (error) { if ([401, 403].includes(error.status)) return; failed = true; }
       try {
-        const result = await api(staff ? '/admin/contacts' : '/notifications/mine', { cache: 'no-store' });
+        const result = await api(staff ? '/admin/contacts' : '/notifications/mine');
         if (!active()) return;
         if (staff) events.push(...ingest('contacts', (result.contacts || []).map(item => ({ id: id(item), version: String(item.createdAt), title: 'New contact message', message: item.name || 'Website visitor', at: item.createdAt, href: 'admin-contacts.html' }))));
         else events.push(...ingest('notifications', (result.notifications || []).map(item => ({ id: id(item), version: id(item), title: /your turn|queue #/i.test(item.message || '') ? 'Queue update' : 'Booking update', message: item.message, at: item.createdAt, href: item.queueTicketId ? `queue.html?ticket=${encodeURIComponent(String(item.queueTicketId))}` : 'user-profile.html#bookings' }))));

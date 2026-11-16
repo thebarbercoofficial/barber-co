@@ -13,7 +13,7 @@ const bookingGuards = require('../lib/booking-guards');
 const { onLeave, leaveDates } = require('../lib/barber-leave');
 const allowUnverified = process.env.ALLOW_UNVERIFIED_ACCOUNTS === 'true';
 const nonRefundablePolicyVersion = '2026-11-15';
-const frontDesk = require('../lib/front-desk')({ withAppointmentMutation, notify: (...args) => messaging.notify(...args), serviceDuration, nextQueueNumber });
+const frontDesk = require('../lib/front-desk')({ withAppointmentMutation, notify: (database, userId, message, key, options) => messaging.notify(database, userId, message, key, { ...options, enqueueOnly: true }), serviceDuration, nextQueueNumber });
 
 function serviceDuration(value) {
   const text = String(value || '').toLowerCase();
@@ -89,10 +89,10 @@ async function withAppointmentMutation(database, id, action) {
   }
 }
 
-async function sweepRescheduleRequests(database, now = new Date()) {
+async function sweepRescheduleRequests(database, now = new Date(), appointmentId) {
   database = database || await db();
   let failure;
-  const appointments = await database.collection('appointments').find({ $or: [{ status: { $in: ['pending', 'confirmed'] } }, { status: 'cancelled', cancelledBy: 'reschedule-expiration' }], 'rescheduleRequest.status': 'pending' }).toArray();
+  const appointments = await database.collection('appointments').find({ ...(appointmentId ? { _id: new ObjectId(appointmentId) } : {}), $or: [{ status: { $in: ['pending', 'confirmed'] } }, { status: 'cancelled', cancelledBy: 'reschedule-expiration' }], 'rescheduleRequest.status': 'pending' }).toArray();
   for (const current of appointments) {
     if (!(rescheduleDeadline(current, current.rescheduleRequest) <= now)) continue;
     try {
@@ -107,7 +107,7 @@ async function sweepRescheduleRequests(database, now = new Date()) {
           if (!changed.modifiedCount) return;
         }
         await database.collection('appointmentSlots').deleteMany({ appointmentId: String(current._id) });
-        await messaging.notify(database, current.userId, `Your Barber Co booking was cancelled because the reschedule request was not reviewed before its deadline.${partyNotice(current)} No refund will be issued.`, `appointment:${current._id}:reschedule-expired`);
+        await messaging.notify(database, current.userId, `Your Barber Co booking was cancelled because the reschedule request was not reviewed before its deadline.${partyNotice(current)} No refund will be issued.`, `appointment:${current._id}:reschedule-expired`, { enqueueOnly: true });
         await updateWithNotice(database, 'appointments', { _id: current._id, status: 'cancelled', cancelledBy: 'reschedule-expiration', rescheduleRequest: current.rescheduleRequest }, { $set: { 'rescheduleRequest.status': 'expired' } });
       });
     } catch (error) {
@@ -346,7 +346,6 @@ async function ensureSeed(database) {
         database.collection('accountCodes').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
         database.collection('notifications').createIndex({ userId: 1, createdAt: -1 })
       ]);
-      await cleanLegacyCapacity(database);
       for (const service of seedServices) {
         await database.collection("services").updateOne({ slug: service.slug }, { $setOnInsert: { ...service, createdAt: new Date() } }, { upsert: true });
       }
@@ -509,15 +508,14 @@ async function startServing(database, id = '') {
   } finally { await database.collection('counters').updateOne({ _id: 'serving-transition', leaseOwner }, { $set: { busy: false } }); }
 }
 
-async function handler(req, res) {
+async function handler(req, res, prepared = {}) {
   if (req.method === "OPTIONS") return send(res, 200, { ok: true });
-  const database = await db();
+  const database = prepared.database || await db();
   const requestUrl = new URL(req.url, "https://barber.local");
   const path = requestUrl.pathname.replace(/^\/api/, "") || "/";
-  const body = ["POST", "PATCH", "DELETE"].includes(req.method) ? await readBody(req) : {};
+  const body = prepared.body || (["POST", "PATCH", "DELETE"].includes(req.method) ? await readBody(req) : {});
   // Admin lists use the scheduled cleanup worker; reads must not wait on notification delivery.
-  if (req.method === 'GET' && path === '/availability') await sweepRescheduleRequests(database);
-  if (req.method === 'GET' && ['/availability', '/queue'].includes(path) || req.method === 'POST' && path === '/admin/queue/next' || req.method === 'PATCH' && (path.startsWith('/admin/queue/') || /^\/queue\/ticket\/[a-f0-9]{24}\/cancel$/.test(path))) await frontDesk.sweep(database);
+  if (req.method === 'GET' && path === '/queue') await refreshQueueAttendance(database);
 
   if (req.method === "GET" && path === "/health") return send(res, 200, { ok: true });
   if (req.method === 'GET' && path === '/auth/capabilities') return send(res, 200, { email: security.emailReady(), sms: messaging.smsReady(), smsVerification: messaging.smsVerificationReady(), verificationRequired: !allowUnverified });
@@ -1198,6 +1196,13 @@ async function handler(req, res) {
     return send(res, 200, { appointments: appointments.map(normalizeDoc) });
   }
 
+  if (req.method === 'GET' && path === '/admin/appointment-events') {
+    await requireRole(req, database, ['admin', 'moderator']);
+    const appointments = await database.collection('appointments').find({ demoPayment: { $ne: true } }, { projection: { _id: 1, customer: 1, status: 1, date: 1, time: 1, rescheduleRequest: 1, updatedAt: 1, staffNote: 1, cancelledBy: 1 } }).sort({ createdAt: -1 }).limit(100).toArray();
+    res.setHeader('Cache-Control', 'no-store');
+    return send(res, 200, { appointments: appointments.map(normalizeDoc) });
+  }
+
   if (path === "/admin/appointments") {
     await requireRole(req, database, ["admin", "moderator"]);
     if (req.method === "GET") {
@@ -1247,7 +1252,7 @@ async function handler(req, res) {
         const rescheduleRequest = { ...current.rescheduleRequest, status: 'rejected', reviewedAt: new Date(), reason: staffNote };
         const changed = await updateWithNotice(database, 'appointments', revision, { $set: { rescheduleRequest, updatedAt: new Date() } });
         if (!changed.modifiedCount) return send(res, 409, { error: 'This appointment changed. Refresh and try again.' });
-        await messaging.notify(database, current.userId, `Your reschedule request was rejected. Your original booking remains ${current.date} at ${current.time}.${partyNotice(current)}${staffNote ? ` Reason: ${staffNote}` : ''}`, `appointment:${id}:reschedule-rejected:${new Date(current.rescheduleRequest.requestedAt).toISOString()}`);
+        await messaging.notify(database, current.userId, `Your reschedule request was rejected. Your original booking remains ${current.date} at ${current.time}.${partyNotice(current)}${staffNote ? ` Reason: ${staffNote}` : ''}`, `appointment:${id}:reschedule-rejected:${new Date(current.rescheduleRequest.requestedAt).toISOString()}`, { enqueueOnly: true });
         return send(res, 200, { appointment: normalizeDoc({ ...current, rescheduleRequest }) });
       }
     }
@@ -1274,7 +1279,7 @@ async function handler(req, res) {
       const rescheduleRequest = { date, time, originalDate: current.date, originalTime: current.time, requestedAt, initiatedBy: customerRequest ? 'customer' : 'staff', reason: staffNote, status: 'pending', expiresAt: rescheduleDeadline(current, { date, time }) };
       const changed = await updateWithNotice(database, 'appointments', revision, { $set: { rescheduleRequest, updatedAt: new Date() } });
       if (!changed.modifiedCount) return send(res, 409, { error: 'This appointment changed. Refresh and try again.' });
-      if (!customerRequest) await messaging.notify(database, current.userId, `The shop proposes moving your booking to ${date} at ${time}. Open My bookings to accept or keep your original schedule (${current.date} at ${current.time}). Reason: ${staffNote}`, `appointment:${id}:reschedule-proposed:${requestedAt.toISOString()}`);
+      if (!customerRequest) await messaging.notify(database, current.userId, `The shop proposes moving your booking to ${date} at ${time}. Open My bookings to accept or keep your original schedule (${current.date} at ${current.time}). Reason: ${staffNote}`, `appointment:${id}:reschedule-proposed:${requestedAt.toISOString()}`, { enqueueOnly: true });
       return send(res, 200, { appointment: normalizeDoc({ ...current, rescheduleRequest }) });
     }
     const rescheduleRequest = current.rescheduleRequest?.status === 'pending' ? { ...current.rescheduleRequest, status: review ? 'approved' : 'superseded', reviewedAt: new Date(), reason: staffNote } : current.rescheduleRequest;
@@ -1295,7 +1300,7 @@ async function handler(req, res) {
       if (error.code === 11000) return send(res, 409, { error: 'This barber was just reserved. Choose another time.' });
       throw error;
     }
-    await messaging.notify(database, current.userId, `Your Barber Co appointment was rescheduled from ${current.date} at ${current.time} to ${date} at ${time}.${partyNotice(current)}${staffNote ? ` Reason: ${staffNote}.` : ''} Contact the shop if this does not suit you.`, `appointment:${id}:rescheduled:${date}:${time}`);
+    await messaging.notify(database, current.userId, `Your Barber Co appointment was rescheduled from ${current.date} at ${current.time} to ${date} at ${time}.${partyNotice(current)}${staffNote ? ` Reason: ${staffNote}.` : ''} Contact the shop if this does not suit you.`, `appointment:${id}:rescheduled:${date}:${time}`, { enqueueOnly: true });
     return send(res, 200, { appointment: normalizeDoc({ ...current, date, time, ...(rescheduleRequest ? { rescheduleRequest } : {}) }) });
   }
 
@@ -1310,7 +1315,7 @@ async function handler(req, res) {
     if (!changed.modifiedCount) return send(res, 409, { error: 'This appointment changed. Refresh and try again.' });
     await database.collection('appointmentSlots').deleteMany({ appointmentId: id });
     await database.collection('queue').updateMany({ appointmentId: id, status: { $in: ['waiting', 'serving'] } }, { $set: { status: 'cancelled', updatedAt: new Date() } });
-    await messaging.notify(database, user._id, `Your Barber Co appointment on ${current.date} at ${current.time} was cancelled.${partyNotice(current)} No refund will be issued.`, `appointment:${id}:cancelled`);
+    await messaging.notify(database, user._id, `Your Barber Co appointment on ${current.date} at ${current.time} was cancelled.${partyNotice(current)} No refund will be issued.`, `appointment:${id}:cancelled`, { enqueueOnly: true });
     return send(res, 200, { appointment: normalizeDoc({ ...current, status: 'cancelled', noRefund: true }) });
   }
 
@@ -1337,6 +1342,9 @@ async function handler(req, res) {
     if (current.status === body.status) return send(res, 200, { appointment: normalizeDoc(current) });
     const transitions = { pending: ['confirmed', 'cancelled', 'disapproved'], confirmed: ['completed', 'cancelled'], completed: [], cancelled: [], disapproved: [] };
     if (!transitions[current.status]?.includes(body.status)) return send(res, 409, { error: 'This appointment has already changed. Refresh before proceeding.' });
+    if (body.status === 'completed' && !await database.collection('queue').findOne({ appointmentId: id, status: 'serving' })) {
+      return send(res, 409, { error: 'Only a currently serving appointment can be completed.' });
+    }
     Object.assign(update, paymentUpdate(current, body.status, new Date(), body));
     const acquiring = current.status === 'pending' && body.status === 'confirmed';
     if (acquiring) {
@@ -1371,7 +1379,8 @@ async function handler(req, res) {
       await database.collection('queue').updateMany({ appointmentId: id, status: { $in: ['waiting', 'serving'] } }, { $set: { status: body.status === 'completed' ? 'done' : 'cancelled', updatedAt: new Date() } });
     }
     const appointment = await database.collection("appointments").findOne({ _id: new ObjectId(id) });
-    await messaging.notify(database, current.userId, `Your Barber Co appointment on ${current.date} at ${current.time} is ${body.status === 'confirmed' ? 'accepted' : body.status}.${partyNotice(current)}${paymentNotice(appointment)}${staffNote ? ` Reason: ${staffNote}.` : ''}${update.refundStatus ? ' The shop must verify your transfer and arrange a manual refund for a rejected paid request. No automatic wallet refund has been sent.' : ''}`, `appointment:${id}:${body.status}`);
+    // Persist the bell entry now; the atomic outbox recovers a failed insert later.
+    await messaging.notify(database, current.userId, `Your Barber Co appointment on ${current.date} at ${current.time} is ${body.status === 'confirmed' ? 'accepted' : body.status}.${partyNotice(current)}${paymentNotice(appointment)}${staffNote ? ` Reason: ${staffNote}.` : ''}${update.refundStatus ? ' The shop must verify your transfer and arrange a manual refund for a rejected paid request. No automatic wallet refund has been sent.' : ''}`, `appointment:${id}:${body.status}`, { enqueueOnly: true });
     return send(res, 200, { appointment: normalizeDoc(appointment) });
   }
 
@@ -1460,7 +1469,7 @@ async function handler(req, res) {
   if (req.method === "POST" && path === "/admin/queue/next") {
     await requireRole(req, database, ["admin", "moderator"]);
     const next = await startServing(database);
-    if (next?.source === 'appointment') await messaging.notify(database, next.userId, `It is your turn at The Barber Co. Queue #${next.queueNumber}. Please approach the counter.`, `queue:${next._id}:serving`, { queueTicketId: next._id });
+    if (next?.source === 'appointment') await messaging.notify(database, next.userId, `It is your turn at The Barber Co. Queue #${next.queueNumber}. Please approach the counter.`, `queue:${next._id}:serving`, { queueTicketId: next._id, enqueueOnly: true });
     return send(res, 200, { ticket: normalizeDoc(next) });
   }
 
@@ -1498,7 +1507,7 @@ async function handler(req, res) {
     if (body.status === 'done') await frontDesk.validateCollection(database, ticket, body);
     if (body.status === 'serving') {
       const served = await startServing(database, id);
-      if (served.source === 'appointment') await messaging.notify(database, served.userId, `It is your turn at The Barber Co. Queue #${served.queueNumber}. Please approach the counter.`, `queue:${id}:serving`, { queueTicketId: served._id });
+      if (served.source === 'appointment') await messaging.notify(database, served.userId, `It is your turn at The Barber Co. Queue #${served.queueNumber}. Please approach the counter.`, `queue:${id}:serving`, { queueTicketId: served._id, enqueueOnly: true });
       return send(res, 200, { ok: true });
     }
     const allowed = ["waiting", "serving", "done", "cancelled"];
@@ -1518,8 +1527,8 @@ async function handler(req, res) {
     if (body.status === "done" && ticket.source !== 'appointment') Object.assign(update, { paid: true, paidAt: new Date() });
     await updateWithNotice(database, "queue", { _id: new ObjectId(id) }, { $set: update });
     if (['done', 'cancelled'].includes(body.status)) await frontDesk.complete(database, ticket, body.status);
-    if (ticket.source === 'appointment' && body.status === 'serving') await messaging.notify(database, ticket.userId, `It is your turn at The Barber Co. Queue #${ticket.queueNumber}. Please approach the counter.`, `queue:${id}:serving`, { queueTicketId: ticket._id });
-    if (ticket.source === 'appointment' && body.status === 'cancelled') await messaging.notify(database, ticket.userId, `Your Barber Co queue ticket #${ticket.queueNumber} was cancelled. Contact the counter if this is unexpected.`, `queue:${id}:cancelled`, { queueTicketId: ticket._id });
+    if (ticket.source === 'appointment' && body.status === 'serving') await messaging.notify(database, ticket.userId, `It is your turn at The Barber Co. Queue #${ticket.queueNumber}. Please approach the counter.`, `queue:${id}:serving`, { queueTicketId: ticket._id, enqueueOnly: true });
+    if (ticket.source === 'appointment' && body.status === 'cancelled') await messaging.notify(database, ticket.userId, `Your Barber Co queue ticket #${ticket.queueNumber} was cancelled. Contact the counter if this is unexpected.`, `queue:${id}:cancelled`, { queueTicketId: ticket._id, enqueueOnly: true });
     return send(res, 200, { ok: true });
   }
 
@@ -1565,18 +1574,36 @@ async function handler(req, res) {
   return send(res, 404, { error: "Not found." });
 }
 
+let queueRefreshPromise;
+let queueRefreshedAt = 0;
+async function refreshQueueAttendance(database) {
+  if (queueRefreshPromise) return queueRefreshPromise;
+  if (Date.now() - queueRefreshedAt < 15000) return;
+  queueRefreshPromise = frontDesk.sweep(database, new Date(), undefined, { activeOnly: true }).then(() => { queueRefreshedAt = Date.now(); }).finally(() => { queueRefreshPromise = null; });
+  return queueRefreshPromise;
+}
+
 module.exports = async (req, res) => {
   try {
     const path = new URL(req.url, 'https://barber.local').pathname.replace(/^\/api/, '');
     const mutation = req.method === 'PATCH' && /^\/(?:admin\/)?appointments\/([a-f0-9]{24})(?:\/[^/]+)?$/.exec(path);
     if (mutation) {
+      const body = await readBody(req);
       const database = await db();
-      await sweepRescheduleRequests(database);
-      await frontDesk.sweep(database);
-      await withAppointmentMutation(database, 'booking-capacity', () => withAppointmentMutation(database, mutation[1], () => handler(req, res)));
+      await sweepRescheduleRequests(database, new Date(), mutation[1]);
+      await frontDesk.sweep(database, new Date(), mutation[1]);
+      await withAppointmentMutation(database, 'booking-capacity', () => withAppointmentMutation(database, mutation[1], () => handler(req, res, { database, body })));
     } else if (req.method === 'POST' && (['/appointments', '/appointment-holds', '/queue/walkin', '/admin/queue/next'].includes(path) || /^\/admin\/queue\/[a-f0-9]{24}\/paid$/.test(path)) || req.method === 'PATCH' && (path.startsWith('/admin/queue/') || /^\/queue\/ticket\/[a-f0-9]{24}\/cancel$/.test(path)) || ['PATCH', 'DELETE'].includes(req.method) && path.startsWith('/admin/barbers/')) {
+      const body = await readBody(req);
       const database = await db();
-      await withAppointmentMutation(database, 'booking-capacity', () => handler(req, res));
+      if (req.method === 'POST' && path === '/admin/queue/next' || req.method === 'PATCH' && path.startsWith('/admin/queue/') && body.status === 'serving') {
+        await refreshQueueAttendance(database);
+      } else if (req.method === 'PATCH' && path.startsWith('/admin/queue/')) {
+        const id = path.split('/').pop();
+        const ticket = ObjectId.isValid(id) && await database.collection('queue').findOne({ _id: new ObjectId(id) });
+        if (ticket?.appointmentId && ObjectId.isValid(ticket.appointmentId)) await frontDesk.sweep(database, new Date(), ticket.appointmentId);
+      }
+      await withAppointmentMutation(database, 'booking-capacity', () => handler(req, res, { database, body }));
     } else await handler(req, res);
   } catch (error) {
     if (error.retryAfter) res.setHeader('Retry-After', String(error.retryAfter));
@@ -1584,7 +1611,11 @@ module.exports = async (req, res) => {
   }
 };
 module.exports.sweepRescheduleRequests = sweepRescheduleRequests;
-module.exports.sweepAttendance = async () => frontDesk.sweep(await db());
+module.exports.sweepAttendance = async () => {
+  const database = await db();
+  await cleanLegacyCapacity(database);
+  await frontDesk.sweep(database);
+};
 module.exports.sweepNotifications = async () => {
   const database = await db();
   await require('../lib/notification-outbox').flush(database, messaging.notify);

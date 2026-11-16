@@ -276,7 +276,7 @@ const BarberCo = (() => {
       document.querySelectorAll('a[href]').forEach(link => {
         const url = new URL(link.getAttribute('href'), location.href);
         if (url.origin === location.origin && /\/admin-[a-z-]+\.html$/.test(url.pathname)) {
-          url.searchParams.set('release', 'appointments-clean2-20261117');
+          url.searchParams.set('release', 'admin-actions-fast-20261117');
           link.href = url.href;
         }
       });
@@ -365,7 +365,7 @@ const BarberCo = (() => {
       if (window.BarberCoAlerts) window.BarberCoAlerts.mount();
       else if (!document.querySelector('[data-alert-script]')) {
         const script = document.createElement('script');
-        script.src = 'js/site-alerts.js?v=side-bell-20261116';
+        script.src = 'js/site-alerts.js?v=admin-actions-fast-20261117';
         script.dataset.alertScript = '';
         document.head.append(script);
       }
@@ -486,19 +486,34 @@ const BarberCo = (() => {
   function mountAppointmentRequests() {
     const list = document.querySelector('[data-appointment-requests]');
     if (!list || !canAccess('moderator')) return;
+    let requests = [];
+    let version = 0;
+    const render = () => {
+      list.innerHTML = requests.map(item => {
+        const service = state.services.find(service => service.id === item.serviceId);
+        const barber = state.barbers.find(barber => barber.id === item.barberId);
+        return `<article class="appointment-request"><div class="appointment-request-person"><span class="appointment-request-avatar">${safeText(initials(item.customer || 'Customer'))}</span><div><strong>${safeText(item.customer || 'Customer')}</strong><small>${safeText(service?.name || item.serviceName || 'Appointment')} / ${safeText(barber?.name || item.barberName || 'Assigned barber')}</small></div></div><p>${safeText(item.date)} at ${safeText(timeLabel(item.time))}</p><span class="status-pill pending">${item.rescheduleRequest?.status === 'pending' ? 'Reschedule review' : 'Needs review'}</span><a class="text-action" href="admin-schedule.html?release=admin-actions-fast-20261117&customer=${encodeURIComponent(item.customer || '')}">Review request ${icon('ArrowUpRight')}</a></article>`;
+      }).join('') || '<p class="muted">No appointment requests to review.</p>';
+    };
+    const needsReview = item => !item.archived && (item.status === 'pending' || item.rescheduleRequest?.status === 'pending');
+    window.addEventListener('barberco:appointment-saved', event => {
+      if (!list.isConnected) return;
+      version++;
+      const item = event.detail;
+      const id = String(item.mongoId || item.id);
+      requests = requests.filter(entry => String(entry.mongoId || entry.id) !== id);
+      if (needsReview(item)) requests.unshift(item);
+      render();
+    });
     const refresh = async () => {
       if (requestRailBusy || document.hidden || !list.isConnected) return;
+      const readVersion = version;
       requestRailBusy = true;
       try {
         const data = await api('/admin/appointment-requests');
-        if (!list.isConnected) return;
-        const requests = (data.appointments || []).filter(item => !item.archived && (item.status === 'pending' || item.rescheduleRequest?.status === 'pending'));
-        list.innerHTML = requests.map(item => {
-          const service = state.services.find(service => service.id === item.serviceId);
-          const barber = state.barbers.find(barber => barber.id === item.barberId);
-          const id = item.customer || '';
-          return `<article class="appointment-request"><div class="appointment-request-person"><span class="appointment-request-avatar">${safeText(initials(item.customer || 'Customer'))}</span><div><strong>${safeText(item.customer || 'Customer')}</strong><small>${safeText(service?.name || item.serviceName || 'Appointment')} / ${safeText(barber?.name || item.barberName || 'Assigned barber')}</small></div></div><p>${safeText(item.date)} at ${safeText(timeLabel(item.time))}</p><span class="status-pill pending">${item.rescheduleRequest?.status === 'pending' ? 'Reschedule review' : 'Needs review'}</span><a class="text-action" href="admin-schedule.html?release=appointments-clean2-20261117&customer=${encodeURIComponent(id)}">Review request ${icon('ArrowUpRight')}</a></article>`;
-        }).join('') || '<p class="muted">No appointment requests to review.</p>';
+        if (!list.isConnected || readVersion !== version) return;
+        requests = (data.appointments || []).filter(needsReview);
+        render();
       } catch (error) {
         if (list.isConnected && !list.querySelector('.appointment-request')) {
           list.innerHTML = '<p role="status">Appointment requests unavailable.</p><button type="button" class="button secondary small">Try again</button>';

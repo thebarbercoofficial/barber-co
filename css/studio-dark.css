@@ -268,3 +268,10 @@
   .staff-page .workspace .appointment-record > .status-pill { grid-column: 1 / -1; grid-row: 3; }
   .staff-page .workspace .appointment-record > .button-row { grid-column: 1 / -1; grid-row: 4; justify-content: flex-start; }
 }
+/* Primary appointment actions retain the same dimensions across statuses. */
+.staff-page .workspace .appointment-record .appointment-action {
+  min-width: 136px;
+  min-height: 44px;
+  justify-content: center;
+}
+.staff-page .appointment-arrival { margin-top: 8px; }

@@ -142,7 +142,7 @@ async function render() {
       sync.textContent = analytics.daily?.length ? 'Connection interrupted; showing last update' : 'Reports unavailable. Try refreshing again.';
     } finally { busy = false; retryButton.disabled = false; }
   }
-  setInterval(refreshReports, 3000);
+  setInterval(refreshReports, 15000);
   window.addEventListener('focus', refreshReports);
   document.addEventListener('visibilitychange', refreshReports);
 }

@@ -65,25 +65,6 @@ function onlineBookingRows(appointments = [], reservations = []) {
   return activity.slice(0, 6).map((item) => `<div class="compact-row"><div class="row-main"><strong>${safeText(item.customer)}</strong><small>${safeText(item.date)} / ${safeText(BarberCo.timeLabel(item.time))}</small>${compactGroupDetails(item)}${item.request ? `<small><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}</div><span class="status-pill ${item.status === 'pending' ? 'pending' : 'waiting'}">${item.activityStatus}</span><a class="button secondary small" href="admin-schedule.html">Review</a></div>`).join('') || `<div class="staff-empty compact">${icon('CalendarCheck')}<strong>No active online bookings</strong></div>`;
 }
 
-function dashboardAttentionRail() {
-  return `
-    <aside class="workspace-rail" data-workspace-rail aria-label="Live operations">
-      <div class="workspace-rail-heading"><p>WORKSPACE</p><h2>Needs attention</h2><small data-rail-updated role="status">Connecting to live data...</small></div>
-      <section class="workspace-rail-section"><h3>Appointments</h3>
-        <a class="workspace-rail-link" href="admin-schedule.html"><span>${icon('CalendarClock')}<span><strong>Bookings to review</strong><small>Awaiting staff approval</small></span></span><b data-rail-review>--</b></a>
-        <div class="workspace-rail-link is-static"><span>${icon('Wallet')}<span><strong>Payment drafts</strong><small>No time held until approved</small></span></span><b data-rail-drafts>--</b></div>
-      </section>
-      <section class="workspace-rail-section"><h3>Walk-in queue</h3>
-        <a class="workspace-rail-link" href="admin-logbook.html"><span>${icon('ListOrdered')}<span><strong>Waiting</strong><small>Customers in line</small></span></span><b data-rail-waiting>--</b></a>
-        <div class="workspace-rail-link is-static"><span>${icon('Scissors')}<span><strong>Now serving</strong><small>Currently in the chair</small></span></span><b data-rail-serving>--</b></div>
-      </section>
-      <section class="workspace-rail-section"><h3>Quick access</h3>
-        <a class="workspace-rail-shortcut" href="admin-contacts.html">${icon('Mail')} Contact inbox ${icon('ArrowUpRight')}</a>
-        <a class="workspace-rail-shortcut" href="admin-reports.html">${icon('ChartNoAxesCombined')} Reports ${icon('ArrowUpRight')}</a>
-      </section>
-    </aside>`;
-}
-
 function updateAttentionRail(queueResult, scheduleResult) {
   const count = (selector, value) => {
     const node = document.querySelector(selector);
@@ -103,7 +84,6 @@ function updateAttentionRail(queueResult, scheduleResult) {
 
 async function render() {
   const dateLabel = new Intl.DateTimeFormat('en-PH', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'Asia/Manila' }).format(new Date());
-  document.body.classList.add('dashboard-with-rail');
   document.querySelector('#app').innerHTML = `
     ${nav("admin")}
     <section class="app-shell">
@@ -118,7 +98,6 @@ async function render() {
         </div>
         <div class="dashboard-loading-state" data-dashboard-loading role="status"><span class="dashboard-loading-indicator" aria-hidden="true"></span><strong>Connecting to live shop data...</strong></div>
       </main>
-      ${dashboardAttentionRail()}
     </section>`;
   initHeader("admin");
   const summaries = Promise.allSettled([api('/admin/queue'), api('/admin/appointments')]);
@@ -250,6 +229,6 @@ async function refreshDashboard() {
     sync.textContent = failures.length ? (receivedUpdate ? `Partially updated ${new Date().toLocaleTimeString()}` : 'Connection interrupted; showing last update') : `Updated ${new Date().toLocaleTimeString()}`;
   } finally { dashboardBusy = false; }
 }
-setInterval(refreshDashboard, 3000);
+setInterval(refreshDashboard, 15000);
 document.addEventListener('visibilitychange', refreshDashboard);
 window.addEventListener('focus', refreshDashboard);

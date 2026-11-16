@@ -49,10 +49,10 @@ async function main() {
         await page.waitForFunction(() => document.querySelector('.workspace')?.getAttribute('aria-busy') === 'true');
         assert.equal(await page.locator('.staff-header').count(), 1, 'Dashboard header should render before live data returns');
         assert.equal(await page.locator('.sidebar').count(), 1, 'Dashboard navigation should render before live data returns');
-        assert.equal(await page.locator('[data-workspace-rail]').count(), 1, 'Dashboard right rail should render before live data returns');
+        assert.equal(await page.locator('[data-workspace-rail]').count(), 1, 'Right navigation should render before live data returns');
         assert.equal(await page.locator('.sidebar').isVisible(), width > 960, 'Sidebar visibility should follow the responsive layout');
         const railDisplay = await page.locator('[data-workspace-rail]').evaluate(node => getComputedStyle(node).display);
-        assert.equal(railDisplay, width >= 1440 ? 'block' : 'none', 'Right rail should appear only when the dashboard has room for it');
+        assert.equal(railDisplay, width >= 1440 ? 'flex' : 'none', 'Right navigation should appear only when the page has room for it');
         await page.locator('.workspace[aria-busy="false"]').waitFor();
       }
 
@@ -63,8 +63,11 @@ async function main() {
         await page.waitForURL(`**/admin-${key}.html`);
         await page.locator('.workspace h1').waitFor();
         assert.equal(await page.locator('iframe').count(), 0, 'Admin sections must be standalone, not embedded in one scrolling feed');
-        assert.equal(await page.locator('[data-workspace-rail]').count(), key === 'dashboard' ? 1 : 0, 'Only the dashboard should have the live operations rail');
+        assert.equal(await page.locator('[data-workspace-rail]').count(), 1, 'Right navigation should remain available on every staff section');
         assert.equal(await page.locator('.sidebar a[aria-current="page"]').getAttribute('href'), `admin-${key}.html`);
+        assert.equal(await page.locator('.workspace-rail a[aria-current="page"]').getAttribute('href'), `admin-${key}.html`, 'Right navigation should mark the current section');
+        assert.equal(await page.locator('.workspace-rail').evaluate(node => getComputedStyle(node).display), width >= 1440 ? 'flex' : 'none');
+        assert.equal(await page.locator('.workspace-rail a[href="admin-reports.html"]').count(), role === 'admin' ? 1 : 0, 'Right navigation must follow role permissions');
         assert.equal(await page.locator('.staff-header').count(), 1, 'Each admin section has one shared header');
         const layout = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: innerWidth, workspace: document.querySelector('.workspace').getBoundingClientRect().width, sections: document.querySelectorAll('.workspace').length }));
         assert.ok(layout.width <= layout.viewport + 1, `${key} horizontal overflow at ${width}px: ${JSON.stringify(layout)}`);

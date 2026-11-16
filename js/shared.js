@@ -434,7 +434,20 @@ const BarberCo = (() => {
     const operations = links.filter(([, key]) => ['dashboard', 'logbook', 'schedule', 'contacts'].includes(key));
     const management = links.filter(([, key]) => !['dashboard', 'logbook', 'schedule', 'contacts', 'public'].includes(key));
     const group = (title, items) => items.length ? `<div class="sidebar-group"><p>${title}</p>${items.map(([href, key, label]) => `<a class="${active === key ? 'active' : ''}" href="${href}" title="${safeText(label)}" aria-label="${safeText(label)}" ${active === key ? 'aria-current="page"' : ''}>${icon(icons[key])}<span>${label}</span></a>`).join('')}</div>` : '';
-    return `<button class="sidebar-backdrop" type="button" data-sidebar-dismiss aria-label="Close staff navigation"></button><aside class="sidebar" id="staff-sidebar"><div class="sidebar-shop"><img src="images/logo.png" alt=""><div>Carmona shop<small>${currentRole() === 'moderator' ? 'Front desk' : 'Administration'}</small></div><span class="shop-indicator" title="Staff workspace"></span></div>${group('DAILY OPERATIONS', operations)}${group('SHOP MANAGEMENT', management)}<div class="sidebar-footer"><a href="index.html">${icon('ExternalLink')}<span>Public website</span></a><small>The Barber Co / Since 2022</small></div></aside>`;
+    const railLinks = (items) => items.map(([href, key, label]) => `<a class="workspace-rail-link ${active === key ? 'is-active' : ''}" href="${href}" ${active === key ? 'aria-current="page"' : ''}><span>${icon(icons[key])}<span><strong>${safeText(label)}</strong></span></span>${icon('ArrowUpRight')}</a>`).join('');
+    const railGroup = (title, items) => items.length ? `<section class="workspace-rail-section"><h3>${title}</h3>${railLinks(items)}</section>` : '';
+    const attention = active === 'dashboard' ? `<section class="workspace-rail-section"><h3>Appointments</h3>
+        <a class="workspace-rail-link" href="admin-schedule.html"><span>${icon('CalendarClock')}<span><strong>Bookings to review</strong><small>Awaiting staff approval</small></span></span><b data-rail-review>--</b></a>
+        <div class="workspace-rail-link is-static"><span>${icon('Wallet')}<span><strong>Payment drafts</strong><small>No time held until approved</small></span></span><b data-rail-drafts>--</b></div>
+      </section><section class="workspace-rail-section"><h3>Walk-in queue</h3>
+        <a class="workspace-rail-link" href="admin-logbook.html"><span>${icon('ListOrdered')}<span><strong>Waiting</strong><small>Customers in line</small></span></span><b data-rail-waiting>--</b></a>
+        <div class="workspace-rail-link is-static"><span>${icon('Scissors')}<span><strong>Now serving</strong><small>Currently in the chair</small></span></span><b data-rail-serving>--</b></div>
+      </section>` : '';
+    const rightRail = `<aside class="workspace-rail" data-workspace-rail aria-label="Workspace navigation">
+      <div class="workspace-rail-heading"><p>WORKSPACE</p><h2>${active === 'dashboard' ? 'Needs attention' : 'Jump to section'}</h2><small ${active === 'dashboard' ? 'data-rail-updated role="status"' : ''}>${active === 'dashboard' ? 'Connecting to live data...' : 'Quick access across the workspace'}</small></div>
+      ${attention}${railGroup('Daily operations', operations)}${railGroup('Shop management', management)}
+    </aside>`;
+    return `<button class="sidebar-backdrop" type="button" data-sidebar-dismiss aria-label="Close staff navigation"></button><aside class="sidebar" id="staff-sidebar"><div class="sidebar-shop"><img src="images/logo.png" alt=""><div>Carmona shop<small>${currentRole() === 'moderator' ? 'Front desk' : 'Administration'}</small></div><span class="shop-indicator" title="Staff workspace"></span></div>${group('DAILY OPERATIONS', operations)}${group('SHOP MANAGEMENT', management)}<div class="sidebar-footer"><a href="index.html">${icon('ExternalLink')}<span>Public website</span></a><small>The Barber Co / Since 2022</small></div></aside>${rightRail}`;
   }
 
   function safeText(value = '') {

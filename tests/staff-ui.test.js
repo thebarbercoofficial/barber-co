@@ -324,12 +324,14 @@ async function main() {
       await page.locator('[data-online-activity]').waitFor();
       context.bookingTestData.failAnalytics();
       context.bookingTestData.addReservation({ customer: 'Live checkout hold', serviceId: 'basic', date: today, time: '16:30', request: 'Please keep the sides short.', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 600000).toISOString() });
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
       const activity = page.locator('[data-online-activity]');
       const liveHold = activity.locator('.compact-row').filter({ hasText: 'Live checkout hold' });
       await liveHold.waitFor({ timeout: 10000 });
       assert.ok((await liveHold.innerText()).includes('Payment draft / no capacity reserved'));
       assert.ok((await liveHold.innerText()).includes('Please keep the sides short.'));
       context.bookingTestData.addAppointment({ mongoId: 'live-booking', customer: 'Live submitted booking', serviceId: 'basic', date: today, time: '17:00', request: 'Same barber please.', total: 250, status: 'pending', queueNumber: 99, createdAt: new Date().toISOString() });
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
       const liveBooking = activity.locator('.compact-row').filter({ hasText: 'Live submitted booking' });
       await liveBooking.waitFor({ timeout: 10000 });
       assert.ok((await liveBooking.innerText()).includes('Needs review'));

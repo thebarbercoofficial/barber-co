@@ -15,6 +15,18 @@ function localDateValue(date = new Date()) {
   return new Date(date.getTime() + 8 * 3600000).toISOString().slice(0, 10);
 }
 
+function barberLeaveLabel(barber) {
+  if (!barber?.leaveFrom || !barber?.leaveTo) return '';
+  const today = localDateValue();
+  if (barber.leaveTo < today && barber.status !== 'on-leave') return '';
+  const format = value => new Date(`${value}T12:00:00+08:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' });
+  return `${format(barber.leaveFrom)} to ${format(barber.leaveTo)}`;
+}
+
+function barberOnLeave(barber, date) {
+  return barber?.status === 'on-leave' || Boolean(date && barber?.leaveFrom && barber?.leaveTo && date >= barber.leaveFrom && date <= barber.leaveTo);
+}
+
 const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 const fixedHolidays = new Set(["01-01", "02-25", "04-09", "05-01", "06-12", "08-21", "11-01", "11-02", "11-30", "12-08", "12-24", "12-25", "12-30", "12-31"]);
 
@@ -46,7 +58,7 @@ async function render() {
     settings = results[1];
   } catch { toast("Using saved booking options until backend is online."); }
   const selected = byId(state.services, state.selectedServiceId);
-  const hasBarbers = barbers.filter((barber) => barber.status !== "fired" && barber.status !== "on-leave").length > 0;
+  const hasBarbers = barbers.some((barber) => barber.status === 'active');
   const onlineFee = Math.max(0, Number(settings.bookingFee ?? 100));
   const hours = settings.operatingHours || {};
   const closedDates = new Set(settings.closedDates || []);
@@ -103,8 +115,11 @@ async function render() {
       const results = await Promise.all(options.map(async (option) => {
         const payload = await api(`/availability?${new URLSearchParams({ date, time: option.value, serviceId })}`);
         const busy = new Set(payload.unavailableBarberIds || []);
-        const active = barbers.filter((barber) => !['fired', 'on-leave'].includes(barber.status));
-        const unavailable = selectedBarber && selectedBarber !== 'any' ? busy.has(selectedBarber) : !active.some((barber) => !busy.has(barber.id));
+        const active = barbers.filter((barber) => barber.status === 'active');
+        const selected = active.find(barber => barber.id === selectedBarber);
+        const unavailable = selectedBarber && selectedBarber !== 'any'
+          ? barberOnLeave(selected, date) || busy.has(selectedBarber) || Boolean(selected?.mongoId && busy.has(selected.mongoId))
+          : !active.some((barber) => !barberOnLeave(barber, date) && !busy.has(barber.id) && !(barber.mongoId && busy.has(barber.mongoId)));
         return { option, unavailable };
       }));
       if (request !== timesRequest) return;
@@ -128,8 +143,10 @@ async function render() {
     barberInput.querySelectorAll("option").forEach((option) => {
       if (!option.value || option.value === "any") return;
       const barber = barbers.find((item) => item.id === option.value);
-      option.disabled = barber?.status === "on-leave";
-      option.textContent = `${barber?.name || option.textContent}${barber?.status === "on-leave" ? " - on leave" : ""}`;
+      const onLeave = barberOnLeave(barber, date);
+      option.disabled = !barber || barber.status !== 'active' || onLeave;
+      const leave = barberLeaveLabel(barber);
+      option.textContent = `${barber?.name || option.textContent}${onLeave ? ` - on leave${leave ? ` (${leave})` : ''}` : barber?.status !== 'active' ? ' - unavailable' : leave ? ` - planned leave ${leave}` : ''}`;
     });
     const anyOption = barberInput.querySelector('option[value="any"]');
     if (anyOption) anyOption.textContent = "Any available barber";
@@ -146,9 +163,11 @@ async function render() {
       barberInput.querySelectorAll("option").forEach((option) => {
         if (!option.value || option.value === "any") return;
         const barber = barbers.find((item) => item.id === option.value);
-        const busy = unavailable.has(option.value);
-        option.disabled = busy || barber?.status === "on-leave";
-        option.textContent = `${barber?.name || option.textContent}${busy ? " - unavailable" : barber?.status === "on-leave" ? " - on leave" : ""}`;
+        const onLeave = barberOnLeave(barber, date);
+        const busy = unavailable.has(option.value) || Boolean(barber?.mongoId && unavailable.has(barber.mongoId));
+        option.disabled = onLeave || busy || !barber || barber.status !== 'active';
+        const leave = barberLeaveLabel(barber);
+        option.textContent = `${barber?.name || option.textContent}${onLeave ? ` - on leave${leave ? ` (${leave})` : ''}` : busy ? ' - unavailable' : leave ? ` - planned leave ${leave}` : barber?.status !== 'active' ? ' - unavailable' : ''}`;
         if (!option.disabled) availableCount += 1;
       });
       if (anyOption) {

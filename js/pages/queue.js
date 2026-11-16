@@ -1,6 +1,7 @@
 const { state, barbers, nav, initHeader, byId, api, loadCatalog, serviceOptions, toast } = BarberCo;
 const params = new URLSearchParams(location.search);
-const savedTicketId = localStorage.getItem("barberCoQueueTicketId");
+const queueStorageKey = key => state.user?.id ? `${key}:${state.user.id}` : key;
+const savedTicketId = localStorage.getItem(queueStorageKey('barberCoQueueTicketId')) || '';
 let alertsEnabled = false;
 let lastTicketStatus = "";
 let activeTicketId = params.get('ticket') || savedTicketId;
@@ -108,7 +109,7 @@ async function render() {
         body: JSON.stringify({ customer: data.get("customer"), serviceId: data.get("serviceId"), contactEmail: data.get("contactEmail"), emailConsent: data.get("emailConsent") === "on" })
       });
       try {
-        localStorage.setItem("barberCoQueueTicketId", payload.ticket.id);
+        localStorage.setItem(queueStorageKey('barberCoQueueTicketId'), payload.ticket.id);
         if (payload.emailUpdatesEnabled) localStorage.setItem(`barberCoQueueEmailUpdates:${payload.ticket.id}`, "true");
       } catch { /* The ticket URL still works when browser storage is full. */ }
       location.href = `queue.html?ticket=${payload.ticket.id}`;

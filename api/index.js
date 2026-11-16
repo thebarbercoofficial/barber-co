@@ -1179,6 +1179,13 @@ async function handler(req, res) {
     return send(res, 200, { appointments: appointments.map(item => normalizeDoc({ ...item, attendanceStatus: bookingGuards.attendance(item, tickets) })) });
   }
 
+  if (req.method === 'GET' && path === '/admin/appointment-requests') {
+    await requireRole(req, database, ['admin', 'moderator']);
+    const appointments = await database.collection('appointments').find({ archived: { $ne: true }, $or: [{ status: 'pending' }, { 'rescheduleRequest.status': 'pending' }] }, { projection: { customer: 1, serviceId: 1, barberId: 1, date: 1, time: 1, status: 1, rescheduleRequest: 1 } }).sort({ createdAt: -1 }).limit(50).toArray();
+    res.setHeader('Cache-Control', 'no-store');
+    return send(res, 200, { appointments: appointments.map(normalizeDoc) });
+  }
+
   if (path === "/admin/appointments") {
     await requireRole(req, database, ["admin", "moderator"]);
     if (req.method === "GET") {
@@ -1191,13 +1198,6 @@ async function handler(req, res) {
       const owners = holds.length ? await database.collection("users").find({ _id: { $in: holds.map((hold) => hold.userId) } }, { projection: { name: 1 } }).toArray() : [];
       res.setHeader("Cache-Control", "no-store");
       return send(res, 200, {
-  if (req.method === 'GET' && path === '/admin/appointment-requests') {
-    await requireRole(req, database, ['admin', 'moderator']);
-    const appointments = await database.collection('appointments').find({ archived: { $ne: true }, $or: [{ status: 'pending' }, { 'rescheduleRequest.status': 'pending' }] }, { projection: { customer: 1, serviceId: 1, barberId: 1, date: 1, time: 1, status: 1, rescheduleRequest: 1 } }).sort({ createdAt: -1 }).limit(50).toArray();
-    res.setHeader('Cache-Control', 'no-store');
-    return send(res, 200, { appointments: appointments.map(normalizeDoc) });
-  }
-
         appointments: appointments.map(item => ({ ...normalizeDoc(item), attendanceStatus: bookingGuards.attendance(item, tickets), hasPaymentProof: item.hasPaymentProof !== false })),
         reservations: holds.map((hold) => ({ ...normalizeDoc(hold), customer: hold.customer || owners.find((user) => String(user._id) === String(hold.userId))?.name || "Customer", status: "awaiting-payment" })),
         paymentMode: mergedSettings(settings || {}).paymentMode,

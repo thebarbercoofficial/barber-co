@@ -552,16 +552,12 @@ const BarberCo = (() => {
 
   function barberOptions(selectedId = state.selectedBarberId) {
     const active = barbers.filter((barber) => barber.status === "active");
-    const leaveDates = barber => {
-      const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
-      if (!barber.leaveFrom || !barber.leaveTo || barber.leaveTo < today && barber.status !== 'on-leave') return '';
-      const active = barber.status === 'on-leave' || today >= barber.leaveFrom && today <= barber.leaveTo;
-      const format = value => new Date(`${value}T12:00:00+08:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' });
-      return ` - ${active ? 'leave dates' : 'planned leave'} ${format(barber.leaveFrom)} to ${format(barber.leaveTo)}`;
-    };
-    if (!active.length) return `<option value="">Assign later</option>${barbers.filter((barber) => barber.status !== "fired").map((barber) => `<option value="${barber.id}" disabled>${safeText(barber.name)} - ${barber.status === 'on-leave' ? 'on leave' : 'unavailable'}${leaveDates(barber)}</option>`).join("")}`;
+    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    const onLeave = barber => barber.status === 'on-leave' || Boolean(barber.leaveFrom && barber.leaveTo && today >= barber.leaveFrom && today <= barber.leaveTo);
+    const unavailable = barber => barber.status !== 'active' || onLeave(barber);
+    if (!active.length) return `<option value="">Assign later</option>${barbers.filter((barber) => barber.status !== "fired").map((barber) => `<option value="${barber.id}" disabled>${safeText(barber.name)} - ${onLeave(barber) ? 'on leave' : 'unavailable'}</option>`).join("")}`;
     const anySelected = !selectedId || selectedId === "any";
-    return `<option value="any" ${anySelected ? "selected" : ""}>Any available barber</option>${barbers.filter((barber) => barber.status !== "fired").map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""} ${barber.status !== "active" ? "disabled" : ""}>${safeText(barber.name)}${barber.status !== "active" ? ` - ${barber.status === "on-leave" ? "on leave" : "unavailable"}` : ""}${leaveDates(barber)}</option>`).join("")}`;
+    return `<option value="any" ${anySelected ? "selected" : ""}>Any available barber</option>${barbers.filter((barber) => barber.status !== "fired").map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""} ${unavailable(barber) ? "disabled" : ""}>${safeText(barber.name)}${unavailable(barber) ? ` - ${onLeave(barber) ? "on leave" : "unavailable"}` : ""}</option>`).join("")}`;
   }
 
   return { state, barbers, save, peso, timeLabel, byId, initials, avatar, toast, initHeader, nav, shopEndcap, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, loadSettings, setSession, clearSession, authToken, isAuthenticated, currentRole, canAccess, icon, safeText };

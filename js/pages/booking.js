@@ -24,7 +24,8 @@ function barberLeaveLabel(barber) {
 }
 
 function barberOnLeave(barber, date) {
-  return barber?.status === 'on-leave' || Boolean(date && barber?.leaveFrom && barber?.leaveTo && date >= barber.leaveFrom && date <= barber.leaveTo);
+  const selectedDate = date || localDateValue();
+  return barber?.status === 'on-leave' || Boolean(barber?.leaveFrom && barber?.leaveTo && selectedDate >= barber.leaveFrom && selectedDate <= barber.leaveTo);
 }
 
 const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -149,8 +150,7 @@ async function render() {
       const barber = barbers.find((item) => item.id === option.value);
       const onLeave = barberOnLeave(barber, date);
       option.disabled = !barber || barber.status !== 'active' || onLeave;
-      const leave = barberLeaveLabel(barber);
-      option.textContent = `${barber?.name || option.textContent}${onLeave ? ` - on leave${leave ? ` (${leave})` : ''}` : barber?.status !== 'active' ? ' - unavailable' : leave ? ` - planned leave ${leave}` : ''}`;
+      option.textContent = `${barber?.name || option.textContent}${onLeave ? ' - on leave' : barber?.status !== 'active' ? ' - unavailable' : ''}`;
     });
     const anyOption = barberInput.querySelector('option[value="any"]');
     if (anyOption) anyOption.textContent = "Any available barber";
@@ -170,8 +170,7 @@ async function render() {
         const onLeave = barberOnLeave(barber, date);
         const busy = unavailable.has(option.value) || Boolean(barber?.mongoId && unavailable.has(barber.mongoId));
         option.disabled = onLeave || busy || !barber || barber.status !== 'active';
-        const leave = barberLeaveLabel(barber);
-        option.textContent = `${barber?.name || option.textContent}${onLeave ? ` - on leave${leave ? ` (${leave})` : ''}` : busy ? ' - unavailable' : leave ? ` - planned leave ${leave}` : barber?.status !== 'active' ? ' - unavailable' : ''}`;
+        option.textContent = `${barber?.name || option.textContent}${onLeave ? ' - on leave' : busy || barber?.status !== 'active' ? ' - unavailable' : ''}`;
         if (!option.disabled) availableCount += 1;
       });
       if (anyOption) {

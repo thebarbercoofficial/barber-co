@@ -25,7 +25,7 @@
       h1 {
         margin: 0 0 10px;
         font-family: Georgia, serif;
-        font-size: 54px;
+        font-size: 36px;
         line-height: 1;
       }
       p {
@@ -52,8 +52,11 @@
     <main>
       <h1>The Barber Co</h1>
       <p>Walk-ins: scan this QR code to join the queue and see your place in line.</p>
-      <img src="https://api.qrserver.com/v1/create-qr-code/?size=700x700&amp;data=https%3A%2F%2Fthebarbercoofficial.github.io%2Fbarber-co%2Fqueue.html%3Fwalkin%3D1" alt="Walk-in queue QR code" />
-      <strong>Keep the queue page open for alerts.</strong>
+      <img data-shop-qr hidden alt="Walk-in queue QR code" width="420" height="420" />
+      <strong data-qr-status role="status">Verifying staff access...</strong>
+      <button type="button" data-qr-retry hidden>Retry</button>
     </main>
+    <script src="../js/shared.js"></script>
+    <script src="../js/pages/staff-walkin-qr.js"></script>
   </body>
 </html>

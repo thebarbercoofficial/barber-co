@@ -1,0 +1,85 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const { Readable } = require('node:stream');
+const { ObjectId } = require('mongodb');
+const jwt = require('jsonwebtoken');
+const { memoryDb } = require('./helpers/memory-db');
+const secret = 'isolated-qr-test';
+const users = ['admin', 'moderator', 'customer'].map(role => ({ _id: new ObjectId(), role }));
+const database = memoryDb({ users, queue: [], counters: [], services: [], appointments: [], settings: [] });
+const localRequire = require('node:module').createRequire(path.resolve('api/index.js'));
+const notices = [];
+const context = { require: name => name === '../lib/notifications' ? { notify: async (...args) => notices.push(args) } : localRequire(name), module: { exports: {} }, URL, console, process: { env: { JWT_SECRET: secret, PUBLIC_SITE_URL: 'https://shop.test/barber-co/' } }, database };
+vm.runInNewContext(`${fs.readFileSync('api/index.js', 'utf8')}\ndb = async () => database;`, context);
+async function request(url, body, role, method = body ? 'POST' : 'GET') {
+  const req = Readable.from(body ? [JSON.stringify(body)] : []);
+  Object.assign(req, { method, url: `/api${url}`, headers: role ? { authorization: `Bearer ${jwt.sign({ sub: String(users.find(u => u.role === role)._id) }, secret)}` } : {}, socket: { remoteAddress: '127.0.0.2' } });
+  let result;
+  const headers = {};
+  const res = { setHeader(k, v) { headers[k] = v; }, end(raw) { result = JSON.parse(raw); } };
+  await context.module.exports(req, res);
+  return { status: res.statusCode, headers, ...result };
+}
+(async () => {
+  assert.equal((await request('/admin/queue/qr')).status, 401);
+  assert.equal((await request('/admin/queue/qr', null, 'customer')).status, 403);
+  const qr = await request('/admin/queue/qr', null, 'moderator');
+  assert.equal(qr.status, 200);
+  assert.equal(qr.headers['Cache-Control'], 'no-store');
+  assert.match(qr.qrImage, /^data:image\/png;base64,/);
+  const { data: pixels, info } = await require('sharp')(Buffer.from(qr.qrImage.split(',')[1], 'base64')).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const decoded = require('jsqr')(new Uint8ClampedArray(pixels), info.width, info.height);
+  const destination = new URL(decoded.data);
+  assert.equal(destination.origin + destination.pathname, 'https://shop.test/barber-co/queue.html');
+  assert.equal(destination.searchParams.get('walkinToken'), qr.token);
+  const payload = jwt.verify(qr.token, secret);
+  assert.equal(payload.purpose, 'shop-walkin');
+  assert.equal(payload.exp - payload.iat, 120);
+  assert.equal(qr.expiresAt, new Date(payload.exp * 1000).toISOString());
+  assert.notEqual((await request('/admin/queue/qr', null, 'admin')).token, qr.token);
+  const before = JSON.stringify(database.records);
+  const access = await request(`/queue/walkin-access?token=${qr.token}`);
+  assert.equal(access.status, 200);
+  assert.equal(access.expiresAt, qr.expiresAt);
+  assert.equal(JSON.stringify(database.records), before, 'Validation must not write to the database');
+  for (const token of [undefined, `${qr.token}x`, jwt.sign({ purpose: 'shop-walkin' }, secret, { expiresIn: -1 }), jwt.sign({ purpose: 'session' }, secret), jwt.sign({ purpose: 'shop-walkin' }, secret)]) {
+    assert.equal((await request(`/queue/walkin-access?token=${token || ''}`)).status, 403);
+    assert.equal((await request('/queue/walkin', { customer: 'Invalid guest', walkinToken: token })).status, 403);
+  }
+  const body = { customer: 'QR Guest', walkinToken: qr.token, contactEmail: 'not-an-email', emailConsent: true, phone: '09123456789', smsConsent: true };
+  const joined = await request('/queue/walkin', body, 'customer');
+  assert.equal(joined.status, 201);
+  assert.equal(typeof joined.cancelToken, 'string');
+  assert.equal(Object.hasOwn(joined.ticket, 'cancelTokenHash'), false);
+  assert.equal((await request('/queue/walkin', body, 'customer')).status, 409);
+  const shopTicket = database.records.queue.find(ticket => ticket.source === 'shop-qr');
+  const staffQueue = await request('/admin/queue', null, 'moderator');
+  assert.equal(Object.hasOwn(staffQueue.queue[0], 'cancelTokenHash'), false, 'Cancellation hashes are not exposed to staff clients');
+  const cancelPath = `/queue/ticket/${shopTicket._id}/cancel`;
+  const unauthenticatedCancel = await request(cancelPath, {}, undefined, 'PATCH');
+  assert.equal(unauthenticatedCancel.status, 403, JSON.stringify(unauthenticatedCancel) || 'Ticket URL alone cannot authorize cancellation');
+  assert.equal((await request(cancelPath, { cancelToken: `${joined.cancelToken}x` }, undefined, 'PATCH')).status, 403);
+  shopTicket.status = 'serving';
+  assert.equal((await request(cancelPath, { cancelToken: joined.cancelToken }, undefined, 'PATCH')).status, 409, 'A called ticket cannot be cancelled');
+  shopTicket.status = 'waiting';
+  assert.equal((await request(cancelPath, { cancelToken: joined.cancelToken }, undefined, 'PATCH')).status, 200);
+  assert.equal(shopTicket.status, 'cancelled');
+  assert.equal(shopTicket.cancelledBy, 'customer');
+  assert.equal(Object.hasOwn(shopTicket, 'cancelTokenHash'), false, 'Cancellation credential is invalidated after use');
+  assert.equal((await request(cancelPath, { cancelToken: joined.cancelToken }, undefined, 'PATCH')).status, 409, 'A completed cancellation cannot be replayed');
+  assert.equal((await request('/admin/queue', { ...body, customer: 'Manual Guest' }, 'moderator')).status, 201);
+  for (const ticket of database.records.queue) {
+    assert.equal(ticket.contactEmail, '');
+    assert.equal(ticket.emailConsent, false);
+    assert.equal(ticket.phone, '');
+  }
+  const manual = database.records.queue.find(t => t.source === 'staff');
+  assert.equal((await request(`/queue/ticket/${manual._id}/cancel`, { cancelToken: joined.cancelToken }, undefined, 'PATCH')).status, 404, 'A shop QR capability cannot cancel a staff ticket');
+  const req = Readable.from([JSON.stringify({ status: 'cancelled' })]);
+  Object.assign(req, { method: 'PATCH', url: `/api/admin/queue/${manual._id}`, headers: { authorization: `Bearer ${jwt.sign({ sub: String(users[0]._id) }, secret)}` } });
+  await context.module.exports(req, { setHeader() {}, end() {} });
+  assert.equal(notices.length, 0);
+  console.log('Staff walk-in QR API tests passed');
+})().catch(error => { console.error(error); process.exitCode = 1; });

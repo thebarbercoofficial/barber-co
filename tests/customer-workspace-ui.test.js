@@ -77,6 +77,10 @@ async function main() {
         assert.deepEqual(check.smallFields, [], `${name} small fields at ${width}px`);
         assert.deepEqual(errors, [], `${name} script errors at ${width}px`);
         if (name === 'index') {
+          assert.equal(await page.locator('body').evaluate(el => el.classList.contains('home-page')), true);
+          const shopBox = await page.locator('.shop-showcase').boundingBox();
+          assert.ok(shopBox.x <= Math.max(24, width * 0.04), `Homepage shop section has an oversized left gutter at ${width}px: ${shopBox.x}px`);
+          assert.ok(shopBox.x + shopBox.width >= width - Math.max(24, width * 0.04), `Homepage shop section has an oversized right gutter at ${width}px`);
           const sections = await page.locator('#app > section').evaluateAll(items => items.map(el => el.getBoundingClientRect().height));
           assert.equal(sections.length, 3, 'Homepage has three separate sections');
           assert.ok(sections.every(height => height >= 828), `Homepage sections must remain screen-sized at ${width}px: ${sections}`);

@@ -34,6 +34,7 @@ async function fixtures(context, role) {
     failAnalytics: () => { analyticsUnavailable = true; }
   };
   await context.addInitScript(({ role }) => {
+    window.print = () => { window.reportPrintCalls = (window.reportPrintCalls || 0) + 1; };
     localStorage.setItem('barberCoState', JSON.stringify({ user: { id: 'test-user', name: role === 'admin' ? 'Shop Owner' : 'Front Desk', email: 'qa@example.test', role } }));
     localStorage.setItem('barberCoToken', 'qa-isolated-token');
     localStorage.setItem('barberCoApiBase', 'https://barber-co-seven.vercel.app');
@@ -251,12 +252,12 @@ async function main() {
       if (width === 1920) {
         const directory = path.join(root, 'outputs/studio');
         fs.mkdirSync(directory, { recursive: true });
+        await page.screenshot({ path: path.join(directory, 'report-print-check.png'), fullPage: true });
         const pdf = await page.pdf({ path: path.join(directory, 'report-preview.pdf'), preferCSSPageSize: true, printBackground: true });
         assert.ok(pdf.length > 1000, 'Printable PDF must contain content');
-        await page.screenshot({ path: path.join(directory, 'report-print-check.png'), fullPage: true });
       }
       await page.emulateMedia({ media: 'screen' });
-      await page.locator('[data-report-close]').click();
+      if (await page.locator('[data-report-close]').isVisible()) await page.locator('[data-report-close]').click();
       assert.equal(await page.locator('[data-report-dialog]').isVisible(), false);
       if (width === 1920) {
         await page.locator('[data-chart-range]').selectOption('365');
@@ -265,7 +266,7 @@ async function main() {
         await page.emulateMedia({ media: 'print' });
         await page.pdf({ path: path.join(root, 'outputs/studio/report-full-year.pdf'), preferCSSPageSize: true, printBackground: true });
         await page.emulateMedia({ media: 'screen' });
-        await page.locator('[data-report-close]').click();
+        assert.equal(await page.locator('[data-report-dialog]').isVisible(), false, 'PDF printing returns to reports automatically');
       }
       assert.doesNotMatch(await page.locator('.workspace').innerText(), /demo/i);
       await page.locator('[data-barber-search]').fill('missing');
@@ -418,7 +419,10 @@ async function main() {
     assert.equal(await emptyPage.locator('[data-chart-rows] tr').count(), 7);
     await emptyPage.getByRole('button', { name: 'Print report', exact: true }).click();
     await emptyPage.locator('[data-report-dialog]').waitFor();
-    await emptyPage.locator('[data-report-close]').click();
+    assert.equal(await emptyPage.evaluate(() => window.reportPrintCalls), 1, 'Print report must launch printing without a second click');
+    await emptyPage.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+    assert.equal(await emptyPage.locator('[data-report-dialog]').isVisible(), false);
+    assert.equal(await emptyPage.locator('body').evaluate(node => node.classList.contains('printing-report')), false);
     console.log('Empty charts and backend-error states passed without fabricated data');
     await empty.close();
   } finally {

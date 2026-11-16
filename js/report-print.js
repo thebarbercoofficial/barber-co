@@ -24,6 +24,8 @@ const BarberReport = (() => {
     dialog.querySelector('[data-report-print]').addEventListener('click', () => window.print());
     dialog.querySelectorAll('[data-report-section]').forEach(input => input.addEventListener('change', () => { dialog.querySelector(`[data-print-section="${input.dataset.reportSection}"]`).hidden = !input.checked; }));
     dialog.showModal();
+    window.addEventListener('afterprint', () => { if (dialog.open) dialog.close(); }, { once: true });
+    window.print();
   }
   return { open };
 })();

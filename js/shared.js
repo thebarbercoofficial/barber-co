@@ -102,6 +102,19 @@ const BarberCo = (() => {
   if (!window.staffModule && /\/admin-[a-z-]+\.html$/.test(location.pathname)) {
     const app = document.querySelector('#app');
     if (app) app.hidden = true;
+    const startup = document.createElement('div');
+    startup.id = 'staff-startup';
+    startup.innerHTML = '<header class="staff-startup-header"><strong>The Barber Co</strong><span>Staff workspace</span></header><div class="staff-startup-layout"><aside><strong>Workspace</strong><p>Dashboard</p><p>Staff Logbook</p><p>Contact Inbox</p><p>Shop Settings</p><p>Services</p><p>Barbers</p><p>Reports</p></aside><main><h1>Loading workspace</h1><p role="status">Verifying your session...</p></main><aside><strong>Appointments</strong><p>Loading requests...</p></aside></div>';
+    document.body.append(startup);
+    let verified = false;
+    const reveal = () => {
+      if (!verified || !app?.firstElementChild) return;
+      app.hidden = false;
+      startup.remove();
+      observer.disconnect();
+    };
+    const observer = new MutationObserver(reveal);
+    if (app) observer.observe(app, { childList: true });
     const verifyStaff = () => api('/me').then((payload) => {
       setSession(payload);
       const limited = /\/admin-(workspace|logbook|schedule|contacts)\.html$/.test(location.pathname);
@@ -109,7 +122,9 @@ const BarberCo = (() => {
         location.replace(payload.user.role === 'moderator' ? 'admin-logbook.html' : 'index.html');
         return;
       }
-      if (app) app.hidden = false;
+      verified = true;
+      startup.querySelector('[role="status"]').textContent = 'Loading page data...';
+      reveal();
     }).catch((error) => {
       if (error.status === 401) {
         clearSession();
@@ -125,6 +140,7 @@ const BarberCo = (() => {
         document.body.append(recovery);
       }
       recovery.innerHTML = '<h1>Unable to verify your session</h1><p role="alert"></p><button class="button primary" type="button">Try again</button>';
+      startup.hidden = true;
       recovery.querySelector('p').textContent = error.message || 'Please try again shortly. You have not been signed out.';
       recovery.querySelector('button').addEventListener('click', () => { recovery.remove(); void verifyStaff(); });
     });
@@ -260,7 +276,7 @@ const BarberCo = (() => {
       document.querySelectorAll('a[href]').forEach(link => {
         const url = new URL(link.getAttribute('href'), location.href);
         if (url.origin === location.origin && /\/admin-[a-z-]+\.html$/.test(url.pathname)) {
-          url.searchParams.set('release', 'request-panel-20261117');
+          url.searchParams.set('release', 'instant-shell-20261117');
           link.href = url.href;
         }
       });
@@ -481,7 +497,7 @@ const BarberCo = (() => {
           const service = state.services.find(service => service.id === item.serviceId);
           const barber = state.barbers.find(barber => barber.id === item.barberId);
           const id = item.customer || '';
-          return `<article class="appointment-request"><div class="appointment-request-person"><span class="appointment-request-avatar">${safeText(initials(item.customer || 'Customer'))}</span><div><strong>${safeText(item.customer || 'Customer')}</strong><small>${safeText(service?.name || item.serviceName || 'Appointment')} / ${safeText(barber?.name || item.barberName || 'Assigned barber')}</small></div></div><p>${safeText(item.date)} at ${safeText(timeLabel(item.time))}</p><span class="status-pill pending">${item.rescheduleRequest?.status === 'pending' ? 'Reschedule review' : 'Needs review'}</span><a class="text-action" href="admin-schedule.html?release=request-panel-20261117&customer=${encodeURIComponent(id)}">Review request ${icon('ArrowUpRight')}</a></article>`;
+          return `<article class="appointment-request"><div class="appointment-request-person"><span class="appointment-request-avatar">${safeText(initials(item.customer || 'Customer'))}</span><div><strong>${safeText(item.customer || 'Customer')}</strong><small>${safeText(service?.name || item.serviceName || 'Appointment')} / ${safeText(barber?.name || item.barberName || 'Assigned barber')}</small></div></div><p>${safeText(item.date)} at ${safeText(timeLabel(item.time))}</p><span class="status-pill pending">${item.rescheduleRequest?.status === 'pending' ? 'Reschedule review' : 'Needs review'}</span><a class="text-action" href="admin-schedule.html?release=instant-shell-20261117&customer=${encodeURIComponent(id)}">Review request ${icon('ArrowUpRight')}</a></article>`;
         }).join('') || '<p class="muted">No appointment requests to review.</p>';
       } catch (error) {
         if (list.isConnected && !list.querySelector('.appointment-request')) {

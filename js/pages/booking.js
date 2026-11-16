@@ -67,6 +67,10 @@ async function render() {
   const paymentReady = settings.paymentMode !== 'demo' && [settings.gcash, settings.maya].some((method) => method?.enabled && (method.accountNumber || method.qrImage));
   if (!paymentReady) {
     document.querySelector("#app").innerHTML = `${nav("booking")}<section class="section top"><div class="panel"><p class="eyebrow">Online booking unavailable</p><h2>Payment setup is incomplete.</h2><p class="muted">No payment number or QR code has been added. No booking has been submitted.</p>${BarberCo.canAccess('admin') ? '<a class="button primary" href="admin-profile.html">Set up payments</a>' : '<p class="muted">Please contact the shop or join the walk-in queue.</p>'}<a class="button secondary" href="queue.html?walkin=1">Walk-in queue</a></div></section>`;
+    const queueLink = document.querySelector('.panel a[href="queue.html?walkin=1"]');
+    if (queueLink) { queueLink.href = 'queue.html'; queueLink.textContent = 'View queue'; }
+    const shopNotice = document.querySelector('.panel p.muted:last-of-type');
+    if (shopNotice && shopNotice.textContent.includes('walk-in')) shopNotice.textContent = 'For walk-ins, scan the QR displayed inside the shop.';
     document.querySelector('.panel h2').textContent = 'Payment method is currently unavailable.';
     document.querySelector('.panel .muted').textContent = 'Online booking will be available once the shop adds a payment method. No booking has been submitted.';
     initHeader("booking");

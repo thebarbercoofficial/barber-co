@@ -2,18 +2,24 @@ const { state, barbers, nav, initHeader, byId, api, loadCatalog, serviceOptions,
 const params = new URLSearchParams(location.search);
 const queueStorageKey = key => state.user?.id ? `${key}:${state.user.id}` : key;
 const savedTicketId = localStorage.getItem(queueStorageKey('barberCoQueueTicketId')) || '';
+let cancelTicketId = localStorage.getItem(queueStorageKey('barberCoQueueCancelTicketId')) || '';
+let cancelToken = localStorage.getItem(queueStorageKey('barberCoQueueCancelToken')) || '';
 let alertsEnabled = false;
 let lastTicketStatus = "";
 let activeTicketId = params.get('ticket') || savedTicketId;
 let joinBusy = false;
+let cancelBusy = false;
+const walkinToken = params.get('walkinToken') || '';
+let walkinAccess = false;
+let walkinAccessExpiresAt = 0;
 
 function updateJoinState(active, message = '') {
   const button = document.querySelector('[data-walkin] [type="submit"]');
-  if (button) { button.disabled = active || joinBusy; button.textContent = active ? 'Your ticket is already in the queue' : 'Get queue number'; }
+  if (button) { button.disabled = active || joinBusy || !walkinAccess; button.textContent = active ? 'Your ticket is already in the queue' : 'Get queue number'; }
   const notice = document.querySelector('[data-walkin-error]');
   if (notice) notice.textContent = message;
   const fields = document.querySelector('[data-walkin-fields]');
-  if (fields) fields.hidden = active;
+  if (fields) fields.hidden = active || !walkinAccess;
   const title = document.querySelector('[data-walkin-title]');
   if (title) title.textContent = active ? 'Your walk-in ticket' : 'Join the line';
   const existing = document.querySelector('[data-existing-ticket]');
@@ -64,21 +70,25 @@ async function refreshPublicQueue() {
 async function render() {
   try { await loadCatalog(); } catch {}
   const ticketId = params.get("ticket") || savedTicketId;
+  if (walkinToken) {
+    try {
+      const access = await api(`/queue/walkin-access?token=${encodeURIComponent(walkinToken)}`, { cache: 'no-store' });
+      walkinAccessExpiresAt = new Date(access.expiresAt).getTime();
+      walkinAccess = walkinAccessExpiresAt > Date.now();
+    } catch { walkinAccess = false; }
+  }
 
   document.querySelector("#app").innerHTML = `
     ${nav("queue")}
     <section class="section top queue-workspace">
       <div class="section-heading"><p class="eyebrow">Customer Queue</p><h2>Live queue</h2></div>
-      <div class="grid-2 walkin-grid">
-        <form class="form-card" data-walkin autocomplete="off">
+      <div class="${!walkinAccess && !ticketId ? 'walkin-view-only' : 'grid-2'} walkin-grid">
+        <form class="form-card" data-walkin autocomplete="off" ${!walkinAccess && !ticketId ? 'hidden' : ''}>
           <p class="eyebrow">Walk-in</p><h2 data-walkin-title>Join the line</h2>
           <p data-existing-ticket hidden>Your ticket is active. <a href="#walkin-ticket">View your queue status</a></p>
           <div data-walkin-fields>
           <label>Name<input name="customer" autocomplete="off" required placeholder="Your name"></label>
           <label>Service<select name="serviceId" required>${serviceOptions()}</select></label>
-          <label><span data-walkin-email-label>Email for updates (optional)</span><input name="contactEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label>
-          <p class="muted" data-walkin-email-help hidden></p>
-          <label class="terms-consent"><span><input name="emailConsent" type="checkbox"><span>Email me when staff calls or cancels my ticket.</span></span></label>
           </div>
           <button class="button primary full" type="submit">Get queue number</button>
           <p role="alert" data-walkin-error></p>
@@ -87,7 +97,7 @@ async function render() {
         <div class="panel" id="walkin-ticket" data-ticket-panel>
           <p class="eyebrow">Your Status</p>
           <h2>${ticketId ? "Checking your ticket." : "No active ticket"}</h2>
-          <div class="walkin-qr"><img class="qr-code" alt="Walk-in queue QR code" src="images/walk-in-qr.png" width="180" height="180"><a href="queue.html?walkin=1">Shop walk-in link</a></div>
+          <p>${walkinToken && !walkinAccess ? 'This QR has expired. Scan the current QR at the shop.' : 'To join as a walk-in, scan the QR displayed inside the shop using your phone camera.'}</p>
         </div>
       </div>
       <div class="now-next" data-live-summary><article><strong>Checking the live queue...</strong></article></div>
@@ -99,6 +109,11 @@ async function render() {
     event.preventDefault();
     const button = event.target.querySelector('[type="submit"]');
     if (button.disabled) return;
+    if (!walkinAccess || Date.now() >= walkinAccessExpiresAt) {
+      walkinAccess = false;
+      updateJoinState(false, 'This QR has expired. Scan the current QR at the shop.');
+      return;
+    }
     joinBusy = true;
     button.disabled = true;
     document.querySelector('[data-walkin-error]').textContent = '';
@@ -106,11 +121,14 @@ async function render() {
     try {
       const payload = await api("/queue/walkin", {
         method: "POST",
-        body: JSON.stringify({ customer: data.get("customer"), serviceId: data.get("serviceId"), contactEmail: data.get("contactEmail"), emailConsent: data.get("emailConsent") === "on" })
+        body: JSON.stringify({ customer: data.get("customer"), serviceId: data.get("serviceId"), walkinToken })
       });
       try {
         localStorage.setItem(queueStorageKey('barberCoQueueTicketId'), payload.ticket.id);
-        if (payload.emailUpdatesEnabled) localStorage.setItem(`barberCoQueueEmailUpdates:${payload.ticket.id}`, "true");
+        localStorage.setItem(queueStorageKey('barberCoQueueCancelTicketId'), payload.ticket.id);
+        localStorage.setItem(queueStorageKey('barberCoQueueCancelToken'), payload.cancelToken);
+        cancelTicketId = payload.ticket.id;
+        cancelToken = payload.cancelToken;
       } catch { /* The ticket URL still works when browser storage is full. */ }
       location.href = `queue.html?ticket=${payload.ticket.id}`;
     } catch (error) {
@@ -120,22 +138,37 @@ async function render() {
     }
   });
 
-  const guestEmail = document.querySelector('[data-walkin] [name="contactEmail"]');
-  const guestEmailConsent = document.querySelector('[data-walkin] [name="emailConsent"]');
-  const guestEmailLabel = document.querySelector('[data-walkin-email-label]');
-  const guestEmailHelp = document.querySelector('[data-walkin-email-help]');
-  guestEmail.closest('label').before(guestEmailConsent.closest('label'));
-  const updateGuestEmailRequirement = () => {
-    const enabled = guestEmailConsent.checked;
-    guestEmail.required = enabled;
-    guestEmail.disabled = !enabled;
-    guestEmail.closest('label').hidden = !enabled;
-    guestEmail.closest('label').style.display = enabled ? '' : 'none';
-    guestEmailLabel.textContent = `Email for updates (${enabled ? 'required' : 'optional'})`;
-    guestEmailHelp.textContent = '';
-  };
-  guestEmailConsent.addEventListener("change", updateGuestEmailRequirement);
-  updateGuestEmailRequirement();
+  updateJoinState(false);
+
+  document.querySelector('[data-ticket-panel]').addEventListener('click', async event => {
+    const button = event.target.closest('[data-cancel-ticket]');
+    if (!button || cancelBusy || !cancelToken || cancelTicketId !== button.dataset.cancelTicket) return;
+    if (!window.confirm('Cancel your place in the walk-in queue? You will lose your current position.')) return;
+    cancelBusy = true;
+    button.disabled = true;
+    button.textContent = 'Cancelling...';
+    try {
+      await api(`/queue/ticket/${encodeURIComponent(cancelTicketId)}/cancel`, {
+        method: 'PATCH',
+        body: JSON.stringify({ cancelToken })
+      });
+      cancelToken = '';
+      cancelTicketId = '';
+      try {
+        localStorage.removeItem(queueStorageKey('barberCoQueueCancelToken'));
+        localStorage.removeItem(queueStorageKey('barberCoQueueCancelTicketId'));
+      } catch { /* The server has already invalidated this ticket's one-time token. */ }
+      lastTicketStatus = '';
+      await updateTicket(button.dataset.cancelTicket, false);
+    } catch (error) {
+      const notice = document.querySelector('[data-cancel-error]');
+      if (notice) notice.textContent = error.message || 'Your ticket could not be cancelled. Ask the counter for help.';
+      button.disabled = false;
+      button.textContent = 'Cancel my place';
+    } finally {
+      cancelBusy = false;
+    }
+  });
 
   document.addEventListener("click", (event) => {
     if (!event.target.closest("[data-enable-alerts]")) return;
@@ -149,7 +182,7 @@ async function render() {
   initHeader("queue");
 }
 
-async function updateTicket(ticketId) {
+async function updateTicket(ticketId, scheduleNext = true) {
   try {
     const data = await api(`/queue/ticket/${ticketId}`);
     const panel = document.querySelector("[data-ticket-panel]");
@@ -157,8 +190,8 @@ async function updateTicket(ticketId) {
     const status = data.ticket.status;
     if (activeTicketId === ticketId) updateJoinState(['waiting', 'serving'].includes(status));
     const position = status === 'serving' ? 'Now serving' : status === 'waiting' ? `#${data.position} in line` : status === 'done' ? 'Completed' : status === 'cancelled' ? 'Cancelled' : 'Not in line';
-    const emailUpdates = localStorage.getItem(`barberCoQueueEmailUpdates:${ticketId}`) === "true";
-    panel.innerHTML = `<p class="eyebrow">Your Status</p><h2>Queue #${String(data.ticket.queueNumber).padStart(2, "0")}</h2><div class="summary-list"><div><span>Status</span><strong>${escapeHtml(status === 'done' ? 'Completed' : status)}</strong></div><div><span>Position</span><strong>${position}</strong></div><div><span>People ahead</span><strong>${status === 'waiting' ? data.waitingAhead : '-'}</strong></div></div>${emailUpdates ? '<p class="muted">Email queue updates are enabled.</p>' : ''}${['waiting', 'serving'].includes(status) ? '<button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>' : ''}`;
+    const canCancel = status === 'waiting' && data.ticket.source === 'shop-qr' && cancelTicketId === ticketId && Boolean(cancelToken);
+    panel.innerHTML = `<p class="eyebrow">Your Status</p><h2>Queue #${String(data.ticket.queueNumber).padStart(2, "0")}</h2><div class="summary-list"><div><span>Status</span><strong>${escapeHtml(status === 'done' ? 'Completed' : status)}</strong></div><div><span>Position</span><strong>${position}</strong></div><div><span>People ahead</span><strong>${status === 'waiting' ? data.waitingAhead : '-'}</strong></div></div>${['waiting', 'serving'].includes(status) ? '<button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>' : ''}${canCancel ? '<button class="button secondary full" type="button" data-cancel-ticket="' + escapeHtml(ticketId) + '">Cancel my place</button><p role="alert" data-cancel-error></p>' : ''}`;
     if (lastTicketStatus && lastTicketStatus !== "serving" && data.ticket.status === "serving") ringDevice();
     lastTicketStatus = data.ticket.status;
   } catch (error) {
@@ -166,7 +199,7 @@ async function updateTicket(ticketId) {
     const panel = document.querySelector("[data-ticket-panel]");
     if (panel) panel.innerHTML = '<p class="eyebrow">Your Status</p><h2>Ticket status unavailable</h2><p>Please check with the counter. Retrying automatically.</p>';
   }
-  window.setTimeout(() => updateTicket(ticketId), 7000);
+  if (scheduleNext) window.setTimeout(() => updateTicket(ticketId), 7000);
 }
 
 render();

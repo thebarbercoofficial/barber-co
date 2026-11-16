@@ -23,6 +23,8 @@ function visibleAppointments(query) {
 }
 
 function groupDetails(item) {
+  if (item.bookingPaymentMethod === 'onsite') return `<small>Payment: Pay at shop / no advance payment received</small><small>Cash due: ${peso(item.servicePaid ? 0 : item.cashDue || item.total)}</small>`;
+  if (item.servicePaymentMethod) return `<small>Service: ${item.servicePaymentMethod === 'cash' ? 'Cash at shop' : 'Online'} / Reservation fee: ${item.bookingFeePaid ? 'verified' : 'awaiting verification'}</small><small>Online transfer: ${peso(item.onlineAmount)} / Cash balance: ${peso(item.servicePaid ? 0 : item.cashDue)}</small>`;
   if (!(item.partySize > 1)) return '';
   return `<small><strong>Group of ${safeText(item.partySize)}:</strong> ${(item.partyMembers || []).map(safeText).join(', ')}</small><small>Served consecutively by one barber${item.durationMinutes ? ` / ${safeText(item.durationMinutes)} minutes total` : ''}. Approval and changes apply to the whole group.</small>`;
 }
@@ -79,7 +81,7 @@ function appointmentRows(connectionError = "") {
     return reservations.filter((item) => !query || `${item.customer} ${item.date} ${item.request || ''}`.toLowerCase().includes(query)).map((item) => `<div class="appointment-row appointment-record"><div class="appointment-date"><strong>${safeText(item.date)}</strong><small>${safeText(BarberCo.timeLabel(item.time))}</small></div><div class="row-main"><strong>${safeText(item.customer)}</strong>${item.demoPayment ? '<small class="text-action">DEMO / no real payment</small>' : ''}<small>${safeText(byId(state.services, item.serviceId).name)} / ${safeText(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned barber')}</small>${item.request ? `<small class="appointment-request"><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}</div><div><strong>${peso(item.total || 0)}</strong><small class="muted">Not yet submitted</small></div><span class="status-pill pending">Awaiting payment</span><small class="muted">Hold ends ${safeText(new Date(item.expiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</small></div>`).join('') || `<div class="staff-empty">${icon('Clock')}<strong>No active payment holds</strong></div>`;
   }
   const items = visibleAppointments(query);
-  return items.map((item) => `<div class="appointment-row appointment-record"><div class="appointment-date"><strong>${safeText(item.date || 'Unscheduled')}</strong><small>${safeText(BarberCo.timeLabel(item.time))} / #${String(item.queueNumber || '').padStart(2, '0')}</small></div><div class="row-main"><strong>${safeText(item.customer)}</strong>${item.demoPayment ? '<small class="text-action">DEMO / no real payment</small>' : ''}<small>${safeText(byId(state.services, item.serviceId).name)} / ${safeText(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned barber')}</small>${item.request ? `<small class="appointment-request"><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}${item.paymentProof ? `<a class="text-action" href="${item.paymentProof}" target="_blank" rel="noreferrer">${icon('Image')} Payment proof</a>` : ''}</div><div><strong>${peso(item.total || 0)}</strong><small class="muted">${item.demoPayment ? 'Demo total' : 'Advance payment'}</small></div><span class="status-pill ${item.status}">${item.status === 'pending' ? 'Needs review' : item.status === 'confirmed' ? 'Accepted' : item.status}</span><span class="button-row">${item.status === 'pending' ? `<button class="button primary small" type="button" data-status="${item.mongoId || item.id}:confirmed">${icon('Check')} ${item.demoPayment ? 'Accept demo' : 'Verify / accept'}</button>` : ''}${item.status === 'confirmed' ? `<button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:completed">Complete</button>` : ''}${!['completed', 'cancelled', 'disapproved'].includes(item.status) ? `<button class="icon-button danger-icon" type="button" data-status="${item.mongoId || item.id}:cancelled" aria-label="Cancel appointment" title="Cancel appointment">${icon('X')}</button>` : ''}</span></div>`).join('') || `<div class="staff-empty">${icon('CalendarDays')}<strong>No ${statusFilter === 'pending' ? 'pending ' : ''}appointments${query ? ' match your search' : ' here'}</strong><span>Submitted bookings appear here for payment verification.</span></div>`;
+  return items.map((item) => `<div class="appointment-row appointment-record"><div class="appointment-date"><strong>${safeText(item.date || 'Unscheduled')}</strong><small>${safeText(BarberCo.timeLabel(item.time))} / #${String(item.queueNumber || '').padStart(2, '0')}</small></div><div class="row-main"><strong>${safeText(item.customer)}</strong>${item.demoPayment ? '<small class="text-action">DEMO / no real payment</small>' : ''}<small>${safeText(byId(state.services, item.serviceId).name)} / ${safeText(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned barber')}</small>${item.bookingPaymentMethod === 'onsite' ? '<small>Pay at shop / no advance payment received</small>' : ''}${item.request ? `<small class="appointment-request"><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}${item.paymentProof ? `<a class="text-action" href="${item.paymentProof}" target="_blank" rel="noreferrer">${icon('Image')} Payment proof</a>` : ''}</div><div><strong>${peso(item.total || 0)}</strong><small class="muted">${item.demoPayment ? 'Demo total' : item.bookingPaymentMethod === 'onsite' ? `Due at shop: ${peso(item.servicePaid ? 0 : item.cashDue || item.total)}` : 'Booking total'}</small></div><span class="status-pill ${item.status}">${item.status === 'pending' ? 'Needs review' : item.status === 'confirmed' ? 'Accepted' : item.status}</span><span class="button-row">${item.status === 'pending' ? `<button class="button primary small" type="button" data-status="${item.mongoId || item.id}:confirmed">${icon('Check')} ${item.demoPayment ? 'Accept demo' : item.bookingPaymentMethod === 'onsite' ? 'Accept booking' : 'Verify / accept'}</button>` : ''}${item.status === 'confirmed' ? `<button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:completed">Complete</button>` : ''}${!['completed', 'cancelled', 'disapproved'].includes(item.status) ? `<button class="icon-button danger-icon" type="button" data-status="${item.mongoId || item.id}:cancelled" aria-label="Cancel appointment" title="Cancel appointment">${icon('X')}</button>` : ''}</span></div>`).join('') || `<div class="staff-empty">${icon('CalendarDays')}<strong>No ${statusFilter === 'pending' ? 'pending ' : ''}appointments${query ? ' match your search' : ' here'}</strong><span>Submitted bookings appear here for payment verification.</span></div>`;
 }
 
 function snapshot(connectionError = "") {
@@ -141,7 +143,14 @@ function updatePanel(connectionError = "", force = false) {
   });
   panel?.querySelectorAll('.appointment-record').forEach(row => {
     const item = appointments.find(entry => String(entry.id) === row.dataset.appointmentId);
-    if (item) row.querySelector('.row-main')?.insertAdjacentHTML('beforeend', groupDetails(item) + attendanceDetails(item) + rescheduleDetails(item));
+    if (item) {
+      row.querySelector('.row-main')?.insertAdjacentHTML('beforeend', groupDetails(item) + attendanceDetails(item) + rescheduleDetails(item));
+      if (item.servicePaymentMethod) row.querySelector('.muted').textContent = 'Booking total';
+      if (item.servicePaymentMethod === 'cash' && !item.servicePaid) {
+        const complete = row.querySelector('[data-status$=":completed"]');
+        if (complete) complete.textContent = 'Collect cash / complete';
+      }
+    }
   });
   if (focusAction) Array.from(panel.querySelectorAll(`[${focusAction}]`)).find(button => button.getAttribute(focusAction) === focusValue && button.dataset.decision === focusDecision)?.focus();
   document.querySelectorAll('[data-filter-count]').forEach((target) => {
@@ -303,6 +312,15 @@ async function render() {
     const button = event.target.closest("[data-status]");
     if (!button || button.disabled) return;
     const [id, status] = button.dataset.status.split(":");
+    let collection = {};
+    const paymentItem = appointments.find(item => String(item.id || item.mongoId || item._id) === id);
+    if (status === 'completed' && (paymentItem?.bookingPaymentMethod === 'onsite' || paymentItem?.servicePaymentMethod === 'cash') && !paymentItem.servicePaid && !paymentItem.demoPayment) {
+      const due = paymentItem.bookingPaymentMethod === 'onsite' ? Number(paymentItem.total) : Number(paymentItem.total) - Number(paymentItem.bookingFee);
+      const amount = window.prompt(`Collect ${peso(due)} cash. Enter the exact cash amount collected to complete this service:`, '');
+      if (amount === null) return;
+      if (!amount.trim() || Number(amount) !== due) return toast('Enter the exact outstanding cash amount.');
+      collection = { cashCollected: true, cashAmount: Number(amount) };
+    }
     if (!['cancelled', 'disapproved'].includes(status) && pendingReschedule(appointments.find(item => String(item.id) === id) || {})) return;
     let reason = '';
     if (['cancelled', 'disapproved'].includes(status)) {
@@ -313,7 +331,7 @@ async function render() {
     }
     button.disabled = true;
     try {
-      await api(`/admin/appointments/${id}`, { method: "PATCH", body: JSON.stringify({ status, reason }) });
+      await api(`/admin/appointments/${id}`, { method: "PATCH", body: JSON.stringify({ status, reason, ...collection }) });
       toast(`Appointment marked ${status}. Customer update recorded; message delivery is not guaranteed.`);
       await refreshAppointments({ force: true });
     } catch (error) {

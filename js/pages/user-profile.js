@@ -10,6 +10,7 @@ function escapeValue(value = "") {
 }
 
 let myAppointments = [];
+let bookingsLoaded = false;
 
 function rescheduleUpdate(item) {
   const request = item.rescheduleRequest;
@@ -27,7 +28,8 @@ function bookingActions(item) {
   const group = item.partySize > 1 ? `<p style="grid-column:1/-1"><strong>Group of ${escapeValue(item.partySize)}:</strong> ${(item.partyMembers || []).map(escapeValue).join(', ')}<br>Served consecutively by one barber${item.durationMinutes ? ` / ${escapeValue(item.durationMinutes)} minutes total` : ''}. Rescheduling or cancellation applies to the whole group.</p>` : '';
   const attendance = item.cancelledBy === 'no-show' ? '<p style="grid-column:1/-1"><strong>No-show / no refund.</strong> The grace period ended without check-in. Your reserved time was released. You may join the walk-in queue if you arrive late.</p>' : item.status === 'confirmed' && item.graceDeadline ? `<p style="grid-column:1/-1">Check in with staff by <strong>${escapeValue(new Date(item.graceDeadline).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }))} (Philippine time)</strong>. Missing this deadline releases your reserved time without a refund.${item.checkedInAt ? '<br>You have checked in. Barber delays will not mark checked-in members as no-shows.' : ''}${item.absentMembers?.length ? `<br>Absent members: ${item.absentMembers.map(member => escapeValue(member.name)).join(', ')}. No refund for missed members.` : ''}</p>` : '';
   const refund = item.refundStatus === 'review-required' ? '<p style="grid-column:1/-1"><strong>Payment review required:</strong> The shop rejected this request. Staff must verify your transfer and arrange a manual refund. No automatic wallet refund has been sent. Contact the shop with your payment reference.</p>' : '';
-  return group + attendance + refund + bookingActionButtons(item);
+  const payment = item.bookingPaymentMethod === 'onsite' ? `<p style="grid-column:1/-1">Payment: pay at the shop. Nothing paid yet. Amount due: <strong>${peso(item.servicePaid ? 0 : item.cashDue || item.total)}</strong>.</p>` : item.servicePaymentMethod ? `<p style="grid-column:1/-1">Service payment: ${item.servicePaymentMethod === 'cash' ? 'Cash at shop' : 'Online'}. Reservation fee: ${item.bookingFeePaid ? 'verified' : 'awaiting verification'}. Online transfer: ${peso(item.onlineAmount)}. Cash balance: <strong>${peso(item.servicePaid ? 0 : item.cashDue)}</strong>.</p>` : '';
+  return payment + group + attendance + refund + bookingActionButtons(item);
 }
 
 function bookingActionButtons(item) {
@@ -44,6 +46,7 @@ function bookingStatus(status, demo = false) {
 }
 
 function bookingRows() {
+  if (!bookingsLoaded) return '<p role="status">Loading your bookings...</p>';
   if (!myAppointments.length) return `<div class="empty-state">You have no online bookings yet.</div>`;
   return myAppointments.map((item) => `<div class="appointment-row"><span>${item.demoPayment ? 'DEMO / ' : ''}Queue #${String(item.queueNumber || 0).padStart(2, "0")}<br><small class="muted">${escapeValue(item.date)} at ${escapeValue(BarberCo.timeLabel(item.time))}</small></span><strong>${escapeValue(item.customer)}<br><small class="muted">${escapeValue(byId(state.services, item.serviceId).name)} - ${peso(item.total || 0)}${item.demoPayment ? ' (not charged)' : ''}</small></strong><span class="status-pill ${escapeValue(item.status)}">${item.rescheduleRequest?.status === 'pending' && ['pending', 'confirmed'].includes(item.status) ? 'Reschedule awaiting staff approval' : bookingStatus(item.status, item.demoPayment)}</span>${bookingActions(item)}</div>`).join("");
 }
@@ -52,6 +55,7 @@ async function refreshBookings({ quiet = false } = {}) {
   try {
     const payload = await api("/appointments/mine");
     myAppointments = payload.appointments || [];
+    bookingsLoaded = true;
     const target = document.querySelector("[data-my-bookings]");
     const rows = bookingRows();
     if (target && target.innerHTML !== rows) {
@@ -66,7 +70,14 @@ async function refreshBookings({ quiet = false } = {}) {
       if (item?.rescheduleRequest?.status === 'pending' && item.rescheduleRequest.initiatedBy === 'staff') row.querySelector('.status-pill').textContent = 'Reschedule awaiting your approval';
       if (['in-queue', 'serving', 'no-show'].includes(item?.attendanceStatus)) row.querySelector('.status-pill').textContent = bookingStatus(item.attendanceStatus, item.demoPayment);
     });
-  } catch (error) { if (!quiet) toast(error.message || "Bookings could not be loaded."); }
+  } catch (error) {
+    const target = document.querySelector('[data-my-bookings]');
+    if (target && !bookingsLoaded) {
+      target.innerHTML = '<p role="alert">Your bookings could not be loaded. This does not mean your booking failed.</p><button class="button secondary" type="button" data-bookings-retry>Try again</button>';
+      target.querySelector('[data-bookings-retry]').onclick = () => refreshBookings();
+    }
+    if (!quiet) toast(error.message || 'Bookings could not be loaded.');
+  }
 }
 
 function draw() {
@@ -240,9 +251,12 @@ async function loadProfile() {
     const payload = await api('/me');
     setSession(payload);
     // Catalog failure must not prevent access to account details.
-    await loadCatalog().catch(() => {});
     draw();
     refreshBookings({ quiet: true });
+    loadCatalog().then(() => {
+      const target = document.querySelector('[data-my-bookings]');
+      if (target && bookingsLoaded) target.innerHTML = bookingRows();
+    }).catch(() => {});
     refreshNotifications();
   } catch (error) {
     if (error.status === 401 || error.status === 403) {

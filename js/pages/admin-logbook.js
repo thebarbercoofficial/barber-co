@@ -25,7 +25,7 @@ function queueRows() {
   return active.map((item) => `
     <div class="appointment-row" data-ticket-row="${item.mongoId || item.id}">
       <span>Queue #${String(item.queueNumber).padStart(2, "0")}${item.source === 'appointment' ? ` / member ${Number(item.memberIndex) + 1}` : ''}<br><small class="muted">${item.source === 'appointment' ? `Booked ${escapeHtml(new Date(item.scheduledAt).toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }))}` : `${item.waitMinutes || 0} min estimate`}${item.calledAt ? `<br>Started ${escapeHtml(new Date(item.calledAt).toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' }))}` : ''}</small></span>
-      <strong>${escapeHtml(item.customer)}<br><small class="muted">${escapeHtml(item.cutName || byId(state.services, item.serviceId).name)} - ${item.source === 'appointment' ? 'Online booking / payment recorded on appointment' : `${peso(item.price || byId(state.services, item.serviceId).price)} - ${item.source === "shop-qr" ? "Customer QR" : "Staff entry"}`}</small>${item.emailConsent && item.contactEmail ? `<br><small class="muted">Email updates: ${escapeHtml(item.contactEmail)}</small>` : ''}</strong>
+      <strong>${escapeHtml(item.customer)}<br><small class="muted">${escapeHtml(item.cutName || byId(state.services, item.serviceId).name)} - ${item.source === 'appointment' ? 'Online booking / payment recorded on appointment' : `${peso(item.price || byId(state.services, item.serviceId).price)} - ${item.source === "shop-qr" ? "Customer QR" : "Staff entry"}`}</small></strong>
       <span class="queue-barber">${escapeHtml(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned')}</span>
       <span class="status-pill ${item.status}">${statusText(item.status)}</span>
       <span class="button-row">${['done', 'cancelled'].includes(item.status) ? '' : `<button class="icon-button" type="button" data-rename="${item.mongoId || item.id}" aria-label="Edit customer name" title="Edit customer name">${icon('Pencil')}</button>${item.status === 'waiting' ? `<button class="button primary small" type="button" data-status="${item.mongoId || item.id}:serving">Serve</button>` : `<button class="button primary small" type="button" disabled>Serving</button>`}<button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:done">${item.source === 'appointment' ? 'Complete' : 'Paid / done'}</button><button class="icon-button danger-icon" type="button" data-status="${item.mongoId || item.id}:cancelled" aria-label="Cancel customer" title="Cancel customer">${icon('X')}</button>`}</span>
@@ -81,13 +81,11 @@ async function initialize() {
     ${nav("admin")}
     <section class="app-shell">${adminSidebar("logbook")}<div class="workspace">
       <div class="workspace-heading"><div><p class="eyebrow">FRONT DESK</p><h1>Customer queue</h1><p class="muted">Checked-in appointments and walk-ins.</p><a class="text-action" href="admin-schedule.html">Check in a booked customer</a></div><div class="heading-actions"><span class="sync-indicator" data-last-sync>Connecting...</span><a class="button secondary mobile-check-in" href="#check-in-customer">${icon('Plus')} Check in</a></div></div>
-      <div class="queue-overview"><div class="queue-counters"><div><span>Waiting</span><strong data-count="waiting">0</strong></div><div class="serving-counter"><span>Now serving</span><strong data-count="serving">0</strong></div><div><span>Completed</span><strong data-count="done">0</strong></div></div><div class="button-row"><button class="button primary" type="button" data-next>Call next customer</button><a class="button secondary" href="queue-display.html" target="_blank" rel="noreferrer" title="Open TV queue display">${icon('Monitor')} TV display</a><a class="button secondary" href="printables/walk-in-qr.html" target="_blank" rel="noreferrer" title="Open printable walk-in QR">${icon('QrCode')} Shop QR</a></div></div>
+      <div class="queue-overview"><div class="queue-counters"><div><span>Waiting</span><strong data-count="waiting">0</strong></div><div class="serving-counter"><span>Now serving</span><strong data-count="serving">0</strong></div><div><span>Completed</span><strong data-count="done">0</strong></div></div><div class="button-row"><button class="button primary" type="button" data-next>Call next customer</button><a class="button secondary" href="queue-display.html" target="_blank" rel="noreferrer" title="Open TV queue display">${icon('Monitor')} TV display</a><a class="button secondary" href="printables/walk-in-qr.html" target="_blank" rel="noreferrer" title="Open live walk-in QR">${icon('QrCode')} Shop QR</a></div></div>
       <div class="frontdesk-layout">
         <form class="panel" id="check-in-customer" data-logbook-form>
           <div class="panel-heading"><h3>Check in a customer</h3>${icon('UserRoundPlus')}</div>
           <label>Customer call name<input name="customer" required maxlength="120" placeholder="Name or nickname to call out"></label>
-          <label>Email for updates (optional)<input name="contactEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label>
-          <label class="terms-consent"><span><input name="emailConsent" type="checkbox"><span>Customer asked to receive email when called or if this ticket is cancelled.</span></span></label>
           <label>Cut / service<select name="serviceId" required>${serviceOptions()}</select></label>
           <div class="form-row"><label>Price<input type="number" name="price" min="0" required value="150"></label><label>Estimated wait minutes<input type="number" name="waitMinutes" min="0" required value="30"></label></div>
           <label>Barber<select name="barberId"><option value="">Assign later</option>${barbers.filter((barber) => !["fired", "on-leave"].includes(barber.status)).map((barber) => `<option value="${barber.id}">${barber.name}</option>`).join("")}</select></label>
@@ -103,9 +101,6 @@ async function initialize() {
     document.querySelector('[name="price"]').value = byId(state.services, event.target.value).price || 0;
   });
   document.querySelector('[name="price"]').value = byId(state.services, document.querySelector('[name="serviceId"]').value).price || 0;
-  const guestEmail = document.querySelector('[data-logbook-form] [name="contactEmail"]');
-  const guestEmailConsent = document.querySelector('[data-logbook-form] [name="emailConsent"]');
-  guestEmailConsent.addEventListener("change", () => { guestEmail.required = guestEmailConsent.checked; });
   document.querySelector('[data-queue-search]').addEventListener('input', updateQueueUI);
   document.querySelector('[data-queue-filter]').addEventListener('change', updateQueueUI);
 
@@ -118,7 +113,7 @@ async function initialize() {
     const service = byId(state.services, data.get("serviceId"));
     button.disabled = true;
     try {
-      const payload = await api("/admin/queue", { method: "POST", body: JSON.stringify({ customer: data.get("customer"), contactEmail: data.get("contactEmail"), emailConsent: data.get("emailConsent") === "on", serviceId: data.get("serviceId"), cutName: service.name, price: Number(data.get("price")), waitMinutes: Number(data.get("waitMinutes")), barberId: data.get("barberId"), notes: data.get("notes") }) });
+      const payload = await api("/admin/queue", { method: "POST", body: JSON.stringify({ customer: data.get("customer"), serviceId: data.get("serviceId"), cutName: service.name, price: Number(data.get("price")), waitMinutes: Number(data.get("waitMinutes")), barberId: data.get("barberId"), notes: data.get("notes") }) });
       toast(`Queue #${String(payload.ticket.queueNumber).padStart(2, "0")} added.`);
       event.target.reset();
       document.querySelector('[name="price"]').value = byId(state.services, document.querySelector('[name="serviceId"]').value).price || 0;
@@ -143,9 +138,23 @@ async function initialize() {
     if (!statusButton && !renameButton) return;
     const button = statusButton || renameButton;
     if (button.disabled) return;
+    let collection = {};
     if (statusButton?.dataset.status.endsWith(':done')) {
       const ticket = liveQueue.find(item => String(item.mongoId || item.id) === statusButton.dataset.status.split(':')[0]);
-      if (!window.confirm(ticket?.source === 'appointment' ? 'Confirm this booked service is finished? Payment stays recorded on the appointment; no second payment is added.' : 'Confirm this service is finished and payment has been collected? This records collected revenue for this walk-in.')) return;
+      if (ticket?.source === 'appointment') {
+        let appointment;
+        try { appointment = (await api('/admin/appointments')).appointments.find(item => String(item.mongoId || item.id || item._id) === String(ticket.appointmentId)); }
+        catch (error) { return toast(error.message); }
+        if (!appointment) return toast('Booking could not be loaded. Refresh before collecting payment.');
+        if ((appointment.bookingPaymentMethod === 'onsite' || appointment.servicePaymentMethod === 'cash') && !appointment.servicePaid && !appointment.demoPayment) {
+          const due = appointment.bookingPaymentMethod === 'onsite' ? Number(appointment.total) : Number(appointment.total) - Number(appointment.bookingFee);
+          const amount = window.prompt(`Collect ${peso(due)} cash ${appointment.bookingPaymentMethod === 'onsite' ? 'for this booking' : 'for this service'}. Enter the exact cash amount collected to complete:`, '');
+          if (amount === null) return;
+          if (!amount.trim() || Number(amount) !== due) return toast('Enter the exact outstanding cash amount.');
+          collection = { cashCollected: true, cashAmount: Number(amount) };
+        }
+      }
+      if (!window.confirm(ticket?.source === 'appointment' ? 'Confirm the booked service is finished and any outstanding cash amount entered has been collected?' : 'Confirm this service is finished and payment has been collected? This records collected revenue for this walk-in.')) return;
     }
     button.disabled = true;
     try {
@@ -157,8 +166,8 @@ async function initialize() {
         toast("Customer call name updated.");
       } else {
         const [id, status] = statusButton.dataset.status.split(":");
-        await api(`/admin/queue/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
-        toast(status === "done" ? "Service completed. Booking payments remain on the appointment; walk-in payments are recorded here." : "Queue updated.");
+        await api(`/admin/queue/${id}`, { method: "PATCH", body: JSON.stringify({ status, ...collection }) });
+        toast(status === "done" ? "Service completed. Confirmed collections recorded without duplicating prior payments." : "Queue updated.");
       }
       await refreshQueue();
     } catch (error) { toast(error.message || "Queue could not be updated."); }

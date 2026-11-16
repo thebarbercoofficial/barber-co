@@ -1,0 +1,31 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const path = require('node:path');
+const { Readable } = require('node:stream');
+const { ObjectId } = require('mongodb');
+const jwt = require('jsonwebtoken');
+const { memoryDb } = require('./helpers/memory-db');
+const user = { _id: new ObjectId(), name: 'Booking Test', email: 'booking@example.test', birthDate: '1990-01-01', emailVerifiedAt: new Date(), role: 'customer' };
+const database = memoryDb({ users: [user], services: [{ slug: 'cut', name: 'Cut', price: 150, duration: '30 min' }], barbers: [{ slug: 'alex', status: 'active' }], settings: [{ _id: 'shop', bookingFee: 100 }], appointments: [], queue: [], counters: [] });
+const localRequire = require('node:module').createRequire(path.resolve('api/index.js'));
+const context = { require: localRequire, module: { exports: {} }, process: { env: { JWT_SECRET: 'profile-test' } }, URL, console, database };
+vm.runInNewContext(`${fs.readFileSync('api/index.js', 'utf8')}\ndb = async () => database; bookingWindow = () => ({}); unavailableBarbers = async () => []; frontDesk.sweep = async () => { throw new Error('Profile reads must not run cleanup'); }; sweepRescheduleRequests = async () => { throw new Error('Profile reads must not run cleanup'); };`, context);
+async function request(method, url, body = {}) {
+  const req = Readable.from([JSON.stringify(body)]);
+  Object.assign(req, { method, url: `/api${url}`, headers: { authorization: `Bearer ${jwt.sign({ sub: String(user._id) }, 'profile-test')}` } });
+  let payload;
+  const res = { setHeader() {}, end(raw) { payload = JSON.parse(raw); } };
+  await context.module.exports(req, res);
+  return { status: res.statusCode, ...payload };
+}
+(async () => {
+  const response = await request('POST', '/appointments', { serviceId: 'cut', barberId: 'alex', date: '2100-03-03', time: '14:00', bookingPaymentMethod: 'onsite', nonRefundableAccepted: true });
+  assert.equal(response.status, 201, JSON.stringify(response));
+  const profile = await request('GET', '/appointments/mine');
+  assert.equal(profile.status, 200, JSON.stringify(profile));
+  assert.equal(profile.appointments.length, 1);
+  assert.equal(profile.appointments[0].id, response.appointment.id);
+  assert.equal(profile.appointments[0].bookingPaymentMethod, 'onsite');
+  console.log('PASS: onsite booking without receipt persists and appears in profile without cleanup/delivery dependencies; no SMS or email sent');
+})().catch(error => { console.error(error); process.exitCode = 1; });

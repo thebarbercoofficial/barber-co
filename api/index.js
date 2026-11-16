@@ -3,6 +3,7 @@ const { MongoClient, ObjectId } = require("mongodb");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { buildAnalytics, buildBarberPerformance } = require('../lib/analytics');
+const { paymentChoice, bookingPaymentChoice, paymentUpdate, paymentNotice } = require('../lib/booking-payments');
 const { sanitizeMethod, validateQrImage, realPaymentConfigured, normalizeMobile } = require('../lib/payment-settings');
 const { phoneUsers, availablePhone } = require('../lib/phone-login');
 const security = require('../lib/account-security');
@@ -515,8 +516,8 @@ async function handler(req, res) {
   const path = requestUrl.pathname.replace(/^\/api/, "") || "/";
   const body = ["POST", "PATCH", "DELETE"].includes(req.method) ? await readBody(req) : {};
   // Admin lists use the scheduled cleanup worker; reads must not wait on notification delivery.
-  if (req.method === 'GET' && ['/availability', '/appointments/mine'].includes(path)) await sweepRescheduleRequests(database);
-  if (req.method === 'GET' && ['/availability', '/appointments/mine', '/queue'].includes(path) || req.method === 'POST' && path === '/admin/queue/next' || req.method === 'PATCH' && (path.startsWith('/admin/queue/') || /^\/queue\/ticket\/[a-f0-9]{24}\/cancel$/.test(path))) await frontDesk.sweep(database);
+  if (req.method === 'GET' && path === '/availability') await sweepRescheduleRequests(database);
+  if (req.method === 'GET' && ['/availability', '/queue'].includes(path) || req.method === 'POST' && path === '/admin/queue/next' || req.method === 'PATCH' && (path.startsWith('/admin/queue/') || /^\/queue\/ticket\/[a-f0-9]{24}\/cancel$/.test(path))) await frontDesk.sweep(database);
 
   if (req.method === "GET" && path === "/health") return send(res, 200, { ok: true });
   if (req.method === 'GET' && path === '/auth/capabilities') return send(res, 200, { email: security.emailReady(), sms: messaging.smsReady(), smsVerification: messaging.smsVerificationReady(), verificationRequired: !allowUnverified });
@@ -729,6 +730,7 @@ async function handler(req, res) {
     if (barberId && !anyBarber) {
       selectedBarber = await database.collection("barbers").findOne({ $or: [{ slug: barberId }, ...(ObjectId.isValid(barberId) ? [{ _id: new ObjectId(barberId) }] : [])], status: { $nin: ["fired", "on-leave"] } });
       if (!selectedBarber) return send(res, 400, { error: "The selected barber is not available." });
+      if (onLeave(selectedBarber, date)) return send(res, 409, { error: "The selected barber is on leave for this date. Choose another barber or date." });
     }
     const settings = mergedSettings(await database.collection("settings").findOne({ _id: "shop" }));
     const quote = partyQuote(body, user, service, settings);
@@ -1081,19 +1083,27 @@ async function handler(req, res) {
 
   if (req.method === 'POST' && path === '/checkout/validate') {
     const user = await requireUser(req, database);
+    const bookingPaymentMethod = bookingPaymentChoice(body.bookingPaymentMethod);
     const hold = ObjectId.isValid(body.holdId) ? await database.collection('appointmentHolds').findOne({ _id: new ObjectId(body.holdId), userId: user._id, expiresAt: { $gt: new Date() } }) : null;
     if (!hold) return send(res, 409, { error: 'Checkout expired. Do not transfer money. Start a new booking, or submit payment recovery if you already paid.' });
     requireSingleBooking(hold);
+    if (hold.barberId) {
+      const barber = await database.collection('barbers').findOne({ $or: [{ slug: hold.barberId }, ...(ObjectId.isValid(hold.barberId) ? [{ _id: new ObjectId(hold.barberId) }] : [])] });
+      if (!barber || ['fired', 'on-leave'].includes(barber.status)) return send(res, 409, { error: 'The selected barber is no longer available. Return to booking and choose another barber.' });
+      if (onLeave(barber, hold.date)) return send(res, 409, { error: 'The selected barber is on leave for this date. Return to booking and choose another barber or date.' });
+    }
     const settings = mergedSettings(await database.collection('settings').findOne({ _id: 'shop' }));
     const service = await database.collection('services').findOne({ $or: [{ slug: hold.serviceId }, ...(ObjectId.isValid(hold.serviceId) ? [{ _id: new ObjectId(hold.serviceId) }] : [])], active: { $ne: false } });
-    if (!service || !paymentConfigured(settings) || settings.paymentRevision !== body.paymentRevision) return send(res, 409, { error: 'Payment details changed. Do not pay using this checkout. Start again or submit payment recovery.' });
+    if (!service || settings.paymentRevision !== body.paymentRevision || bookingPaymentMethod === 'online' && !paymentConfigured(settings)) return send(res, 409, { error: 'Payment details changed or online payment is unavailable. Do not pay using this checkout. Start again or choose payment at the shop.' });
     const quote = partyQuote(hold, user, service, settings);
     if (quote.total !== hold.total || quote.durationMinutes !== hold.durationMinutes) return send(res, 409, { error: 'The service quote changed. Start again or submit payment recovery if already paid.' });
     bookingGuards.requireFuture(hold.date, hold.time);
-    return send(res, 200, { valid: true });
+    return send(res, 200, { valid: true, splitPaymentVersion: 1, bookingPaymentChoices: ['online', 'onsite'] });
   }
   if (req.method === "POST" && path === "/appointments") {
     const user = await requireUser(req, database);
+    const bookingPaymentMethod = bookingPaymentChoice(body.bookingPaymentMethod);
+    const servicePaymentMethod = paymentChoice(body.servicePaymentMethod);
     if (body.nonRefundableAccepted !== true) return send(res, 400, { error: 'Accept the non-refundable booking policy before booking.' });
     requireBookingEligibility(user);
     requireSingleBooking(body);
@@ -1137,31 +1147,33 @@ async function handler(req, res) {
     if (barberId) {
       selectedBarber = await database.collection("barbers").findOne({ $or: [{ slug: barberId }, ...(ObjectId.isValid(barberId) ? [{ _id: new ObjectId(barberId) }] : [])], status: { $nin: ["fired", "on-leave"] } });
       if (!selectedBarber) return send(res, 400, { error: "The selected barber is not available." });
+      if (onLeave(selectedBarber, date)) return send(res, 409, { error: "The selected barber is on leave for this date. Choose another barber or date." });
     }
     if (barberId) {
       const unavailable = await unavailableBarbers(database, date, time, durationMinutes, hold ? holdId : "");
       if (unavailable.includes(barberId)) return send(res, 409, { error: "That barber was just booked for this time. Choose another barber or time." });
     }
-    const demoPayment = settings.paymentMode === 'demo';
+    const demoPayment = bookingPaymentMethod === 'online' && settings.paymentMode === 'demo';
     if (hold && (hold.partySize !== quote.partySize || JSON.stringify(hold.partyMembers) !== JSON.stringify(quote.partyMembers) || hold.total !== quote.total || hold.durationMinutes !== quote.durationMinutes)) return send(res, 409, { error: 'Your group or service quote changed. Return to booking.' });
-    if (!paymentConfigured(settings)) return send(res, 409, { error: 'Online payments are not configured. Please contact the shop.' });
-    if (body.paymentMode && body.paymentMode !== settings.paymentMode) return send(res, 409, { error: 'Payment mode changed. Reload the payment page before proceeding.' });
+    if (bookingPaymentMethod === 'online' && !paymentConfigured(settings)) return send(res, 409, { error: 'Online payments are not configured. Choose payment at the shop instead.' });
+    if (bookingPaymentMethod === 'online' && body.paymentMode && body.paymentMode !== settings.paymentMode) return send(res, 409, { error: 'Payment mode changed. Reload the payment page before proceeding.' });
     if (body.paymentRevision && body.paymentRevision !== settings.paymentRevision) return send(res, 409, { error: 'Payment recipient or fee changed. Reload the payment page and check the latest details. If you already paid, contact the shop before paying again.' });
     const methods = demoPayment ? settings.demoMethods : settings;
-    const paymentMethod = ["GCash", "Maya"].find((name) => name === body.paymentMethod && methods[name.toLowerCase()]?.enabled) || "";
-    const paymentProof = String(body.paymentProof || "");
-    if (!paymentMethod || !/^data:image\/(jpeg|png|webp);base64,/.test(paymentProof)) {
+    const paymentMethod = bookingPaymentMethod === 'onsite' ? 'On-site' : ["GCash", "Maya"].find((name) => name === body.paymentMethod && methods[name.toLowerCase()]?.enabled) || "";
+    const paymentProof = bookingPaymentMethod === 'onsite' ? '' : String(body.paymentProof || "");
+    if (bookingPaymentMethod === 'online' && (!paymentMethod || !/^data:image\/(jpeg|png|webp);base64,/.test(paymentProof))) {
       return send(res, 400, { error: "Upload a valid payment proof." });
     }
     if (paymentProof.length > 2.8 * 1024 * 1024) {
       return send(res, 413, { error: "Payment proof must be 2 MB or smaller." });
     }
-    await validateReceipt(paymentProof);
+    if (bookingPaymentMethod === 'online') await validateReceipt(paymentProof);
     const queueNumber = await nextQueueNumber(database);
     const bookingFee = Math.max(0, Number(settings.bookingFee) || 0);
     const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId, date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof, demoPayment, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
     Object.assign(appointment, { nonRefundableAccepted: true, nonRefundableAcceptedAt: new Date(), policyVersion: nonRefundablePolicyVersion });
     Object.assign(appointment, quote);
+    Object.assign(appointment, { bookingPaymentMethod, servicePaymentMethod: bookingPaymentMethod === 'onsite' ? 'cash' : servicePaymentMethod, onlineAmount: bookingPaymentMethod === 'onsite' ? 0 : servicePaymentMethod === 'cash' ? quote.bookingFee : quote.total, cashDue: bookingPaymentMethod === 'onsite' ? quote.total : servicePaymentMethod === 'cash' ? quote.total - quote.bookingFee : 0, bookingFeePaid: false, servicePaid: false });
     try {
       await database.collection("appointments").insertOne(appointment);
       if (hold) await database.collection("appointmentHolds").deleteOne({ _id: hold._id });
@@ -1252,10 +1264,11 @@ async function handler(req, res) {
     await bookingGuards.requireCustomerCapacity(database, current.userId, date, time, duration, id);
     const window = bookingWindow(date, time, settings, duration);
     if (window.error) return send(res, 400, { error: window.error });
-    const unavailable = await unavailableBarbers(database, date, time, duration, '', id);
-    if (current.barberId && unavailable.includes(current.barberId)) return send(res, 409, { error: 'This barber is already reserved at that time.' });
     const barber = current.barberId ? await database.collection('barbers').findOne({ $or: [{ slug: current.barberId }, ...(ObjectId.isValid(current.barberId) ? [{ _id: new ObjectId(current.barberId) }] : [])] }) : null;
     if (current.barberId && (!barber || ['fired', 'on-leave'].includes(barber.status))) return send(res, 409, { error: 'The selected barber is not available.' });
+    if (barber && onLeave(barber, date)) return send(res, 409, { error: 'The selected barber is on leave for this date. Choose another date.' });
+    const unavailable = await unavailableBarbers(database, date, time, duration, '', id);
+    if (current.barberId && unavailable.includes(current.barberId)) return send(res, 409, { error: 'This barber is already reserved at that time.' });
     if (!review) {
       const requestedAt = new Date(Math.max(Date.now(), (new Date(current.rescheduleRequest?.requestedAt).getTime() || 0) + 1));
       const rescheduleRequest = { date, time, originalDate: current.date, originalTime: current.time, requestedAt, initiatedBy: customerRequest ? 'customer' : 'staff', reason: staffNote, status: 'pending', expiresAt: rescheduleDeadline(current, { date, time }) };
@@ -1324,10 +1337,7 @@ async function handler(req, res) {
     if (current.status === body.status) return send(res, 200, { appointment: normalizeDoc(current) });
     const transitions = { pending: ['confirmed', 'cancelled', 'disapproved'], confirmed: ['completed', 'cancelled'], completed: [], cancelled: [], disapproved: [] };
     if (!transitions[current.status]?.includes(body.status)) return send(res, 409, { error: 'This appointment has already changed. Refresh before proceeding.' });
-    if (["confirmed", "completed"].includes(body.status) && !current.demoPayment) {
-      update.paid = true;
-      if (!current.paid) update.paidAt = new Date();
-    }
+    Object.assign(update, paymentUpdate(current, body.status, new Date(), body));
     const acquiring = current.status === 'pending' && body.status === 'confirmed';
     if (acquiring) {
       const service = await database.collection('services').findOne({ $or: [{ slug: current.serviceId }, ...(ObjectId.isValid(current.serviceId) ? [{ _id: new ObjectId(current.serviceId) }] : [])] });
@@ -1338,8 +1348,10 @@ async function handler(req, res) {
       if (!(new Date(`${current.date}T${current.time}:00+08:00`).getTime() > Date.now())) return send(res, 409, { error: 'Past appointments cannot be approved.' });
       const window = bookingWindow(current.date, current.time, settings, duration);
       if (window.error) return send(res, 409, { error: window.error });
-      const barber = current.barberId ? await database.collection('barbers').findOne({ $or: [{ slug: current.barberId }, ...(ObjectId.isValid(current.barberId) ? [{ _id: new ObjectId(current.barberId) }] : [])], status: { $nin: ['fired', 'on-leave'] } }) : await reserveAnyBarber(database, id, current.date, current.time, duration);
+      const barber = current.barberId ? await database.collection('barbers').findOne({ $or: [{ slug: current.barberId }, ...(ObjectId.isValid(current.barberId) ? [{ _id: new ObjectId(current.barberId) }] : [])] }) : await reserveAnyBarber(database, id, current.date, current.time, duration);
       if (!barber) return send(res, 409, { error: 'The selected barber is not available.' });
+      if (['fired', 'on-leave'].includes(barber.status)) return send(res, 409, { error: 'The selected barber is not available.' });
+      if (onLeave(barber, current.date)) return send(res, 409, { error: 'This barber is on leave on the appointment date. Resolve the booking before approving it.' });
       const unavailable = await unavailableBarbers(database, current.date, current.time, duration, '', id);
       if (unavailable.includes(barber.slug) || unavailable.includes(String(barber._id))) return send(res, 409, { error: 'This barber is already booked at that time.' });
       await lockAppointmentSlots(database, id, current.date, String(barber._id), current.time, duration);
@@ -1359,8 +1371,33 @@ async function handler(req, res) {
       await database.collection('queue').updateMany({ appointmentId: id, status: { $in: ['waiting', 'serving'] } }, { $set: { status: body.status === 'completed' ? 'done' : 'cancelled', updatedAt: new Date() } });
     }
     const appointment = await database.collection("appointments").findOne({ _id: new ObjectId(id) });
-    await messaging.notify(database, current.userId, `Your Barber Co appointment on ${current.date} at ${current.time} is ${body.status === 'confirmed' ? 'accepted' : body.status}.${partyNotice(current)}${staffNote ? ` Reason: ${staffNote}.` : ''}${update.refundStatus ? ' The shop must verify your transfer and arrange a manual refund for a rejected paid request. No automatic wallet refund has been sent.' : ''}`, `appointment:${id}:${body.status}`);
+    await messaging.notify(database, current.userId, `Your Barber Co appointment on ${current.date} at ${current.time} is ${body.status === 'confirmed' ? 'accepted' : body.status}.${partyNotice(current)}${paymentNotice(appointment)}${staffNote ? ` Reason: ${staffNote}.` : ''}${update.refundStatus ? ' The shop must verify your transfer and arrange a manual refund for a rejected paid request. No automatic wallet refund has been sent.' : ''}`, `appointment:${id}:${body.status}`);
     return send(res, 200, { appointment: normalizeDoc(appointment) });
+  }
+
+  if (req.method === 'GET' && path === '/admin/queue/qr') {
+    await requireRole(req, database, ['admin', 'moderator']);
+    res.setHeader('Cache-Control', 'no-store');
+    const token = jwt.sign({ purpose: 'shop-walkin', nonce: require('node:crypto').randomUUID() }, jwtSecret, { algorithm: 'HS256', expiresIn: 120 });
+    const expiresAt = new Date(jwt.decode(token).exp * 1000).toISOString();
+    const url = new URL('queue.html', `${(process.env.PUBLIC_SITE_URL || 'https://thebarbercoofficial.github.io/barber-co').replace(/\/$/, '')}/`);
+    url.searchParams.set('walkinToken', token);
+    const qrImage = await require('qrcode').toDataURL(url.href, { width: 700, margin: 4 });
+    return send(res, 200, { token, expiresAt, qrImage });
+  }
+
+  if (req.method === 'GET' && path === '/queue/walkin-access' || req.method === 'POST' && path === '/queue/walkin') {
+    res.setHeader('Cache-Control', 'no-store');
+    let access;
+    try {
+      const token = req.method === 'GET' ? requestUrl.searchParams.get('token') : body.walkinToken;
+      if (typeof token !== 'string' || !token) throw new Error('Missing token');
+      access = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] });
+      if (access.purpose !== 'shop-walkin' || !Number.isFinite(access.exp)) throw new Error('Invalid purpose');
+    } catch {
+      return send(res, 403, { error: 'Scan the current shop QR code to join the walk-in queue.' });
+    }
+    if (req.method === 'GET') return send(res, 200, { valid: true, expiresAt: new Date(access.exp * 1000).toISOString() });
   }
 
   if (req.method === "POST" && path === "/queue/walkin") {
@@ -1373,16 +1410,17 @@ async function handler(req, res) {
     if (customer.length < 2) return send(res, 400, { error: "Enter the customer's name." });
     const guestKey = bookingGuards.guestKey(req, account, body);
     await bookingGuards.requireGuestAllowance(database, guestKey, account, customer);
-    const contact = queueContact(body);
-    if (contact.emailConsent && !security.emailReady()) return send(res, 503, { error: 'Email updates are unavailable right now. Join the line without email updates.' });
+    const contact = { contactEmail: '', emailConsent: false };
     const service = body.serviceId ? await database.collection("services").findOne({ $or: [{ slug: body.serviceId }, ...(ObjectId.isValid(body.serviceId) ? [{ _id: new ObjectId(body.serviceId) }] : [])], active: { $ne: false } }) : null;
     if (body.serviceId && !service) return send(res, 400, { error: "Choose an available service." });
     const waiting = await database.collection("queue").countDocuments({ status: { $in: ["waiting", "serving"] } });
     const queueNumber = await nextQueueNumber(database);
-    const ticket = { _id: new ObjectId(), customer, phone: "", ...contact, serviceId: service?.slug || "", barberId: "", cutName: service?.name || "To be assigned", price: Number(service?.price || 0), waitMinutes: waiting * 30, source: "shop-qr", queueNumber, status: "waiting", paid: false, createdAt: new Date() };
+    const cancelToken = require('node:crypto').randomBytes(32).toString('base64url');
+    const cancelTokenHash = require('node:crypto').createHash('sha256').update(cancelToken).digest('hex');
+    const ticket = { _id: new ObjectId(), customer, phone: "", ...contact, serviceId: service?.slug || "", barberId: "", cutName: service?.name || "To be assigned", price: Number(service?.price || 0), waitMinutes: waiting * 30, source: "shop-qr", queueNumber, status: "waiting", paid: false, cancelTokenHash, createdAt: new Date() };
     Object.assign(ticket, { guestKey, ...(account ? { userId: account._id } : {}) });
     await database.collection("queue").insertOne(ticket);
-    return send(res, 201, { ticket: publicQueueTicket(ticket), emailUpdatesEnabled: contact.emailConsent });
+    return send(res, 201, { ticket: publicQueueTicket(ticket), cancelToken, emailUpdatesEnabled: contact.emailConsent });
   }
 
   if (req.method === "GET" && path.startsWith("/queue/ticket/")) {
@@ -1394,6 +1432,26 @@ async function handler(req, res) {
     return send(res, 200, { ticket: publicQueueTicket(ticket), position: ticket.status === "waiting" ? waitingAhead + 1 : ticket.status === 'serving' ? 0 : null, waitingAhead: ticket.status === 'waiting' ? waitingAhead : 0 });
   }
 
+  const customerCancelMatch = path.match(/^\/queue\/ticket\/([a-f0-9]{24})\/cancel$/);
+  if (req.method === 'PATCH' && customerCancelMatch) {
+    const id = customerCancelMatch[1];
+    const ticket = await database.collection('queue').findOne({ _id: new ObjectId(id) });
+    if (!ticket || ticket.source !== 'shop-qr') return send(res, 404, { error: 'QR walk-in ticket not found.' });
+    if (ticket.status !== 'waiting') return send(res, 409, { error: ticket.status === 'serving' ? 'Your turn has already been called. Please speak with the counter.' : 'This ticket is no longer waiting.' });
+    const suppliedToken = String(body.cancelToken || '');
+    const storedHash = Uint8Array.from(String(ticket.cancelTokenHash || '').match(/.{2}/g) || [], pair => Number.parseInt(pair, 16));
+    const suppliedHash = require('node:crypto').createHash('sha256').update(suppliedToken).digest();
+    if (!suppliedToken || storedHash.length !== suppliedHash.length || !require('node:crypto').timingSafeEqual(storedHash, suppliedHash)) {
+      return send(res, 403, { error: 'This ticket can only be cancelled from the device that joined through the shop QR.' });
+    }
+    const changed = await database.collection('queue').updateOne(
+      { _id: ticket._id, source: 'shop-qr', status: 'waiting', cancelTokenHash: ticket.cancelTokenHash },
+      { $set: { status: 'cancelled', cancelledBy: 'customer', updatedAt: new Date() }, $unset: { cancelTokenHash: '' } }
+    );
+    if (!changed.modifiedCount) return send(res, 409, { error: 'Your turn has already been called or this ticket has already been cancelled.' });
+    return send(res, 200, { ok: true });
+  }
+
   if (req.method === "GET" && path === "/queue") {
     res.setHeader('Cache-Control', 'no-store');
     return send(res, 200, { queue: (await database.collection("queue").find({ status: { $in: ["waiting", "serving"] } }).sort({ queueNumber: 1 }).toArray()).map(publicQueueTicket) });
@@ -1402,20 +1460,20 @@ async function handler(req, res) {
   if (req.method === "POST" && path === "/admin/queue/next") {
     await requireRole(req, database, ["admin", "moderator"]);
     const next = await startServing(database);
-    if (next) await messaging.notify(database, next.userId, `It is your turn at The Barber Co. Queue #${next.queueNumber}. Please approach the counter.`, `queue:${next._id}:serving`, { queueTicketId: next._id });
+    if (next?.source === 'appointment') await messaging.notify(database, next.userId, `It is your turn at The Barber Co. Queue #${next.queueNumber}. Please approach the counter.`, `queue:${next._id}:serving`, { queueTicketId: next._id });
     return send(res, 200, { ticket: normalizeDoc(next) });
   }
 
   if (path === "/admin/queue") {
     await requireRole(req, database, ["admin", "moderator"]);
     if (req.method === "GET") {
-      return send(res, 200, { queue: (await database.collection("queue").find().sort({ createdAt: -1 }).toArray()).map(normalizeDoc) });
+      const queue = await database.collection("queue").find().sort({ createdAt: -1 }).toArray();
+      return send(res, 200, { queue: queue.map(({ cancelTokenHash, ...ticket }) => normalizeDoc(ticket)) });
     }
     if (req.method === "POST") {
       const customer = String(body.customer || "").trim().slice(0, 120);
       if (customer.length < 2) return send(res, 400, { error: "Enter the customer's name." });
-      const contact = queueContact(body);
-      if (contact.emailConsent && !security.emailReady()) return send(res, 503, { error: 'Email updates are unavailable right now. Add the customer without email updates.' });
+      const contact = { contactEmail: '', emailConsent: false };
       const queueNumber = await nextQueueNumber(database);
       const ticket = {
         _id: new ObjectId(), customer, phone: "", ...contact, serviceId: String(body.serviceId || ""),
@@ -1437,9 +1495,10 @@ async function handler(req, res) {
     if (body.status && ticket.status === body.status) return send(res, 200, { ok: true });
     if (['done', 'cancelled'].includes(ticket.status) && body.status) return send(res, 409, { error: 'This customer has already left the active queue.' });
     if (body.status === 'done' && ticket.status !== 'serving') return send(res, 409, { error: 'Serve this customer before completing the service and recording payment.' });
+    if (body.status === 'done') await frontDesk.validateCollection(database, ticket, body);
     if (body.status === 'serving') {
       const served = await startServing(database, id);
-      await messaging.notify(database, served.userId, `It is your turn at The Barber Co. Queue #${served.queueNumber}. Please approach the counter.`, `queue:${id}:serving`, { queueTicketId: served._id });
+      if (served.source === 'appointment') await messaging.notify(database, served.userId, `It is your turn at The Barber Co. Queue #${served.queueNumber}. Please approach the counter.`, `queue:${id}:serving`, { queueTicketId: served._id });
       return send(res, 200, { ok: true });
     }
     const allowed = ["waiting", "serving", "done", "cancelled"];
@@ -1453,13 +1512,14 @@ async function handler(req, res) {
     }
     const update = { updatedAt: new Date() };
     if (body.status != null) update.status = body.status;
+    if (body.status === 'done' && ticket.source === 'appointment') Object.assign(update, { cashCollected: body.cashCollected === true, cashAmount: body.cashAmount });
     if (customer != null) update.customer = customer;
     if (body.status === "serving") update.calledAt = new Date();
     if (body.status === "done" && ticket.source !== 'appointment') Object.assign(update, { paid: true, paidAt: new Date() });
     await updateWithNotice(database, "queue", { _id: new ObjectId(id) }, { $set: update });
     if (['done', 'cancelled'].includes(body.status)) await frontDesk.complete(database, ticket, body.status);
-    if (body.status === 'serving') await messaging.notify(database, ticket.userId, `It is your turn at The Barber Co. Queue #${ticket.queueNumber}. Please approach the counter.`, `queue:${id}:serving`, { queueTicketId: ticket._id });
-    if (body.status === 'cancelled') await messaging.notify(database, ticket.userId, `Your Barber Co queue ticket #${ticket.queueNumber} was cancelled. Contact the counter if this is unexpected.`, `queue:${id}:cancelled`, { queueTicketId: ticket._id });
+    if (ticket.source === 'appointment' && body.status === 'serving') await messaging.notify(database, ticket.userId, `It is your turn at The Barber Co. Queue #${ticket.queueNumber}. Please approach the counter.`, `queue:${id}:serving`, { queueTicketId: ticket._id });
+    if (ticket.source === 'appointment' && body.status === 'cancelled') await messaging.notify(database, ticket.userId, `Your Barber Co queue ticket #${ticket.queueNumber} was cancelled. Contact the counter if this is unexpected.`, `queue:${id}:cancelled`, { queueTicketId: ticket._id });
     return send(res, 200, { ok: true });
   }
 
@@ -1471,8 +1531,10 @@ async function handler(req, res) {
     if (!ticket) return send(res, 404, { error: 'Queue ticket not found.' });
     if (ticket.status === 'done') return send(res, 200, { ok: true });
     if (ticket.status === 'cancelled') return send(res, 409, { error: 'A cancelled queue ticket cannot be completed.' });
+    if (ticket.status !== 'serving') return send(res, 409, { error: 'Serve this customer before completing the service and recording payment.' });
     if (ticket.source === 'appointment') {
-      await updateWithNotice(database, 'queue', { _id: ticket._id }, { $set: { status: 'done', updatedAt: new Date() } });
+      await frontDesk.validateCollection(database, ticket, body);
+      await updateWithNotice(database, 'queue', { _id: ticket._id }, { $set: { status: 'done', cashCollected: body.cashCollected === true, cashAmount: body.cashAmount, updatedAt: new Date() } });
       await frontDesk.complete(database, ticket, 'done');
       return send(res, 200, { ok: true });
     }
@@ -1512,7 +1574,7 @@ module.exports = async (req, res) => {
       await sweepRescheduleRequests(database);
       await frontDesk.sweep(database);
       await withAppointmentMutation(database, 'booking-capacity', () => withAppointmentMutation(database, mutation[1], () => handler(req, res)));
-    } else if (req.method === 'POST' && ['/appointments', '/appointment-holds', '/queue/walkin', '/admin/queue/next'].includes(path) || req.method === 'PATCH' && path.startsWith('/admin/queue/') || ['PATCH', 'DELETE'].includes(req.method) && path.startsWith('/admin/barbers/')) {
+    } else if (req.method === 'POST' && (['/appointments', '/appointment-holds', '/queue/walkin', '/admin/queue/next'].includes(path) || /^\/admin\/queue\/[a-f0-9]{24}\/paid$/.test(path)) || req.method === 'PATCH' && (path.startsWith('/admin/queue/') || /^\/queue\/ticket\/[a-f0-9]{24}\/cancel$/.test(path)) || ['PATCH', 'DELETE'].includes(req.method) && path.startsWith('/admin/barbers/')) {
       const database = await db();
       await withAppointmentMutation(database, 'booking-capacity', () => handler(req, res));
     } else await handler(req, res);

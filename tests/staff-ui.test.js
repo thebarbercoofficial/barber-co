@@ -389,9 +389,16 @@ async function main() {
     console.log('Empty queue with eight barbers fits a compact two-column dashboard');
     const empty = await browser.newContext({ viewport: { width: 390, height: 900 } });
     await fixtures(empty, 'admin');
-    await empty.route('**/api/admin/analytics', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ totals: { bookings: 0, customers: 0, waiting: 0, revenue: 0 }, services: [], barbers: [], daily: daily.map((day) => ({ ...day, bookings: 0, walkins: 0, revenue: 0 })) }) }));
+    let releaseReports;
+    const reportGate = new Promise(resolve => { releaseReports = resolve; });
+    await empty.route('**/api/admin/analytics', async (route) => {
+      await reportGate;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ totals: { bookings: 0, customers: 0, waiting: 0, revenue: 0 }, services: [], barbers: [], daily: daily.map((day) => ({ ...day, bookings: 0, walkins: 0, revenue: 0 })) }) });
+    });
     const emptyPage = await empty.newPage();
     await emptyPage.goto(`${base}/admin-reports.html`);
+    await emptyPage.getByRole('status').filter({ hasText: 'Loading reports...' }).waitFor();
+    releaseReports();
     await emptyPage.waitForSelector('[data-chart-message]:visible');
     assert.equal(await emptyPage.locator('[data-chart-message]').textContent(), 'No activity in this period');
     assert.equal(await emptyPage.locator('[data-chart-rows] tr').count(), 1);
@@ -402,6 +409,16 @@ async function main() {
     assert.equal(await emptyPage.locator('[data-chart-export]').isDisabled(), true);
     assert.equal(await emptyPage.locator('[data-print-report]').isDisabled(), true);
     assert.equal(await emptyPage.locator('[data-chart-rows] tr').count(), 0);
+    await empty.route('**/api/admin/analytics', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ totals: dailyTotals, services, barberPerformance, daily }) }));
+    await emptyPage.getByRole('button', { name: 'Refresh reports', exact: true }).click();
+    await emptyPage.waitForFunction(() => !document.querySelector('[data-print-report]').disabled);
+    assert.equal(await emptyPage.locator('[data-chart-range]').isDisabled(), false);
+    assert.equal(await emptyPage.locator('[data-chart-export]').isDisabled(), false);
+    await emptyPage.locator('[data-chart-range]').selectOption('7');
+    assert.equal(await emptyPage.locator('[data-chart-rows] tr').count(), 7);
+    await emptyPage.getByRole('button', { name: 'Print report', exact: true }).click();
+    await emptyPage.locator('[data-report-dialog]').waitFor();
+    await emptyPage.locator('[data-report-close]').click();
     console.log('Empty charts and backend-error states passed without fabricated data');
     await empty.close();
   } finally {

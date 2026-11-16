@@ -6,10 +6,12 @@ if (!BarberCo.canAccess("admin")) {
 }
 
 async function render() {
+  document.querySelector('#app').innerHTML = `${nav('admin')}<section class="app-shell">${adminSidebar('reports')}<div class="workspace"><div class="workspace-heading"><h1>Reports</h1></div><p role="status" aria-live="polite">Loading reports...</p></div></section>`;
+  const loadReports = () => api('/admin/analytics', { signal: AbortSignal.timeout(60000) });
   let analytics;
   let connectionError = '';
   try {
-    analytics = await api("/admin/analytics");
+    analytics = await loadReports();
   } catch (error) {
     if (error.message.includes("Admin")) location.href = "login.html";
     connectionError = error.message || 'Reports could not be loaded.';
@@ -106,12 +108,20 @@ async function render() {
   sync.setAttribute('role', 'status');
   sync.textContent = connectionError ? 'Reports unavailable; retrying automatically' : 'Live reports connected';
   document.querySelector('.workspace-heading').append(sync);
+  const retryButton = document.createElement('button');
+  retryButton.type = 'button';
+  retryButton.className = 'button secondary';
+  retryButton.innerHTML = `${icon('RefreshCw')} Refresh reports`;
+  retryButton.addEventListener('click', refreshReports);
+  document.querySelector('.workspace-heading').append(retryButton);
   let busy = false;
   async function refreshReports() {
     if (busy || document.hidden) return;
     busy = true;
+    retryButton.disabled = true;
+    sync.textContent = 'Loading reports...';
     try {
-      analytics = await api('/admin/analytics');
+      analytics = await loadReports();
       connectionError = '';
       document.querySelector('.connection-error')?.remove();
       metricKeys.forEach((key) => {
@@ -129,8 +139,8 @@ async function render() {
       sync.textContent = `Updated ${new Date().toLocaleTimeString()}`;
     } catch (error) {
       if ([401, 403].includes(error.status)) location.replace('login.html');
-      sync.textContent = 'Connection interrupted; showing last update';
-    } finally { busy = false; }
+      sync.textContent = analytics.daily?.length ? 'Connection interrupted; showing last update' : 'Reports unavailable. Try refreshing again.';
+    } finally { busy = false; retryButton.disabled = false; }
   }
   setInterval(refreshReports, 3000);
   window.addEventListener('focus', refreshReports);

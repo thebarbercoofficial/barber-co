@@ -27,6 +27,7 @@ const BarberAnalytics = (() => {
     if (!root) return;
     const message = root.querySelector('[data-chart-message]');
     const daily = analytics.daily;
+    root.querySelectorAll('button, input, select').forEach((control) => { control.disabled = false; });
     if (!Array.isArray(daily) || !daily.length || !window.Chart) {
       message.hidden = false;
       message.textContent = 'Daily analytics could not be loaded.';

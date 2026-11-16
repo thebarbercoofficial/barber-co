@@ -69,6 +69,19 @@ async function main() {
         assert.equal(await page.locator('link[href*="css/customer.css"]').count(), 1, `${name}: customer design stylesheet missing`);
         assert.deepEqual(check.smallFields, [], `${name} small fields at ${width}px`);
         assert.deepEqual(errors, [], `${name} script errors at ${width}px`);
+        if (name === 'index') {
+          const sections = await page.locator('#app > section').evaluateAll(items => items.map(el => el.getBoundingClientRect().height));
+          assert.equal(sections.length, 3, 'Homepage has three separate sections');
+          assert.ok(sections.every(height => height >= 828), `Homepage sections must remain screen-sized at ${width}px: ${sections}`);
+          assert.equal(await page.locator('.site-header').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(43, 32, 26)');
+          if (width === 2560) {
+            await page.setViewportSize({ width, height: 1440 });
+            await page.screenshot({ path: path.join(output, 'homepage-brown-gold-2560.png'), fullPage: true });
+            const heights = await page.locator('#app > section').evaluateAll(items => items.map(el => el.getBoundingClientRect().height));
+            assert.ok(heights.every(height => height >= 1368), `Large desktop section heights: ${heights}`);
+            await page.setViewportSize({ width, height: 900 });
+          }
+        }
         if (name === 'barbers') {
           assert.equal(await page.locator('[data-barber="leave"]').isDisabled(), true);
           assert.equal(await page.locator('[data-barber="inactive"]').isDisabled(), true);

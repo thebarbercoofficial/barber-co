@@ -62,7 +62,7 @@ document.querySelector("#app").innerHTML = `
       </div>
     </div>
   </section>
-  <section class="section">
+  <section class="section home-services">
     <div class="section-heading"><p class="eyebrow">Packages</p><h2>Popular services.</h2></div>
     <div class="service-menu">
       ${state.services.map((item) => `<article class="service-card"><h3>${item.name}</h3><strong class="price">${peso(item.price)}</strong><p class="muted service-description">${item.detail}</p><small class="muted service-duration">${item.duration}</small><a class="button primary small" href="booking.html?service=${item.id}">Book this</a></article>`).join("")}

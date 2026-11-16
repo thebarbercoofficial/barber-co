@@ -50,6 +50,12 @@ function unitDuration(value) {
 
 async function render() {
   clearInterval(checkoutTimer);
+  if (partySize !== 1 || !Array.isArray(partyMembers) || partyMembers.length !== 1) {
+    document.querySelector('#app').innerHTML = `${nav('booking')}<section class="section top"><div class="panel"><h2>Start a single-person booking</h2><p>Group bookings are no longer available. Do not send payment for this checkout.</p><a class="button primary" href="booking.html">Start again</a></div></section>`;
+    mountRecovery();
+    initHeader('booking');
+    return;
+  }
   let settings;
   try { settings = await loadSettings(); }
   catch (error) {
@@ -82,14 +88,14 @@ async function render() {
   if (!methods.some((method) => method.id === state.paymentMethod)) state.paymentMethod = methods[0].id;
   const selectedMethod = methods.find((method) => method.id === state.paymentMethod) || methods[0];
   const bookingFee = Math.max(0, Number(booking.bookingFee ?? settings.bookingFee ?? 100));
-  const total = Number(booking.total ?? (Number(service.price) * partySize + bookingFee));
-  const duration = Number(booking.durationMinutes || (Number(booking.unitDurationMinutes ?? booking.serviceDurationMinutes) || unitDuration(service.duration)) * partySize);
+  const total = Number(booking.total ?? (Number(service.price) + bookingFee));
+  const duration = Number(booking.durationMinutes || Number(booking.unitDurationMinutes ?? booking.serviceDurationMinutes) || unitDuration(service.duration));
   const checkoutUntil = booking.holdExpiresAt ? new Date(booking.holdExpiresAt).toLocaleString() : null;
 
   document.querySelector("#app").innerHTML = `
     ${nav("booking")}
     <section class="section top"><div class="payment-layout">
-      <div class="form-card"><p class="eyebrow">${demo ? 'DEMO - NO REAL PAYMENT' : 'Advance Payment'}</p><h2>Appointment request summary</h2><p class="field-help">Time is reserved only after staff approval. ${checkoutUntil ? `Checkout details expire ${escapeText(checkoutUntil)}; this does not reserve the time.` : ''}</p><div class="summary-list"><div><span>Service</span><strong>${service.name}</strong></div><div><span>Barber</span><strong>${byId(barbers, booking.barberId).name}</strong></div><div><span>Date and time</span><strong>${booking.date} ${BarberCo.timeLabel(booking.time)}</strong></div><div><span>Group (${partySize} people)</span><strong>${partyMembers.map(escapeText).join(', ')}</strong></div><div><span>Duration</span><strong>${duration} minutes, sequential service with the same barber</strong></div><div><span>Service subtotal</span><strong>${peso(total - bookingFee)}</strong></div><div><span>One group booking fee</span><strong>${peso(bookingFee)}</strong></div><div><span>${demo ? 'Demo total (not charged)' : 'Total advance payment'}</span><strong>${peso(total)}</strong></div></div><div class="payment-methods">${methods.map((method) => `<button class="method ${state.paymentMethod === method.id ? "active" : ""}" type="button" data-payment="${method.id}">${method.id}${demo ? ' demo' : ''}</button>`).join("")}</div>
+      <div class="form-card"><p class="eyebrow">${demo ? 'DEMO - NO REAL PAYMENT' : 'Advance Payment'}</p><h2>Appointment request summary</h2><p class="field-help">Time is reserved only after staff approval. ${checkoutUntil ? `Checkout details expire ${escapeText(checkoutUntil)}; this does not reserve the time.` : ''}</p><div class="summary-list"><div><span>Service</span><strong>${service.name}</strong></div><div><span>Barber</span><strong>${byId(barbers, booking.barberId).name}</strong></div><div><span>Date and time</span><strong>${booking.date} ${BarberCo.timeLabel(booking.time)}</strong></div><div><span>Customer</span><strong>${escapeText(booking.customer || state.user.name)}</strong></div><div><span>Duration</span><strong>${duration} minutes</strong></div><div><span>Service price</span><strong>${peso(total - bookingFee)}</strong></div><div><span>Booking fee</span><strong>${peso(bookingFee)}</strong></div><div><span>${demo ? 'Demo total (not charged)' : 'Total advance payment'}</span><strong>${peso(total)}</strong></div></div><div class="payment-methods">${methods.map((method) => `<button class="method ${state.paymentMethod === method.id ? "active" : ""}" type="button" data-payment="${method.id}">${method.id}${demo ? ' demo' : ''}</button>`).join("")}</div>
         ${demo ? '<p class="field-help">Upload a sample receipt for staff review. Do not send real money.</p>' : ''}
         <label class="upload-box payment-receipt-upload">${demo ? 'Upload sample payment receipt' : 'Upload proof of payment'}<input type="file" accept="image/jpeg,image/png,image/webp" data-payment-proof required><small>JPG, PNG, or WebP. Maximum 2 MB.</small></label>
         <p class="field-help">Payment is subject to staff approval.</p><button class="button primary full" type="button" data-confirm-payment>${demo ? 'Submit demo booking' : 'Submit for verification'}</button></div>
@@ -107,7 +113,7 @@ async function render() {
   }
   const proofInput = document.querySelector('[data-payment-proof]');
   const policyNotice = document.createElement('p');
-  document.querySelector('[data-confirm-payment]').insertAdjacentHTML('beforebegin', `<p class="field-help">Check in with staff within ${Number(settings.gracePeriodMinutes ?? 10)} minutes after your appointment. Each group member must arrive. No-shows lose their reserved time without a refund; late customers may join as walk-ins.</p>`);
+  document.querySelector('[data-confirm-payment]').insertAdjacentHTML('beforebegin', `<p class="field-help">Check in with staff within ${Number(settings.gracePeriodMinutes ?? 10)} minutes after your appointment. No-shows lose their reserved time without a refund; late customers may join as walk-ins.</p>`);
   policyNotice.className = 'field-help';
   policyNotice.innerHTML = 'Customer cancellations and no-shows are non-refundable, including the booking fee. If the shop rejects a pending paid request, staff must verify the transfer and arrange a manual refund. <a class="inline" href="#booking-terms" data-payment-terms>Read our booking terms and policy</a> before paying.';
   document.querySelector('.form-card .summary-list').after(policyNotice);
@@ -148,7 +154,7 @@ async function render() {
         reader.onerror = () => reject(new Error("Payment proof could not be read."));
         reader.readAsDataURL(proofFile);
       });
-      const payload = await api("/appointments", { method: "POST", body: JSON.stringify({ ...booking, partySize, partyMembers, total, bookingFee, durationMinutes: duration, nonRefundableAccepted: true, paymentMethod: state.paymentMethod, paymentProof, paymentMode: settings.paymentMode || 'live', paymentRevision: settings.paymentRevision }) });
+      const payload = await api("/appointments", { method: "POST", body: JSON.stringify({ ...booking, total, bookingFee, durationMinutes: duration, nonRefundableAccepted: true, paymentMethod: state.paymentMethod, paymentProof, paymentMode: settings.paymentMode || 'live', paymentRevision: settings.paymentRevision }) });
       toast(`Booking submitted for approval. Queue #${String(payload.appointment.queueNumber).padStart(2, "0")}.`);
       state.booking = null;
       save();

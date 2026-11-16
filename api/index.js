@@ -23,14 +23,20 @@ function serviceDuration(value) {
 
 function partyQuote(body, user, service, settings) {
   const partySize = body.partySize === undefined ? 1 : body.partySize;
-  const partyMembers = body.partyMembers === undefined && partySize === 1 ? [user.name] : body.partyMembers;
+  const partyMembers = partySize === 1 ? [user.name] : body.partyMembers;
   if (!Number.isInteger(partySize) || partySize < 1 || partySize > 10 || !Array.isArray(partyMembers) || partyMembers.length !== partySize || partyMembers.some(name => typeof name !== 'string' || !name.trim() || name.trim().length > 120)) {
-    throw Object.assign(new Error('Choose 1 to 10 people and provide a name for every party member.'), { status: 400 });
+    throw Object.assign(new Error('Bookings are for one person only.'), { status: 400 });
   }
   const unitDurationMinutes = serviceDuration(service.duration);
   const unitPrice = Number(service.price);
   const bookingFee = Math.max(0, Number(settings.bookingFee) || 0);
   return { partySize, partyMembers: partyMembers.map(name => name.trim()), unitDurationMinutes, unitPrice, durationMinutes: unitDurationMinutes * partySize, bookingFee, total: unitPrice * partySize + bookingFee };
+}
+
+function requireSingleBooking(body) {
+  if ((body.partySize !== undefined && body.partySize !== 1) || (body.partyMembers !== undefined && (!Array.isArray(body.partyMembers) || body.partyMembers.length !== 1))) {
+    throw Object.assign(new Error('Bookings are for one person only. Group bookings are no longer available.'), { status: 400 });
+  }
 }
 
 function appointmentDuration(appointment, service) {
@@ -698,7 +704,7 @@ async function handler(req, res) {
     const service = await database.collection("services").findOne({ $or: [{ slug: serviceId }, ...(ObjectId.isValid(serviceId) ? [{ _id: new ObjectId(serviceId) }] : [])], active: { $ne: false } });
     if (!service) return send(res, 400, { error: "Choose an available service." });
     const partySize = Number(requestUrl.searchParams.get('partySize') || 1);
-    if (!Number.isInteger(partySize) || partySize < 1 || partySize > 10) return send(res, 400, { error: 'Choose 1 to 10 people.' });
+    if (partySize !== 1) return send(res, 400, { error: 'Bookings are for one person only.' });
     const duration = serviceDuration(service.duration) * partySize;
     return send(res, 200, { unavailableBarberIds: await unavailableBarbers(database, date, time, duration) });
   }
@@ -706,6 +712,7 @@ async function handler(req, res) {
   if (req.method === "POST" && path === "/appointment-holds") {
     const user = await requireUser(req, database);
     requireBookingEligibility(user);
+    requireSingleBooking(body);
     const date = String(body.date || "");
     const time = String(body.time || "");
     const serviceId = String(body.serviceId || "");
@@ -1075,6 +1082,7 @@ async function handler(req, res) {
     const user = await requireUser(req, database);
     const hold = ObjectId.isValid(body.holdId) ? await database.collection('appointmentHolds').findOne({ _id: new ObjectId(body.holdId), userId: user._id, expiresAt: { $gt: new Date() } }) : null;
     if (!hold) return send(res, 409, { error: 'Checkout expired. Do not transfer money. Start a new booking, or submit payment recovery if you already paid.' });
+    requireSingleBooking(hold);
     const settings = mergedSettings(await database.collection('settings').findOne({ _id: 'shop' }));
     const service = await database.collection('services').findOne({ $or: [{ slug: hold.serviceId }, ...(ObjectId.isValid(hold.serviceId) ? [{ _id: new ObjectId(hold.serviceId) }] : [])], active: { $ne: false } });
     if (!service || !paymentConfigured(settings) || settings.paymentRevision !== body.paymentRevision) return send(res, 409, { error: 'Payment details changed. Do not pay using this checkout. Start again or submit payment recovery.' });
@@ -1087,6 +1095,7 @@ async function handler(req, res) {
     const user = await requireUser(req, database);
     if (body.nonRefundableAccepted !== true) return send(res, 400, { error: 'Accept the non-refundable booking policy before booking.' });
     requireBookingEligibility(user);
+    requireSingleBooking(body);
     const customer = String(body.customer || user.name || "").trim().slice(0, 120);
     if (customer.length < 2) return send(res, 400, { error: "Enter the name or nickname staff should call." });
     const date = String(body.date || "");
@@ -1113,6 +1122,7 @@ async function handler(req, res) {
       userId: user._id,
       expiresAt: { $gt: new Date() }
     }) : null;
+    if (hold) requireSingleBooking(hold);
     const requestedBarberId = String(body.barberId || "");
     let barberId = requestedBarberId === "any" && hold ? hold.barberId : requestedBarberId;
     if (barberId === 'any') {

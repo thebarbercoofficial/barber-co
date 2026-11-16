@@ -13,7 +13,8 @@ const barbers = [
   { id: 'future', name: 'Future Leave', status: 'active', leaveFrom: '2100-01-01', leaveTo: '2100-01-03' },
   { id: 'inactive', name: 'Inactive Barber', status: 'inactive' }
 ];
-const settings = { paymentMode: 'live', bookingFee: 100, gcash: { enabled: true, accountName: 'Fixture shop', accountNumber: '09123456789' }, maya: { enabled: false } };
+const operatingHours = Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => [day, { open: '13:00', close: '20:00' }]));
+const settings = { paymentMode: 'live', paymentRevision: 'layout-fixture', bookingFee: 100, operatingHours, gcash: { enabled: true, accountName: 'Fixture shop', accountNumber: '09123456789' }, maya: { enabled: false } };
 const server = http.createServer((req, res) => {
   const file = path.join(root, new URL(req.url, 'http://localhost').pathname);
   if (!file.startsWith(root + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return res.writeHead(404).end();
@@ -35,10 +36,16 @@ async function main() {
         localStorage.setItem('barberCoToken', 'isolated-layout-token');
         localStorage.setItem('barberCoState', JSON.stringify({ user, services, barbers, selectedServiceId: 'basic', booking: { serviceId: 'basic', barberId: 'alex', customer: user.name, date: '2100-03-03', time: '14:00', holdId: 'layout-hold', holdExpiresAt: new Date(Date.now() + 600000).toISOString() } }));
       }, { base, user, services, barbers });
+      const holdSubmissions = [];
       await context.route('**/*', route => {
         const url = new URL(route.request().url());
         if (url.origin !== base) return route.abort();
         if (!url.pathname.startsWith('/api/')) return route.continue();
+        if (url.pathname === '/api/appointment-holds' && route.request().method() === 'POST') {
+          const body = route.request().postDataJSON();
+          holdSubmissions.push(body);
+          return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ hold: { ...body, id: `fixture-hold-${width}`, barberId: 'alex', partySize: 1, partyMembers: [user.name], expiresAt: new Date(Date.now() + 600000).toISOString() } }) });
+        }
         let data;
         if (url.pathname === '/api/me') data = { user };
         else if (url.pathname === '/api/catalog') data = { services, barbers };
@@ -87,6 +94,22 @@ async function main() {
           assert.equal(await page.locator('[data-barber="inactive"]').isDisabled(), true);
           assert.equal(await page.locator('[data-barber="future"]').isEnabled(), true);
           assert.match(await page.locator('.barber-roster').innerText(), /Leave: Jan 1, 2100 - Jan 3, 2100/);
+        }
+        if (name === 'booking') {
+          assert.equal(await page.locator('[name="partySize"], [name="partyMember"], [data-party-members]').count(), 0, 'New booking form has no group controls');
+          assert.deepEqual(await page.locator('.summary-list strong').allTextContents(), ['Classic Haircut', 'PHP 150.00', 'PHP 100.00', 'PHP 250.00', '30 minutes']);
+          await page.locator('[name="date"]').fill('2100-03-03');
+          await page.locator('[name="date"]').dispatchEvent('change');
+          await page.locator('[name="time"] option[value="14:00"]').waitFor({ state: 'attached' });
+          await page.locator('[name="time"]').selectOption('14:00');
+          await page.getByRole('button', { name: 'Proceed to payment' }).click();
+          await page.waitForURL('**/payment.html');
+          assert.equal(holdSubmissions.length, 1);
+          assert.equal(Object.hasOwn(holdSubmissions[0], 'partySize'), false);
+          assert.equal(Object.hasOwn(holdSubmissions[0], 'partyMembers'), false);
+          assert.match(await page.locator('.payment-layout').innerText(), /Customer\s+Customer Layout Test/);
+          assert.match(await page.locator('.payment-layout').innerText(), /Duration\s+30 minutes/);
+          assert.doesNotMatch(await page.locator('.payment-layout').innerText(), /Group \(/);
         }
         if ([1440, 390].includes(width) && ['index', 'services', 'barbers', 'booking', 'queue', 'user-profile', 'login'].includes(name)) await page.screenshot({ path: path.join(output, `${name}-${width}.png`), fullPage: true });
       }

@@ -1,0 +1,19 @@
+.unified-staff .workspace-stream { padding: 0 24px 32px; }
+.staff-stream-section { scroll-margin-top: 80px; border-bottom: 1px solid var(--line); padding-block: 20px; min-width: 0; }
+.staff-stream-section:last-child { min-height: calc(100svh - 80px); }
+.staff-stream-section > h2 { font: 600 22px Inter, Arial, sans-serif; margin: 0 0 14px; color: var(--gold); }
+.staff-stream-section iframe { width: 100%; height: 700px; display: block; border: 0; background: #1b1917; }
+.staff-stream-section[data-loaded] > h2 { display: none; }
+.staff-module .staff-header, .staff-module .sidebar, .staff-module .sidebar-backdrop { display: none !important; }
+html.staff-module-root, body.staff-module { min-height: 0 !important; height: auto !important; overflow: hidden; }
+.staff-module .app-shell { min-height: 0 !important; padding-top: 0 !important; }
+.staff-module .workspace { margin: 0 !important; padding: 12px 0 24px !important; min-height: 0 !important; width: 100% !important; }
+.staff-module .inbox-message-list, .staff-module .contact-inbox-item { max-height: none !important; overflow: visible !important; }
+.staff-module .management-layout > form.panel { position: static; }
+.staff-module dialog[open] { position: fixed; top: var(--module-dialog-top, 32px); bottom: auto; margin-block: 0; max-height: var(--module-dialog-height, 75vh); overflow: auto; }
+@media (max-width: 960px) {
+  .unified-staff .workspace-stream { padding-inline: 16px; }
+}
+@media print {
+  .unified-staff .staff-stream-section { break-before: page; }
+}

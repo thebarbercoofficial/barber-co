@@ -104,7 +104,7 @@ const BarberCo = (() => {
     if (app) app.hidden = true;
     const verifyStaff = () => api('/me').then((payload) => {
       setSession(payload);
-      const limited = /\/admin-(logbook|schedule|contacts)\.html$/.test(location.pathname);
+      const limited = /\/admin-(workspace|logbook|schedule|contacts)\.html$/.test(location.pathname);
       if (payload.user.role !== 'admin' && !(limited && payload.user.role === 'moderator')) {
         location.replace(payload.user.role === 'moderator' ? 'admin-logbook.html' : 'index.html');
         return;
@@ -328,7 +328,7 @@ const BarberCo = (() => {
     window.addEventListener("scroll", updateScrollProgress, { passive: true });
     updateScrollProgress();
     const transaction = /\/(login|register|booking|payment|user-profile)\.html$/.test(location.pathname);
-    if (isAuthenticated() && header) {
+    if (isAuthenticated() && header && !window.staffModule) {
       if (window.BarberCoAlerts) window.BarberCoAlerts.mount();
       else if (!document.querySelector('[data-alert-script]')) {
         const script = document.createElement('script');
@@ -433,7 +433,7 @@ const BarberCo = (() => {
     const icons = { dashboard: 'LayoutDashboard', logbook: 'ListOrdered', contacts: 'Mail', users: 'Users', profile: 'Settings2', services: 'Scissors', barbers: 'ContactRound', reports: 'ChartNoAxesCombined', schedule: 'CalendarDays', public: 'ExternalLink' };
     const operations = links.filter(([, key]) => ['dashboard', 'logbook', 'schedule', 'contacts'].includes(key));
     const management = links.filter(([, key]) => !['dashboard', 'logbook', 'schedule', 'contacts', 'public'].includes(key));
-    const group = (title, items) => items.length ? `<div class="sidebar-group"><p>${title}</p>${items.map(([href, key, label]) => `<a class="${active === key ? 'active' : ''}" href="${href}" title="${safeText(label)}" aria-label="${safeText(label)}" ${active === key ? 'aria-current="page"' : ''}>${icon(icons[key])}<span>${label}</span></a>`).join('')}</div>` : '';
+    const group = (title, items) => items.length ? `<div class="sidebar-group"><p>${title}</p>${items.map(([, key, label]) => `<a class="${active === key ? 'active' : ''}" href="admin-workspace.html#${key}" title="${safeText(label)}" aria-label="${safeText(label)}" ${active === key ? 'aria-current="page"' : ''}>${icon(icons[key])}<span>${label}</span></a>`).join('')}</div>` : '';
     return `<button class="sidebar-backdrop" type="button" data-sidebar-dismiss aria-label="Close staff navigation"></button><aside class="sidebar" id="staff-sidebar"><div class="sidebar-shop"><img src="images/logo.png" alt=""><div>Carmona shop<small>${currentRole() === 'moderator' ? 'Front desk' : 'Administration'}</small></div><span class="shop-indicator" title="Staff workspace"></span></div>${group('DAILY OPERATIONS', operations)}${group('SHOP MANAGEMENT', management)}<div class="sidebar-footer"><a href="index.html">${icon('ExternalLink')}<span>Public website</span></a><small>The Barber Co / Since 2022</small></div></aside>`;
   }
 

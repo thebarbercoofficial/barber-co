@@ -115,7 +115,7 @@ document.querySelector("[data-login]").addEventListener("submit", async (event) 
     setSession(payload);
     const next = new URLSearchParams(location.search).get("next");
     const safeNext = next && /^(booking|index|services|barbers|queue|contact|about|user-profile)\.html(?:[?#].*)?$/.test(next) ? next : "";
-    location.href = payload.user.role === "admin" ? "admin-dashboard.html" : payload.user.role === "moderator" ? "admin-logbook.html" : safeNext || "index.html";
+    location.href = payload.user.role === "admin" ? "admin-workspace.html#dashboard" : payload.user.role === "moderator" ? "admin-workspace.html#logbook" : safeNext || "index.html";
   } catch (error) {
     if (error.verificationRequired) location.href = `register.html?verify=${encodeURIComponent(error.email || identifier)}`;
     const offline = error.code === "BACKEND_UNAVAILABLE" || /fetch|network/i.test(error.message || "");

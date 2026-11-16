@@ -89,6 +89,8 @@ async function main() {
     if (!file.startsWith(root + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404).end(); return; }
     const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png' };
     res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream' });
+    // This suite isolates module behavior; unified-staff-ui covers the outer shell.
+    if (path.basename(file) === 'admin-dashboard.html') return res.end(fs.readFileSync(file, 'utf8').replace('js/staff-entry.js?v=unified-20261116', 'js/pages/admin-dashboard.js?v=followup-20261116'));
     fs.createReadStream(file).pipe(res);
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -204,7 +206,7 @@ async function main() {
           await page.locator('[data-staff-toggle]').click();
           await page.locator('[data-workspace-search]').fill('Services');
           assert.equal(await page.locator('[data-workspace-results] a').count(), 1);
-          assert.equal(await page.locator('[data-workspace-results] a').getAttribute('href'), 'admin-services.html');
+          assert.equal(await page.locator('[data-workspace-results] a').getAttribute('href'), 'admin-workspace.html#services');
           await page.keyboard.press('Escape');
           assert.equal(await page.locator('[data-workspace-results]').isVisible(), false);
           await page.locator('[data-workspace-search]').fill('');
@@ -353,7 +355,7 @@ async function main() {
     const page = await mod.newPage();
     await page.goto(`${base}/admin-logbook.html`);
     await page.waitForSelector('.workspace');
-    assert.equal(await page.locator('.sidebar a[href="admin-contacts.html"]').count(), 1);
+    assert.equal(await page.locator('.sidebar a[href="admin-workspace.html#contacts"]').count(), 1);
     await page.goto(`${base}/admin-contacts.html`);
     await page.waitForSelector('.contact-inbox-item');
     assert.equal(await page.locator('.contact-inbox-item').count(), 1);
@@ -366,9 +368,9 @@ async function main() {
     await page.locator('[data-contact-select="contact-1"]').click();
     assert.equal(await page.locator('[data-reply] button').isDisabled(), true, 'Switching conversations must not resend accepted replies');
     assert.equal(await page.locator('[data-reply] textarea').getAttribute('readonly'), '');
-    assert.equal(await page.locator('.sidebar a[href="admin-users.html"]').count(), 0);
-    assert.equal(await page.locator('.sidebar a[href="admin-profile.html"]').count(), 0);
-    assert.equal(await page.locator('.sidebar a[href="admin-reports.html"]').count(), 0);
+    assert.equal(await page.locator('.sidebar a[href="admin-workspace.html#users"]').count(), 0);
+    assert.equal(await page.locator('.sidebar a[href="admin-workspace.html#profile"]').count(), 0);
+    assert.equal(await page.locator('.sidebar a[href="admin-workspace.html#reports"]').count(), 0);
     assert.equal(await page.locator('[data-analytics]').count(), 0);
     await page.screenshot({ path: path.join(root, 'staff-ui-moderator-check.png'), fullPage: true });
     await page.goto(`${base}/admin-profile.html`);

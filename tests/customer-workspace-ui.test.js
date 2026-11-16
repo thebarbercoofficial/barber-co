@@ -78,6 +78,16 @@ async function main() {
         assert.deepEqual(errors, [], `${name} script errors at ${width}px`);
         if (name === 'index') {
           assert.equal(await page.locator('body').evaluate(el => el.classList.contains('home-page')), true);
+          assert.deepEqual(await page.locator('.hero-actions a').evaluateAll(links => links.map(link => ({ label: link.textContent.trim(), href: link.getAttribute('href') }))), [
+            { label: 'Reserve a slot', href: 'booking.html' },
+            { label: 'Join walk-in', href: 'queue.html?walkin=1' },
+            { label: 'Check queue', href: 'queue.html' }
+          ]);
+          if (width === 390) {
+            const buttonRows = await page.locator('.hero-actions a').evaluateAll(links => links.map(link => Math.round(link.getBoundingClientRect().y)));
+            assert.equal(buttonRows[0], buttonRows[1], 'Reserve and walk-in CTAs share the first mobile row');
+            assert.ok(buttonRows[2] > buttonRows[1], 'Check queue CTA gets its own mobile row');
+          }
           const shopBox = await page.locator('.shop-showcase').boundingBox();
           assert.ok(shopBox.x <= Math.max(24, width * 0.04), `Homepage shop section has an oversized left gutter at ${width}px: ${shopBox.x}px`);
           assert.ok(shopBox.x + shopBox.width >= width - Math.max(24, width * 0.04), `Homepage shop section has an oversized right gutter at ${width}px`);

@@ -36,6 +36,7 @@ document.querySelector("#app").innerHTML = `
       <p class="hero-copy">Your cut. Your barber. Your time.<br>Reserve a chair or check the walk-in queue.</p>
       <div class="hero-actions">
         <a class="button primary" href="booking.html">Reserve a slot</a>
+        <a class="button secondary" href="queue.html?walkin=1">Join walk-in</a>
         <a class="button ghost" href="queue.html">Check queue</a>
       </div>
     </div>

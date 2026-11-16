@@ -102,7 +102,7 @@ const BarberCo = (() => {
   if (/\/admin-[a-z-]+\.html$/.test(location.pathname)) {
     const app = document.querySelector('#app');
     if (app) app.hidden = true;
-    api('/me').then((payload) => {
+    const verifyStaff = () => api('/me').then((payload) => {
       setSession(payload);
       const limited = /\/admin-(logbook|schedule|contacts)\.html$/.test(location.pathname);
       if (payload.user.role !== 'admin' && !(limited && payload.user.role === 'moderator')) {
@@ -110,7 +110,25 @@ const BarberCo = (() => {
         return;
       }
       if (app) app.hidden = false;
-    }).catch(() => { clearSession(); location.replace('login.html'); });
+    }).catch((error) => {
+      if (error.status === 401) {
+        clearSession();
+        location.replace('login.html');
+        return;
+      }
+      // A cold start, rate limit or interrupted reload does not invalidate a session.
+      let recovery = document.querySelector('[data-session-recovery]');
+      if (!recovery) {
+        recovery = document.createElement('main');
+        recovery.className = 'section session-recovery';
+        recovery.setAttribute('data-session-recovery', '');
+        document.body.append(recovery);
+      }
+      recovery.innerHTML = '<h1>Unable to verify your session</h1><p role="alert"></p><button class="button primary" type="button">Try again</button>';
+      recovery.querySelector('p').textContent = error.message || 'Please try again shortly. You have not been signed out.';
+      recovery.querySelector('button').addEventListener('click', () => { recovery.remove(); void verifyStaff(); });
+    });
+    void verifyStaff();
   }
 
   async function api(path, options = {}) {

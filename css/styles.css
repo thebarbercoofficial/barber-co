@@ -5,12 +5,12 @@
   body.customer-page.is-loaded #app :is(.site-header, .section-heading > *, .hero-content > *, .hero-actions, .status-panel, .service-card, .barber-card, .card, .form-card, .panel, .login-card > *) { animation: none; }
   body.customer-page #app .reveal { opacity: 1; transform: none; transition: none; }
   body.customer-page.is-loaded .hero::before { animation: none; }
-  .customer-page .section { padding: 32px; overflow-x: clip; }
+  .customer-page .section { padding: 32px max(24px, calc((100% - 1440px) / 2)); overflow-x: clip; }
   .customer-page .section.top { padding-top: 116px; padding-bottom: 32px; }
   .customer-page .section.alt { background: #e9ede9; background-image: none; }
   .customer-page .section-heading { max-width: none; margin-bottom: 20px; }
-  .customer-page h1 { font-size: 48px; line-height: 1.12; margin-bottom: 16px; }
-  .customer-page h2 { font-size: 34px; line-height: 1.15; margin-bottom: 16px; }
+  .customer-page h1 { font-size: 40px; line-height: 1.12; margin-bottom: 16px; }
+  .customer-page h2 { font-size: 30px; line-height: 1.2; margin-bottom: 16px; }
   .customer-page h3 { font-size: 21px; line-height: 1.3; }
   .customer-page p { line-height: 1.55; margin-bottom: 16px; }
   .customer-page .eyebrow { font-size: 13px; letter-spacing: 0; margin-bottom: 8px; }
@@ -33,6 +33,16 @@
   .customer-page fieldset { min-width: 0; margin: 0 0 16px; padding: 14px; border: 1px solid #d5dad4; border-radius: 6px; }
   .customer-page legend { padding: 0 6px; font-size: 16px; font-weight: 600; }
   .customer-page .service-card, .customer-page .barber-card { min-height: 220px; padding: 20px; background: #fff; }
+  .customer-page .barber-roster { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .customer-page .barber-roster .barber-card { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 16px; align-content: start; min-height: 0; text-align: left; border: 1px solid var(--line); box-shadow: none; border-radius: 6px; }
+  .customer-page .barber-roster .avatar { width: 64px; height: 64px; margin: 0; }
+  .customer-page .barber-roster h3 { margin: 0 0 6px; }
+  .customer-page .barber-roster p { margin: 0 0 10px; }
+  .customer-page .barber-roster .button { grid-column: 2; justify-self: start; width: auto; min-width: 160px; margin: 0; box-shadow: none; }
+  .customer-page .barber-leave-dates { color: #935119; font-size: 15px; }
+  .customer-page .status-pill.on-leave { background: #fff0d9; color: #754719; }
+  .customer-page .status-pill.active { background: #e6f2eb; color: #285640; }
+  .customer-page .status-pill.inactive { background: #eeeeee; color: #555; }
   .customer-page .service-card:hover, .customer-page .barber-card:hover { transform: translateY(-2px); }
   .customer-page .price { font-size: 25px; padding-top: 12px; }
   .customer-page .queue-row, .customer-page .appointment-row { padding: 14px 16px; gap: 12px; }
@@ -95,6 +105,7 @@
   .customer-page .site-header { padding-inline: 16px; }
   .customer-page .form-card, .customer-page .panel, .customer-page .card, .customer-page .login-card { padding: 18px; }
   .customer-page .grid-3, .customer-page .grid-4, .customer-page .grid-5 { grid-template-columns: minmax(0, 1fr); }
+  .customer-page .barber-roster { grid-template-columns: minmax(0, 1fr); }
   .customer-page .summary-list > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .customer-page .booking-layout .summary-list > div { padding-block: 8px; }
   .customer-page .summary-list strong { text-align: right; }

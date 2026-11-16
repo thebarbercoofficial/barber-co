@@ -28,10 +28,12 @@ async function fixtures(context, role) {
   appointments[1].partyMembers = ['John Santos'];
   let reservations = [];
   let analyticsUnavailable = false;
+  let sessionFailure = 0;
   context.bookingTestData = {
     addAppointment: (appointment) => appointments.push(appointment),
     addReservation: (reservation) => reservations.push(reservation),
-    failAnalytics: () => { analyticsUnavailable = true; }
+    failAnalytics: () => { analyticsUnavailable = true; },
+    failSession: status => { sessionFailure = status; }
   };
   await context.addInitScript(({ role }) => {
     window.print = () => { window.reportPrintCalls = (window.reportPrintCalls || 0) + 1; };
@@ -46,6 +48,7 @@ async function fixtures(context, role) {
     const endpoint = new URL(req.url()).pathname;
     requests.push({ endpoint, method: req.method(), body: req.postDataJSON() });
     let data;
+    if (endpoint.endsWith('/me') && sessionFailure) return route.fulfill({ status: sessionFailure, contentType: 'application/json', body: JSON.stringify({ error: 'Session check temporarily unavailable' }) });
     if (endpoint.endsWith('/me')) data = { user: { id: 'test-user', role, name: role === 'admin' ? 'Shop Owner' : 'Front Desk', email: 'qa@example.test' } };
     else if (endpoint.endsWith('/notifications')) data = { notifications: [], emailConfigured: false, smsConfigured: false };
     else if (endpoint.endsWith('/catalog')) data = { services, barbers };
@@ -330,6 +333,18 @@ async function main() {
       assert.ok((await liveBooking.innerText()).includes('Needs review'));
       assert.equal(await page.locator('[data-metric="bookings"] strong').textContent(), '4', 'Booking count should refresh from appointments even when analytics fails');
       await page.locator('[data-dashboard-sync]').filter({ hasText: 'Partially updated' }).waitFor({ timeout: 2000 });
+      await page.goto(`${base}/admin-services.html`);
+      for (let reload = 0; reload < 10; reload++) {
+        context.bookingTestData.failSession(reload % 2 ? 503 : 429);
+        await page.reload();
+        await page.locator('[data-session-recovery]').waitFor();
+        assert.match(page.url(), /admin-services\.html/);
+        assert.equal(await page.evaluate(() => localStorage.getItem('barberCoToken')), 'qa-isolated-token');
+      }
+      context.bookingTestData.failSession(0);
+      await page.locator('[data-session-recovery] button').click();
+      await page.locator('#app').waitFor({ state: 'visible' });
+      assert.equal(await page.locator('[data-session-recovery]').count(), 0);
       await context.close();
       console.log(`Admin screens and interactions passed at ${width}px`);
     }

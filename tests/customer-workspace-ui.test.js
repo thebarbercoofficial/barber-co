@@ -7,7 +7,12 @@ const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const user = { id: 'layout-user', name: 'Customer Layout Test', email: 'layout@example.test', role: 'customer', emailVerified: true, phoneVerified: true, phone: '09123456789' };
 const services = [{ id: 'basic', name: 'Classic Haircut', price: 150, duration: '30 min', detail: 'Haircut and finishing', icon: 'CUT' }];
-const barbers = [{ id: 'alex', name: 'Alex Santos', status: 'active', role: 'Classic cuts' }];
+const barbers = [
+  { id: 'alex', name: 'Alex Santos', status: 'active', role: 'Classic cuts' },
+  { id: 'leave', name: 'Scheduled Leave', status: 'active', leaveFrom: '2000-01-01', leaveTo: '2100-12-31' },
+  { id: 'future', name: 'Future Leave', status: 'active', leaveFrom: '2100-01-01', leaveTo: '2100-01-03' },
+  { id: 'inactive', name: 'Inactive Barber', status: 'inactive' }
+];
 const settings = { paymentMode: 'live', bookingFee: 100, gcash: { enabled: true, accountName: 'Fixture shop', accountNumber: '09123456789' }, maya: { enabled: false } };
 const server = http.createServer((req, res) => {
   const file = path.join(root, new URL(req.url, 'http://localhost').pathname);
@@ -52,7 +57,7 @@ async function main() {
       const pages = { index: '.hero', about: '.feature-layout', services: '.service-card', barbers: '.barber-card', queue: '[data-walkin]', booking: '[data-booking]', payment: '.payment-layout', contact: '[data-contact]', login: '[data-login]', register: '[data-register]', 'user-profile': '.account-layout' };
       for (const [name, selector] of Object.entries(pages)) {
         await page.goto(`${base}/${name}.html`);
-        await page.locator(selector).waitFor();
+        await page.locator(selector).first().waitFor();
         const check = await page.evaluate(() => ({
           overflow: document.documentElement.scrollWidth > innerWidth + 1,
           smallFields: [...document.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]),select,textarea')].filter(el => el.getBoundingClientRect().width && getComputedStyle(el).fontSize.replace('px', '') < 16).map(el => el.name),
@@ -62,7 +67,13 @@ async function main() {
         assert.equal(check.customerTheme, true);
         assert.deepEqual(check.smallFields, [], `${name} small fields at ${width}px`);
         assert.deepEqual(errors, [], `${name} script errors at ${width}px`);
-        if ([1440, 390].includes(width) && ['index', 'booking', 'queue', 'user-profile'].includes(name)) await page.screenshot({ path: path.join(output, `${name}-${width}.png`), fullPage: true });
+        if (name === 'barbers') {
+          assert.equal(await page.locator('[data-barber="leave"]').isDisabled(), true);
+          assert.equal(await page.locator('[data-barber="inactive"]').isDisabled(), true);
+          assert.equal(await page.locator('[data-barber="future"]').isEnabled(), true);
+          assert.match(await page.locator('.barber-roster').innerText(), /Leave: Jan 1, 2100 - Jan 3, 2100/);
+        }
+        if ([1440, 390].includes(width) && ['index', 'barbers', 'booking', 'queue', 'user-profile'].includes(name)) await page.screenshot({ path: path.join(output, `${name}-${width}.png`), fullPage: true });
       }
       await context.close();
       console.log(`Customer pages passed at ${width}px: 11 pages, readable fields, no overflow or script errors`);

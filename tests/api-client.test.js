@@ -41,6 +41,33 @@ async function main() {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/shared.js'), 'utf8'), staffContext);
   await new Promise(setImmediate);
   assert.equal(app.hidden, false, 'Staff auth can read during shared-client initialization');
+  for (const status of [429, 503, 'timeout']) {
+    storage.set('barberCoToken', 'preserved-session');
+    let recovery;
+    const retryButton = { addEventListener: () => {} };
+    const recoveryNode = { setAttribute: () => {}, querySelector: selector => selector === 'p' ? {} : retryButton };
+    const recoveryContext = { ...staffContext, document: {
+      querySelector: selector => selector === '#app' ? app : recovery,
+      createElement: () => recoveryNode,
+      body: { append: node => { recovery = node; } }
+    } };
+    responder = async () => {
+      if (status === 'timeout') throw Object.assign(new Error('timeout'), { name: 'TimeoutError' });
+      return { ok: false, status, headers: { get: () => '10' }, json: async () => ({ error: 'Temporarily unavailable' }) };
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/shared.js'), 'utf8'), recoveryContext);
+    await new Promise(setImmediate);
+    assert.equal(storage.get('barberCoToken'), 'preserved-session', `${status} must not log out staff`);
+    assert.ok(recovery, 'Temporary failures must offer session verification retry');
+  }
+  let redirected;
+  responder = async () => ({ ok: false, status: 401, headers: { get: () => null }, json: async () => ({ error: 'Expired session' }) });
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/shared.js'), 'utf8'), {
+    ...staffContext, location: { ...staffContext.location, replace: url => { redirected = url; } }
+  });
+  await new Promise(setImmediate);
+  assert.equal(storage.get('barberCoToken'), undefined, 'Confirmed expired sessions must still sign out');
+  assert.equal(redirected, 'login.html');
   console.log('API client deduplication, fresh data, auth isolation, JSON writes and timeout recovery passed');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

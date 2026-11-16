@@ -68,13 +68,17 @@ function rescheduleDeadline(appointment, request) {
 }
 
 async function withAppointmentMutation(database, id, action) {
+  const startedAt = Date.now();
   const owner = String(new ObjectId());
   const locks = database.collection('counters');
   const key = `appointment-mutation:${id}`;
   try {
     await locks.findOneAndUpdate({ _id: key, $or: [{ expiresAt: { $lt: new Date() } }, { owner: { $exists: false } }] }, { $set: { owner, expiresAt: new Date(Date.now() + 300000) } }, { upsert: true, returnDocument: 'after' });
   } catch (error) {
-    if (error.code === 11000) throw Object.assign(new Error('This appointment is being updated. Refresh and retry.'), { status: 409 });
+    if (error.code === 11000) {
+      console.warn('Mutation lease busy', { key, elapsedMs: Date.now() - startedAt, keyPattern: error.keyPattern });
+      throw Object.assign(new Error('This appointment is being updated. Refresh and retry.'), { status: 409 });
+    }
     throw error;
   }
   const { setInterval, clearInterval } = require('node:timers');
@@ -82,10 +86,12 @@ async function withAppointmentMutation(database, id, action) {
     locks.updateOne({ _id: key, owner }, { $set: { expiresAt: new Date(Date.now() + 300000) } }).catch(error => console.error('Appointment lease renewal failed:', error.message));
   }, 30000);
   heartbeat.unref();
+  console.info('Mutation lease acquired', { key, owner });
   try { return await action(); }
   finally {
     clearInterval(heartbeat);
     await locks.deleteOne({ _id: key, owner });
+    console.info('Mutation lease released', { key, owner, elapsedMs: Date.now() - startedAt });
   }
 }
 
@@ -485,6 +491,8 @@ async function nextQueueNumber(database) {
 }
 
 async function startServing(database, id = '') {
+  const startedAt = Date.now();
+  console.info('Queue serving transition started');
   const leaseOwner = String(new ObjectId());
   try {
     await database.collection('counters').findOneAndUpdate({ _id: 'serving-transition', $or: [{ busy: { $ne: true } }, { lockedAt: { $lt: new Date(Date.now() - 60000) } }] }, { $set: { busy: true, leaseOwner, lockedAt: new Date() } }, { upsert: true, returnDocument: 'after' });
@@ -495,7 +503,9 @@ async function startServing(database, id = '') {
   try {
     const current = id && await database.collection('queue').findOne({ _id: new ObjectId(id), status: 'serving' });
     if (current) return current;
+    console.info('Queue serving selection started', { elapsedMs: Date.now() - startedAt });
     const selection = await frontDesk.selectService(database, id);
+    console.info('Queue serving selection finished', { elapsedMs: Date.now() - startedAt, selected: Boolean(selection) });
     if (!selection) return null;
     const transition = () => database.collection('queue').findOneAndUpdate({ status: 'waiting', _id: selection.ticket._id }, { $set: { status: 'serving', barberId: selection.barberId, calledAt: new Date(), updatedAt: new Date() } }, { returnDocument: 'after' });
     const ticket = selection.ticket.appointmentId ? await withAppointmentMutation(database, selection.ticket.appointmentId, async () => {

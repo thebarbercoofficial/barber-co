@@ -119,13 +119,49 @@ body.customer-page .about-benefits .card .eyebrow { display: none; }
 body.customer-page.home-page .section,
 body.customer-page.home-page .hero,
 body.customer-page.home-page .customer-footer { padding-inline: clamp(16px, 3vw, 72px); }
+body.customer-page.home-page .hero { grid-template-columns: minmax(0, 1fr) minmax(360px, 400px); gap: clamp(40px, 4vw, 88px); }
+body.customer-page.home-page .hero h1 { font-size: 88px; margin-bottom: 24px; }
+body.customer-page.home-page .hero .hero-copy { font-size: 21px; line-height: 1.55; }
+body.customer-page.home-page .hero .button { min-height: 54px; padding: 14px 20px; font-size: 18px; }
+body.customer-page.home-page .hero .status-panel { padding: 28px; }
+body.customer-page.home-page .hero .status-panel h3 { font-size: 28px; }
+body.customer-page.home-page .hero .status-panel p { font-size: 18px; line-height: 1.55; }
+body.customer-page.home-page .hero .status-panel .home-queue-detail { font-size: 15px; }
+body.customer-page.home-page .shop-section { padding-block: 56px; }
+body.customer-page.home-page .shop-showcase { grid-template-columns: minmax(0, 1.18fr) minmax(440px, 0.82fr); gap: clamp(40px, 4vw, 72px); }
+body.customer-page.home-page .shop-photo img { height: min(72svh, 860px); }
+body.customer-page.home-page .shop-copy { max-width: 720px; }
+body.customer-page.home-page .shop-copy h2 { max-width: 22ch; font-size: 56px; }
+body.customer-page.home-page .shop-copy > p:not(.eyebrow) { font-size: 20px; line-height: 1.55; }
+body.customer-page.home-page .shop-specs { gap: 18px; margin-block: 36px; padding-block: 22px; }
+body.customer-page.home-page .shop-specs strong { font-size: 16px; }
+body.customer-page.home-page .shop-specs span { font-size: 16px; }
+body.customer-page.home-page .shop-copy .button { min-height: 50px; padding: 13px 20px; font-size: 17px; }
+body.customer-page.home-page .home-services .section-heading { margin-bottom: 36px; }
+body.customer-page.home-page .home-services .section-heading h2 { font-size: 56px; }
+body.customer-page.home-page .service-menu { gap: 0 48px; }
+body.customer-page.home-page .service-menu .service-card { gap: 10px 24px; padding-block: 30px; }
+body.customer-page.home-page .service-menu .service-card h3 { font-size: 22px; }
+body.customer-page.home-page .service-menu .service-card p { font-size: 17px; }
+body.customer-page.home-page .service-menu .service-card small { font-size: 15px; }
+body.customer-page.home-page .service-menu .service-card .price { font-size: 26px; }
+body.customer-page.home-page .service-menu .service-card .button { min-height: 48px; padding: 10px 18px; font-size: 16px; }
 @media (max-width: 1100px) {
   body.customer-page .site-nav { gap: 10px; }
   body.customer-page .site-header { padding-inline: 16px; }
   body.customer-page .hero h1 { font-size: 60px; }
+  body.customer-page.home-page .hero { grid-template-columns: minmax(0, 1fr) minmax(300px, 340px); gap: 32px; }
+  body.customer-page.home-page .hero h1 { font-size: 60px; }
+  body.customer-page.home-page .shop-showcase { grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr); gap: 32px; }
+  body.customer-page.home-page .shop-copy h2 { font-size: 48px; }
+  body.customer-page.home-page .shop-photo img { height: min(68svh, 720px); }
 }
 @media (max-width: 900px) {
   body.customer-page .hero { grid-template-columns: minmax(0, 1fr); padding: 112px 24px 32px; gap: 24px; }
+  body.customer-page.home-page .hero { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  body.customer-page.home-page .shop-showcase { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  body.customer-page.home-page .shop-photo img { height: min(56svh, 520px); }
+  body.customer-page.home-page .service-menu { grid-template-columns: minmax(0, 1fr); }
   body.customer-page .hero .status-panel { max-width: none; width: 100%; }
   body.customer-page .booking-layout, body.customer-page .payment-layout { grid-template-columns: minmax(0, 1fr); }
   body.customer-page .service-menu { grid-template-columns: minmax(0, 1fr); }
@@ -138,11 +174,30 @@ body.customer-page.home-page .customer-footer { padding-inline: clamp(16px, 3vw,
   body.customer-page h2 { font-size: 30px; }
   body.customer-page .hero { padding: 104px 16px 24px; }
   body.customer-page .hero h1 { font-size: 52px; }
+  body.customer-page.home-page .hero h1 { font-size: 52px; }
+  body.customer-page.home-page .hero .hero-copy { font-size: 17px; }
+  body.customer-page.home-page .hero .button { min-height: 48px; padding: 12px 16px; font-size: 16px; }
+  body.customer-page.home-page .hero .status-panel { padding: 18px; }
+  body.customer-page.home-page .hero .status-panel h3 { font-size: 22px; }
+  body.customer-page.home-page .hero .status-panel p { font-size: 16px; }
   body.customer-page .hero .hero-copy { font-size: 17px; }
   body.customer-page .hero .status-panel { padding: 16px; }
   body.customer-page .hero .status-panel h3 { font-size: 20px; }
   body.customer-page .hero .status-panel p { margin-bottom: 8px; }
   body.customer-page .shop-copy h2 { font-size: 32px; }
+  body.customer-page.home-page .shop-copy h2 { font-size: 36px; }
+  body.customer-page.home-page .shop-photo img { height: 320px; }
+  body.customer-page.home-page .shop-copy > p:not(.eyebrow) { font-size: 18px; }
+  body.customer-page.home-page .shop-specs { gap: 12px; margin-block: 24px; }
+  body.customer-page.home-page .shop-specs strong,
+  body.customer-page.home-page .shop-specs span { font-size: 14px; }
+  body.customer-page.home-page .home-services .section-heading h2 { font-size: 40px; }
+  body.customer-page.home-page .service-menu { gap: 0; }
+  body.customer-page.home-page .service-menu .service-card { gap: 8px 12px; padding-block: 24px; }
+  body.customer-page.home-page .service-menu .service-card h3 { font-size: 19px; }
+  body.customer-page.home-page .service-menu .service-card p { font-size: 16px; }
+  body.customer-page.home-page .service-menu .service-card .price { font-size: 20px; }
+  body.customer-page.home-page .service-menu .service-card .button { min-height: 42px; padding: 8px 12px; font-size: 14px; }
   body.customer-page .service-menu .service-card { gap: 8px 12px; padding-block: 20px; }
   body.customer-page .service-menu .service-card h3 { font-size: 18px; }
   body.customer-page .service-menu .service-card .price { font-size: 18px; }

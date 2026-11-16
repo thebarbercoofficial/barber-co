@@ -87,6 +87,14 @@ async function main() {
           assert.equal(await page.locator('.site-header').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(43, 32, 26)');
           if (width === 2560) {
             await page.setViewportSize({ width, height: 1440 });
+            const homepageScale = await page.evaluate(() => ({
+              heroHeading: getComputedStyle(document.querySelector('.hero h1')).fontSize,
+              shopImage: document.querySelector('.shop-photo img').getBoundingClientRect().height,
+              servicePrice: getComputedStyle(document.querySelector('.service-card .price')).fontSize
+            }));
+            assert.equal(homepageScale.heroHeading, '88px');
+            assert.ok(homepageScale.shopImage >= 850, `Large desktop shop photo should scale with the larger layout: ${homepageScale.shopImage}px`);
+            assert.equal(homepageScale.servicePrice, '26px');
             await page.screenshot({ path: path.join(output, 'homepage-brown-gold-2560.png'), fullPage: true });
             const heights = await page.locator('#app > section').evaluateAll(items => items.map(el => el.getBoundingClientRect().height));
             assert.ok(heights.every(height => height >= 1368), `Large desktop section heights: ${heights}`);

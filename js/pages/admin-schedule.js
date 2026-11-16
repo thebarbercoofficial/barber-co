@@ -264,27 +264,15 @@ async function render() {
     const review = event.target.closest('[data-reschedule-review]');
     if (review) {
       const item = appointments.find(entry => String(entry.id) === review.dataset.rescheduleReview);
-      if (!item || !pendingReschedule(item)) return;
+      if (review.disabled || !item || !pendingReschedule(item)) return;
       const decision = review.dataset.decision;
-      const modal = document.createElement('dialog');
-      modal.className = 'receipt-dialog';
-      modal.setAttribute('aria-labelledby', 'reschedule-review-title');
-      modal.innerHTML = `<form><h3 id="reschedule-review-title">${decision === 'approve' ? 'Approve' : 'Reject'} reschedule?</h3>${rescheduleDetails(item)}<p>${decision === 'approve' ? 'Approval moves the booking to the requested date and time.' : 'Rejection keeps the original booking date and time.'}</p><label>Reason / message to customer (optional)<textarea name="reason" maxlength="500"></textarea></label><p role="alert" data-review-error></p><div class="button-row"><button class="button secondary" type="button" data-close autofocus>Go back</button><button class="button primary" type="submit">Confirm ${decision === 'approve' ? 'approval' : 'rejection'}</button></div></form>`;
-      modal.querySelector('[data-close]').onclick = () => modal.close();
-      modal.addEventListener('close', () => modal.remove());
-      modal.querySelector('form').onsubmit = async event => {
-        event.preventDefault();
-        const button = modal.querySelector('[type="submit"]');
-        if (button.disabled) return;
-        button.disabled = true;
-        try {
-          await saveAppointment(`/admin/appointments/${item.id}/reschedule-review`, { decision, requestedAt: item.rescheduleRequest.requestedAt, reason: modal.querySelector('[name="reason"]').value.trim() });
-          modal.close();
-          toast(decision === 'approve' ? 'Reschedule approved.' : 'Reschedule rejected. Original schedule retained.');
-        } catch (error) { modal.querySelector('[data-review-error]').textContent = error.message; button.disabled = false; }
-      };
-      document.body.append(modal);
-      modal.showModal();
+      const actions = [...document.querySelectorAll('[data-reschedule-review]')].filter(button => button.dataset.rescheduleReview === review.dataset.rescheduleReview);
+      actions.forEach(button => { button.disabled = true; });
+      try {
+        await saveAppointment(`/admin/appointments/${item.id}/reschedule-review`, { decision, requestedAt: item.rescheduleRequest.requestedAt });
+        toast(decision === 'approve' ? 'Reschedule approved.' : 'Reschedule rejected.');
+      } catch (error) { toast(error.message); }
+      finally { actions.forEach(button => { button.disabled = false; }); }
       return;
     }
     const archive = event.target.closest('[data-archive-appointment]');

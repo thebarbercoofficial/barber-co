@@ -78,18 +78,14 @@ async function main() {
           assert.equal(await page.locator('[data-status$=":completed"]').count(), 0);
           assert.equal(await page.locator('[data-reschedule]').count(), 0);
           assert.match(await page.locator('[data-appointment-panel]').innerText(), /Original:[\s\S]*Requested:[\s\S]*Review deadline:[\s\S]*Asia\/Manila/);
-          await page.locator('[data-decision="approve"]').click();
-          await page.getByRole('button', { name: 'Go back', exact: true }).click();
-          assert.equal(writes.length, 0);
           failReview = true;
           await page.locator('[data-decision="reject"]').click();
-          await page.getByRole('button', { name: 'Confirm rejection' }).click();
           await page.getByText('Request changed. Refresh and review again.', { exact: true }).waitFor();
-          assert.equal(await page.getByRole('button', { name: 'Confirm rejection' }).isEnabled(), true);
+          assert.equal(await page.locator('[data-decision="reject"]').isEnabled(), true);
+          assert.equal(await page.locator('dialog').count(), 0, 'Review submits without an extra dialog');
           failReview = false;
-          await page.locator('dialog textarea').fill('Please keep the original time.');
-          await page.getByRole('button', { name: 'Confirm rejection' }).click();
-          await page.waitForFunction(() => !document.querySelector('dialog'));
+          await page.locator('[data-decision="reject"]').click();
+          await page.locator('[data-decision="reject"]').waitFor({ state: 'detached' });
           await page.locator('[data-filter="all"]').click();
           await page.locator('[data-reschedule]').waitFor();
           assert.equal(writes.at(-1).body.requestedAt, request.requestedAt);
@@ -115,8 +111,8 @@ async function main() {
           booking = { ...initial, rescheduleRequest: { ...request } };
           await page.reload();
           await page.locator('[data-decision="approve"]').click();
-          await page.getByRole('button', { name: 'Confirm approval' }).click();
           await page.locator('[data-reschedule]').waitFor();
+          assert.equal(await page.locator('dialog').count(), 0, 'Approval submits in one click');
           assert.equal(booking.rescheduleRequest.status, 'approved');
           assert.equal(writes.at(-1).body.requestedAt, request.requestedAt);
         } else {

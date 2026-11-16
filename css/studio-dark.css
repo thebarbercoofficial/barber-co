@@ -195,3 +195,45 @@
   .workspace-rail-link.is-static { cursor: default; }
   .workspace-rail-link.is-static:hover { background: transparent; }
 }
+
+/* Keep boundaries visible and let content reflow before controls collide. */
+@media screen {
+  .staff-page .workspace { min-width: 0; }
+  .staff-page .workspace :is(section, form, label, .row-main, .form-row, .button-row) { min-width: 0; }
+  .staff-page .workspace :is(input, select, textarea) { max-width: 100%; border: 1px solid #87735c; border-radius: 4px; }
+  .staff-page .workspace :is(input, select, textarea):focus { outline: 2px solid #d9ac68; outline-offset: 2px; }
+  .staff-page .workspace .queue-overview { border: 1px solid #786650; padding: 18px; }
+  .staff-page .workspace :is(.queue-list, .record-list) { border: 1px solid #786650; }
+  .staff-page .workspace .appointment-row { border-bottom: 1px solid #786650; }
+  .staff-page .workspace .appointment-row:last-child { border-bottom: 0; }
+  .staff-page .workspace .panel-heading { border-bottom: 1px solid #685a49; padding-bottom: 14px; gap: 12px; flex-wrap: wrap; }
+  .staff-page .workspace form.panel { border: 1px solid #786650; padding: 22px; border-radius: 6px; }
+  .staff-page [data-logbook-form] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; align-items: start; }
+  .staff-page [data-logbook-form] > :is(.panel-heading, .form-row, .check-row, button) { grid-column: 1 / -1; }
+  .staff-page [data-logbook-form] > label { margin: 0; }
+  .staff-page .workspace .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .staff-page .workspace .button { white-space: normal; overflow-wrap: anywhere; }
+  .staff-page .workspace .queue-barber { overflow-wrap: anywhere; }
+  .staff-page .workspace .contact-inbox-list { border: 1px solid #786650; }
+  .staff-page .workspace .filter-tabs { flex-wrap: wrap; }
+}
+@media screen and (max-width: 1439px) {
+  .staff-page .workspace .queue-list .appointment-row { grid-template-columns: 85px minmax(0, 1fr); }
+  .staff-page .workspace .queue-list :is(.queue-barber, .status-pill) { grid-column: 2; grid-row: auto; justify-self: start; }
+  .staff-page .workspace .queue-list .button-row { grid-column: 1 / -1; grid-row: auto; }
+  .staff-page .workspace-rail { display: block; position: fixed; inset: auto 12px 12px auto; width: auto; max-width: calc(100% - 24px); z-index: 85; padding: 10px 14px; background: #211d1a; border: 1px solid #a17d4d; }
+  .staff-page .workspace-rail > :not(.workspace-rail-link) { display: none; }
+  .staff-page .workspace-rail > .workspace-rail-link { display: flex; min-height: 40px; color: #edc68c; text-decoration: none; }
+  .staff-page .workspace { padding-bottom: 100px; }
+}
+@media screen and (max-width: 680px) {
+  .staff-page [data-logbook-form] { grid-template-columns: minmax(0, 1fr); }
+  .staff-page .workspace form.panel { padding: 16px; }
+  .staff-page .workspace .form-row { grid-template-columns: minmax(0, 1fr); }
+  .staff-page .workspace .list-toolbar > * { width: 100%; max-width: none; flex-basis: 100%; }
+  .staff-page .workspace .queue-overview > .button-row .button { font-size: 14px; min-height: 44px; }
+  .staff-page .staff-header-actions .staff-account { display: none; }
+  .staff-page .staff-header-brand { flex-shrink: 1; }
+  .staff-page .staff-header .brand { white-space: normal; }
+  .staff-page .workspace-heading > small { margin-left: 0; }
+}

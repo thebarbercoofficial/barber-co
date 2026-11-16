@@ -276,7 +276,7 @@ const BarberCo = (() => {
       document.querySelectorAll('a[href]').forEach(link => {
         const url = new URL(link.getAttribute('href'), location.href);
         if (url.origin === location.origin && /\/admin-[a-z-]+\.html$/.test(url.pathname)) {
-          url.searchParams.set('release', 'admin-flow-20261117');
+          url.searchParams.set('release', 'admin-device-20261117');
           link.href = url.href;
         }
       });
@@ -497,7 +497,7 @@ const BarberCo = (() => {
           const service = state.services.find(service => service.id === item.serviceId);
           const barber = state.barbers.find(barber => barber.id === item.barberId);
           const id = item.customer || '';
-          return `<article class="appointment-request"><div class="appointment-request-person"><span class="appointment-request-avatar">${safeText(initials(item.customer || 'Customer'))}</span><div><strong>${safeText(item.customer || 'Customer')}</strong><small>${safeText(service?.name || item.serviceName || 'Appointment')} / ${safeText(barber?.name || item.barberName || 'Assigned barber')}</small></div></div><p>${safeText(item.date)} at ${safeText(timeLabel(item.time))}</p><span class="status-pill pending">${item.rescheduleRequest?.status === 'pending' ? 'Reschedule review' : 'Needs review'}</span><a class="text-action" href="admin-schedule.html?release=admin-flow-20261117&customer=${encodeURIComponent(id)}">Review request ${icon('ArrowUpRight')}</a></article>`;
+          return `<article class="appointment-request"><div class="appointment-request-person"><span class="appointment-request-avatar">${safeText(initials(item.customer || 'Customer'))}</span><div><strong>${safeText(item.customer || 'Customer')}</strong><small>${safeText(service?.name || item.serviceName || 'Appointment')} / ${safeText(barber?.name || item.barberName || 'Assigned barber')}</small></div></div><p>${safeText(item.date)} at ${safeText(timeLabel(item.time))}</p><span class="status-pill pending">${item.rescheduleRequest?.status === 'pending' ? 'Reschedule review' : 'Needs review'}</span><a class="text-action" href="admin-schedule.html?release=admin-device-20261117&customer=${encodeURIComponent(id)}">Review request ${icon('ArrowUpRight')}</a></article>`;
         }).join('') || '<p class="muted">No appointment requests to review.</p>';
       } catch (error) {
         if (list.isConnected && !list.querySelector('.appointment-request')) {

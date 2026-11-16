@@ -63,6 +63,20 @@ async function main() {
       await logbook.goto(`${base}/admin-logbook.html`);
       await tv.goto(`${base}/queue-display.html`);
       await customer.getByRole('textbox', { name: 'Name', exact: true }).fill('QA Customer');
+      const now = new Date();
+      const local = new Date(now.getTime() + 8 * 3600000).toISOString();
+      const reserved = { _id: new ObjectId(), userId: accountB._id, customer: 'Reserved customer', barberId: 'alex', serviceId: 'cut', date: local.slice(0, 10), time: local.slice(11, 16), durationMinutes: 30, status: 'confirmed', graceDeadline: new Date(now.getTime() + 600000), partyMembers: ['Reserved customer'] };
+      database.records.appointments = [reserved];
+      await customer.evaluate(() => refreshWalkinBarbers());
+      assert.equal(await customer.locator('[name="barberId"] option[value="alex"]').evaluate(option => option.disabled), true, 'Overlapping approved appointment greys out the walk-in barber');
+      const blocked = await customer.evaluate(async token => {
+        const response = await fetch('/api/queue/walkin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customer: 'Blocked customer', serviceId: 'cut', barberId: 'alex', walkinToken: token }) });
+        return response.status;
+      }, qr.token);
+      assert.equal(blocked, 409, 'Server rejects a reserved barber even if the dropdown is bypassed');
+      database.records.appointments = [];
+      await customer.evaluate(() => refreshWalkinBarbers());
+      await customer.locator('[name="barberId"]').selectOption('alex');
       await customer.getByRole('button', { name: 'Get queue number', exact: true }).click();
       await customer.waitForURL(/ticket=/);
       const firstId = new URL(customer.url()).searchParams.get('ticket');
@@ -73,7 +87,8 @@ async function main() {
       await customer.reload();
       await customer.getByRole('button', { name: 'Your ticket is already in the queue', exact: true }).waitFor();
       assert.equal(database.records.queue.length, 1);
-      assert.equal(await customer.getByRole('button', { name: 'Cancel my place', exact: true }).isVisible(), true, 'The QR customer can cancel their own waiting ticket');
+      await customer.getByRole('button', { name: 'Cancel my place', exact: true }).waitFor();
+      assert.equal(database.records.queue[0].barberId, 'alex', 'Chosen available barber is saved');
       const ticketOnlyCancel = await customer.evaluate(async id => (await fetch(`/api/queue/ticket/${id}/cancel`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, firstId);
       assert.equal(ticketOnlyCancel, 403, 'A public ticket URL alone cannot cancel the ticket');
       let cancelAttempts = 0;

@@ -12,6 +12,36 @@ let cancelBusy = false;
 const walkinToken = params.get('walkinToken') || '';
 let walkinAccess = false;
 let walkinAccessExpiresAt = 0;
+let barberAvailabilityReady = false;
+let barberAvailabilityRequest = 0;
+async function refreshWalkinBarbers() {
+  const select = document.querySelector('[data-walkin] [name="barberId"]');
+  if (!select || !walkinAccess || joinBusy) return;
+  const request = ++barberAvailabilityRequest;
+  barberAvailabilityReady = false;
+  select.disabled = true;
+  try {
+    const serviceId = document.querySelector('[data-walkin] [name="serviceId"]').value;
+    const payload = await api(`/queue/barber-availability?${new URLSearchParams({ serviceId })}`, { cache: 'no-store' });
+    if (request !== barberAvailabilityRequest) return;
+    const unavailable = new Set(payload.unavailableBarberIds || []);
+    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    const previous = select.value;
+    select.replaceChildren(new Option('Any available barber', 'any'));
+    for (const barber of barbers.filter(item => item.status !== 'fired')) {
+      const leave = barber.status === 'on-leave' || Boolean(barber.leaveFrom && barber.leaveTo && today >= barber.leaveFrom && today <= barber.leaveTo);
+      const blocked = leave || barber.status !== 'active' || unavailable.has(barber.id) || unavailable.has(barber.mongoId);
+      const option = new Option(`${barber.name}${leave ? ' - on leave' : blocked ? ' - unavailable' : ''}`, barber.id);
+      option.disabled = blocked;
+      select.add(option);
+    }
+    if ([...select.options].some(option => option.value === previous && !option.disabled)) select.value = previous;
+    select.disabled = false;
+    barberAvailabilityReady = true;
+  } catch {
+    if (request === barberAvailabilityRequest) document.querySelector('[data-walkin-error]').textContent = 'Barber availability could not load. Please retry or ask the counter.';
+  }
+}
 
 function updateJoinState(active, message = '') {
   const button = document.querySelector('[data-walkin] [type="submit"]');
@@ -89,6 +119,7 @@ async function render() {
           <div data-walkin-fields>
           <label>Name<input name="customer" autocomplete="off" required placeholder="Your name"></label>
           <label>Service<select name="serviceId" required>${serviceOptions()}</select></label>
+          <label>Preferred barber<select name="barberId" disabled><option value="any">Checking availability...</option></select></label>
           </div>
           <button class="button primary full" type="submit">Get queue number</button>
           <p role="alert" data-walkin-error></p>
@@ -105,10 +136,21 @@ async function render() {
     </section>
   `;
 
+  document.querySelector('[data-walkin] [name="serviceId"]').addEventListener('change', refreshWalkinBarbers);
+  refreshWalkinBarbers();
+  window.setInterval(refreshWalkinBarbers, 15000);
   document.querySelector("[data-walkin]").addEventListener("submit", async (event) => {
     event.preventDefault();
     const button = event.target.querySelector('[type="submit"]');
     if (button.disabled) return;
+    const chosenBarber = event.target.elements.barberId.value;
+    button.disabled = true;
+    await refreshWalkinBarbers();
+    if (!barberAvailabilityReady) { button.disabled = false; return; }
+    if (chosenBarber !== event.target.elements.barberId.value) {
+      button.disabled = false;
+      return toast('That barber is no longer available. Choose another barber.');
+    }
     if (!walkinAccess || Date.now() >= walkinAccessExpiresAt) {
       walkinAccess = false;
       updateJoinState(false, 'This QR has expired. Scan the current QR at the shop.');
@@ -121,7 +163,7 @@ async function render() {
     try {
       const payload = await api("/queue/walkin", {
         method: "POST",
-        body: JSON.stringify({ customer: data.get("customer"), serviceId: data.get("serviceId"), walkinToken })
+        body: JSON.stringify({ customer: data.get("customer"), serviceId: data.get("serviceId"), barberId: data.get('barberId'), walkinToken })
       });
       try {
         localStorage.setItem(queueStorageKey('barberCoQueueTicketId'), payload.ticket.id);

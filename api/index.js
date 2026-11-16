@@ -1419,6 +1419,14 @@ async function handler(req, res, prepared = {}) {
     if (req.method === 'GET') return send(res, 200, { valid: true, expiresAt: new Date(access.exp * 1000).toISOString() });
   }
 
+  if (req.method === 'GET' && path === '/queue/barber-availability') {
+    const serviceId = String(requestUrl.searchParams.get('serviceId') || '');
+    const service = await database.collection('services').findOne({ slug: serviceId, active: { $ne: false } });
+    if (!service) return send(res, 400, { error: 'Choose an available service.' });
+    const local = new Date(Date.now() + 8 * 3600000).toISOString();
+    return send(res, 200, { unavailableBarberIds: await unavailableBarbers(database, local.slice(0, 10), local.slice(11, 16), serviceDuration(service.duration) + 1) });
+  }
+
   if (req.method === "POST" && path === "/queue/walkin") {
     let account = null;
     if (req.headers.authorization) {
@@ -1432,11 +1440,20 @@ async function handler(req, res, prepared = {}) {
     const contact = { contactEmail: '', emailConsent: false };
     const service = body.serviceId ? await database.collection("services").findOne({ $or: [{ slug: body.serviceId }, ...(ObjectId.isValid(body.serviceId) ? [{ _id: new ObjectId(body.serviceId) }] : [])], active: { $ne: false } }) : null;
     if (body.serviceId && !service) return send(res, 400, { error: "Choose an available service." });
+    let walkinBarberId = String(body.barberId || '');
+    if (walkinBarberId && walkinBarberId !== 'any') {
+      const barber = await database.collection('barbers').findOne({ $or: [{ slug: walkinBarberId }, ...(ObjectId.isValid(walkinBarberId) ? [{ _id: new ObjectId(walkinBarberId) }] : [])], status: 'active' });
+      if (!barber) return send(res, 409, { error: 'That barber is unavailable. Choose another barber.' });
+      const local = new Date(Date.now() + 8 * 3600000).toISOString();
+      const unavailable = await unavailableBarbers(database, local.slice(0, 10), local.slice(11, 16), serviceDuration(service?.duration) + 1);
+      if (unavailable.includes(barber.slug) || unavailable.includes(String(barber._id))) return send(res, 409, { error: 'That barber is unavailable or reserved for a booking. Choose another barber.' });
+      walkinBarberId = barber.slug || String(barber._id);
+    } else walkinBarberId = '';
     const waiting = await database.collection("queue").countDocuments({ status: { $in: ["waiting", "serving"] } });
     const queueNumber = await nextQueueNumber(database);
     const cancelToken = require('node:crypto').randomBytes(32).toString('base64url');
     const cancelTokenHash = require('node:crypto').createHash('sha256').update(cancelToken).digest('hex');
-    const ticket = { _id: new ObjectId(), customer, phone: "", ...contact, serviceId: service?.slug || "", barberId: "", cutName: service?.name || "To be assigned", price: Number(service?.price || 0), waitMinutes: waiting * 30, source: "shop-qr", queueNumber, status: "waiting", paid: false, cancelTokenHash, createdAt: new Date() };
+    const ticket = { _id: new ObjectId(), customer, phone: "", ...contact, serviceId: service?.slug || "", barberId: walkinBarberId, cutName: service?.name || "To be assigned", price: Number(service?.price || 0), waitMinutes: waiting * 30, source: "shop-qr", queueNumber, status: "waiting", paid: false, cancelTokenHash, createdAt: new Date() };
     Object.assign(ticket, { guestKey, ...(account ? { userId: account._id } : {}) });
     await database.collection("queue").insertOne(ticket);
     return send(res, 201, { ticket: publicQueueTicket(ticket), cancelToken, emailUpdatesEnabled: contact.emailConsent });

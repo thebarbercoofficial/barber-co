@@ -126,3 +126,9 @@
 @media print {
   body.staff-page { color-scheme: light; --ink: #222; --muted: #666; --line: #ddd; }
 }
+/* Keep operational records readable without making every field bold. */
+.staff-page .row-main small, .staff-page .appointment-date small, .staff-page td { font-weight: 400; }
+.staff-page .record-list > .appointment-row { padding-block: 12px; min-height: 0; }
+.staff-page .status-pill.disapproved { background: #492d35; color: #ffd5d5; }
+.staff-page select option:disabled { color: #919191; background: #302b26; }
+.staff-page .status-pill small { display: block; font-weight: 400; margin-top: 4px; }

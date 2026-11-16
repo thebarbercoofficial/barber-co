@@ -1,3 +1,4 @@
+const { updateWithNotice } = require('../lib/notification-outbox');
 const { MongoClient, ObjectId } = require("mongodb");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -8,6 +9,7 @@ const security = require('../lib/account-security');
 const messaging = require('../lib/notifications');
 const { validateReceipt } = require('../lib/receipt');
 const bookingGuards = require('../lib/booking-guards');
+const { onLeave, leaveDates } = require('../lib/barber-leave');
 const allowUnverified = process.env.ALLOW_UNVERIFIED_ACCOUNTS === 'true';
 const nonRefundablePolicyVersion = '2026-11-15';
 const frontDesk = require('../lib/front-desk')({ withAppointmentMutation, notify: (...args) => messaging.notify(...args), serviceDuration, nextQueueNumber });
@@ -89,17 +91,17 @@ async function sweepRescheduleRequests(database, now = new Date()) {
     try {
       await withAppointmentMutation(database, String(current._id), async () => {
         if (current.rescheduleRequest.initiatedBy === 'staff') {
-          await database.collection('appointments').updateOne({ _id: current._id, rescheduleRequest: current.rescheduleRequest }, { $set: { 'rescheduleRequest.status': 'expired', updatedAt: now } });
+          await updateWithNotice(database, 'appointments', { _id: current._id, rescheduleRequest: current.rescheduleRequest }, { $set: { 'rescheduleRequest.status': 'expired', updatedAt: now } });
           return;
         }
         // Keep the request pending until side effects finish so a failed sweep can retry.
         if (current.status !== 'cancelled') {
-          const changed = await database.collection('appointments').updateOne({ _id: current._id, status: current.status, date: current.date, time: current.time, rescheduleRequest: current.rescheduleRequest }, { $set: { status: 'cancelled', cancelledBy: 'reschedule-expiration', noRefund: true, updatedAt: now } });
+          const changed = await updateWithNotice(database, 'appointments', { _id: current._id, status: current.status, date: current.date, time: current.time, rescheduleRequest: current.rescheduleRequest }, { $set: { status: 'cancelled', cancelledBy: 'reschedule-expiration', noRefund: true, updatedAt: now } });
           if (!changed.modifiedCount) return;
         }
         await database.collection('appointmentSlots').deleteMany({ appointmentId: String(current._id) });
         await messaging.notify(database, current.userId, `Your Barber Co booking was cancelled because the reschedule request was not reviewed before its deadline.${partyNotice(current)} No refund will be issued.`, `appointment:${current._id}:reschedule-expired`);
-        await database.collection('appointments').updateOne({ _id: current._id, status: 'cancelled', cancelledBy: 'reschedule-expiration', rescheduleRequest: current.rescheduleRequest }, { $set: { 'rescheduleRequest.status': 'expired' } });
+        await updateWithNotice(database, 'appointments', { _id: current._id, status: 'cancelled', cancelledBy: 'reschedule-expiration', rescheduleRequest: current.rescheduleRequest }, { $set: { 'rescheduleRequest.status': 'expired' } });
       });
     } catch (error) {
       if (error.status !== 409) failure ||= error;
@@ -229,6 +231,7 @@ async function unavailableBarbers(database, date, time, durationMinutes, exclude
     }
   }
   const roster = await database.collection('barbers').find().toArray();
+  for (const barber of roster) if (onLeave(barber, date)) unavailable.push(barber.slug, String(barber._id));
   for (const barber of roster) if ([barber.slug, String(barber._id)].some(id => unavailable.includes(id))) unavailable.push(barber.slug, String(barber._id));
   return [...new Set(unavailable.filter(Boolean))];
 }
@@ -306,7 +309,14 @@ function readBody(req) {
 
 async function db() {
   if (!mongoUri) throw new Error("MONGODB_URI is not configured");
-  if (!clientPromise) clientPromise = new MongoClient(mongoUri).connect();
+  if (!clientPromise) {
+    const client = new MongoClient(mongoUri);
+    clientPromise = client.connect().catch(async (error) => {
+      clientPromise = null;
+      await client.close().catch(() => {});
+      throw error;
+    });
+  }
   const client = await clientPromise;
   const database = client.db(dbName);
   await ensureSeed(database);
@@ -367,7 +377,7 @@ async function ensureSeed(database) {
           { upsert: true }
         );
       }
-    })();
+    })().catch(error => { ensureSeed.promise = null; throw error; });
   }
   return ensureSeed.promise;
 }
@@ -379,7 +389,8 @@ function publicUser(user) {
 
 function normalizeDoc(doc) {
   if (!doc) return null;
-  return { ...doc, id: doc.slug || String(doc._id), mongoId: String(doc._id), _id: undefined };
+  const { notificationOutbox, ...publicDoc } = doc;
+  return { ...publicDoc, id: doc.slug || String(doc._id), mongoId: String(doc._id), _id: undefined };
 }
 
 function queueContact(body) {
@@ -528,9 +539,28 @@ async function handler(req, res) {
     return send(res, 201, { message: emailAccepted ? 'Your message was saved to the staff inbox. An email alert was also accepted by the provider.' : 'Your message was saved to the staff inbox. The email alert is unavailable, but staff can still read it on the website.' });
   }
 
+  if (req.method === 'POST' && path === '/payments/recovery') {
+    const user = await requireUser(req, database);
+    requireBookingEligibility(user);
+    const paymentProof = String(body.paymentProof || '');
+    await validateReceipt(paymentProof);
+    const reference = String(body.reference || '').trim().slice(0, 120);
+    if (!reference) return send(res, 400, { error: 'Enter the wallet transaction reference.' });
+    const _id = new ObjectId(security.digest(`payment-recovery:${user._id}:${reference}`).slice(0, 24));
+    if (!await database.collection('contactMessages').findOne({ _id }) && await database.collection('contactMessages').countDocuments({ userId: user._id, hasPaymentProof: true, createdAt: { $gt: new Date(Date.now() - 86400000) } }) >= 5) return send(res, 429, { error: 'You have already sent five payment recovery cases today. Contact the shop for further assistance.' });
+    const contact = { _id, userId: user._id, name: user.name, email: user.email, message: `PAYMENT RECOVERY - not a confirmed reservation. Transaction reference: ${reference}. Requested schedule: ${String(body.date || '').slice(0, 10)} ${String(body.time || '').slice(0, 5)}. Please verify the actual wallet transfer and contact the customer before arranging a booking or manual refund.`, paymentProof, hasPaymentProof: true, status: 'new', createdAt: new Date() };
+    await database.collection('contactMessages').updateOne({ _id }, { $setOnInsert: contact }, { upsert: true });
+    return send(res, 201, { message: 'Payment proof saved to the staff inbox. No reservation or automatic refund has been made. Do not pay again.', reference: String(_id) });
+  }
+  if (req.method === 'GET' && /^\/admin\/contacts\/[a-f0-9]{24}\/payment-proof$/.test(path)) {
+    await requireRole(req, database, ['admin', 'moderator']);
+    const contact = await database.collection('contactMessages').findOne({ _id: new ObjectId(path.split('/')[3]) });
+    if (!contact?.paymentProof) return send(res, 404, { error: 'No proof found.' });
+    return send(res, 200, { paymentProof: contact.paymentProof });
+  }
   if (req.method === 'GET' && path === '/admin/contacts') {
     await requireRole(req, database, ['admin', 'moderator']);
-    const contacts = await database.collection('contactMessages').find({ archived: requestUrl.searchParams.get('archived') === 'true' ? true : { $ne: true } }, { projection: { name: 1, email: 1, message: 1, status: 1, createdAt: 1, archived: 1 } }).sort({ createdAt: -1 }).limit(100).toArray();
+    const contacts = await database.collection('contactMessages').find({ archived: requestUrl.searchParams.get('archived') === 'true' ? true : { $ne: true } }, { projection: { name: 1, email: 1, message: 1, status: 1, createdAt: 1, archived: 1, hasPaymentProof: 1 } }).sort({ createdAt: -1 }).limit(100).toArray();
     const replies = await database.collection('contactReplies').find({ contactId: { $in: contacts.map((item) => String(item._id)) } }, { projection: { contactId: 1, message: 1, status: 1, createdAt: 1 } }).sort({ createdAt: 1 }).toArray();
     contacts.forEach((contact) => { contact.replies = replies.filter((reply) => reply.contactId === String(contact._id)); });
     return send(res, 200, { contacts });
@@ -575,7 +605,7 @@ async function handler(req, res) {
     const collection = database.collection(kind === 'contacts' ? 'contactMessages' : 'appointments');
     const record = await collection.findOne({ _id: new ObjectId(id) });
     if (!record) return send(res, 404, { error: 'Record not found.' });
-    if (kind === 'appointments' && !['completed', 'cancelled'].includes(record.status)) return send(res, 409, { error: 'Only completed or cancelled appointments can be archived.' });
+    if (kind === 'appointments' && !['completed', 'cancelled', 'disapproved'].includes(record.status)) return send(res, 409, { error: 'Only completed, cancelled or disapproved appointments can be archived.' });
     await collection.updateOne({ _id: record._id }, { $set: { archived: body.archived, archivedBy: actor._id, archivedAt: new Date() } });
     return send(res, 200, { ok: true });
   }
@@ -1017,8 +1047,19 @@ async function handler(req, res) {
     await requireRole(req, database, ["admin"]);
     const id = path.split("/").pop();
     if (!ObjectId.isValid(id)) return send(res, 400, { error: 'Choose a valid barber.' });
+    const leave = req.method === 'PATCH' && (body.leaveFrom !== undefined || body.leaveTo !== undefined) ? leaveDates(body) : null;
+    if (req.method === 'DELETE' || req.method === 'PATCH' && (['fired', 'on-leave'].includes(body.status) || leave?.leaveFrom)) {
+      const barber = await database.collection('barbers').findOne({ _id: new ObjectId(id) });
+      if (!barber) return send(res, 404, { error: 'Barber not found.' });
+      const ids = [id, barber.slug].filter(Boolean);
+      const bookings = await database.collection('appointments').find({ barberId: { $in: ids }, status: { $in: ['pending', 'confirmed'] } }).toArray();
+      const unresolved = bookings.some(item => (!leave?.leaveFrom || item.date >= leave.leaveFrom && item.date <= leave.leaveTo) && new Date(`${item.date}T${item.time}:00+08:00`).getTime() + Number(item.durationMinutes || 30) * 60000 > Date.now());
+      const queued = await database.collection('queue').findOne({ barberId: { $in: ids }, status: { $in: ['waiting', 'serving'] } });
+      const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+      if (unresolved || queued && (!leave?.leaveFrom || today >= leave.leaveFrom && today <= leave.leaveTo)) return send(res, 409, { error: 'Resolve this barber\'s bookings and queue tickets during the affected dates first. Rescheduling requires customer approval.' });
+    }
     if (req.method === "PATCH") {
-      const update = { ...body, updatedAt: new Date() };
+      const update = { ...(body.status && ['active', 'on-leave'].includes(body.status) ? { status: body.status } : {}), ...(leave || {}), updatedAt: new Date() };
       await database.collection("barbers").updateOne({ _id: new ObjectId(id) }, { $set: update });
       return send(res, 200, { ok: true });
     }
@@ -1030,6 +1071,18 @@ async function handler(req, res) {
     }
   }
 
+  if (req.method === 'POST' && path === '/checkout/validate') {
+    const user = await requireUser(req, database);
+    const hold = ObjectId.isValid(body.holdId) ? await database.collection('appointmentHolds').findOne({ _id: new ObjectId(body.holdId), userId: user._id, expiresAt: { $gt: new Date() } }) : null;
+    if (!hold) return send(res, 409, { error: 'Checkout expired. Do not transfer money. Start a new booking, or submit payment recovery if you already paid.' });
+    const settings = mergedSettings(await database.collection('settings').findOne({ _id: 'shop' }));
+    const service = await database.collection('services').findOne({ $or: [{ slug: hold.serviceId }, ...(ObjectId.isValid(hold.serviceId) ? [{ _id: new ObjectId(hold.serviceId) }] : [])], active: { $ne: false } });
+    if (!service || !paymentConfigured(settings) || settings.paymentRevision !== body.paymentRevision) return send(res, 409, { error: 'Payment details changed. Do not pay using this checkout. Start again or submit payment recovery.' });
+    const quote = partyQuote(hold, user, service, settings);
+    if (quote.total !== hold.total || quote.durationMinutes !== hold.durationMinutes) return send(res, 409, { error: 'The service quote changed. Start again or submit payment recovery if already paid.' });
+    bookingGuards.requireFuture(hold.date, hold.time);
+    return send(res, 200, { valid: true });
+  }
   if (req.method === "POST" && path === "/appointments") {
     const user = await requireUser(req, database);
     if (body.nonRefundableAccepted !== true) return send(res, 400, { error: 'Accept the non-refundable booking policy before booking.' });
@@ -1162,7 +1215,7 @@ async function handler(req, res) {
       revision['rescheduleRequest.expiresAt'] = { $gt: new Date() };
       if (body.decision === 'reject') {
         const rescheduleRequest = { ...current.rescheduleRequest, status: 'rejected', reviewedAt: new Date(), reason: staffNote };
-        const changed = await database.collection('appointments').updateOne(revision, { $set: { rescheduleRequest, updatedAt: new Date() } });
+        const changed = await updateWithNotice(database, 'appointments', revision, { $set: { rescheduleRequest, updatedAt: new Date() } });
         if (!changed.modifiedCount) return send(res, 409, { error: 'This appointment changed. Refresh and try again.' });
         await messaging.notify(database, current.userId, `Your reschedule request was rejected. Your original booking remains ${current.date} at ${current.time}.${partyNotice(current)}${staffNote ? ` Reason: ${staffNote}` : ''}`, `appointment:${id}:reschedule-rejected:${new Date(current.rescheduleRequest.requestedAt).toISOString()}`);
         return send(res, 200, { appointment: normalizeDoc({ ...current, rescheduleRequest }) });
@@ -1188,7 +1241,7 @@ async function handler(req, res) {
     if (!review) {
       const requestedAt = new Date(Math.max(Date.now(), (new Date(current.rescheduleRequest?.requestedAt).getTime() || 0) + 1));
       const rescheduleRequest = { date, time, originalDate: current.date, originalTime: current.time, requestedAt, initiatedBy: customerRequest ? 'customer' : 'staff', reason: staffNote, status: 'pending', expiresAt: rescheduleDeadline(current, { date, time }) };
-      const changed = await database.collection('appointments').updateOne(revision, { $set: { rescheduleRequest, updatedAt: new Date() } });
+      const changed = await updateWithNotice(database, 'appointments', revision, { $set: { rescheduleRequest, updatedAt: new Date() } });
       if (!changed.modifiedCount) return send(res, 409, { error: 'This appointment changed. Refresh and try again.' });
       if (!customerRequest) await messaging.notify(database, current.userId, `The shop proposes moving your booking to ${date} at ${time}. Open My bookings to accept or keep your original schedule (${current.date} at ${current.time}). Reason: ${staffNote}`, `appointment:${id}:reschedule-proposed:${requestedAt.toISOString()}`);
       return send(res, 200, { appointment: normalizeDoc({ ...current, rescheduleRequest }) });
@@ -1202,7 +1255,7 @@ async function handler(req, res) {
     try {
       if (extraSlots.length) await database.collection('appointmentSlots').insertMany(extraSlots, { ordered: true });
       if (review) revision['rescheduleRequest.expiresAt'] = { $gt: new Date() };
-      const changed = await database.collection('appointments').updateOne(revision, { $set: { date, time, ...(current.status === 'confirmed' ? { graceDeadline: new Date(frontDesk.startAt({ date, time }).getTime() + (current.gracePeriodMinutes ?? frontDesk.grace(settings)) * 60000) } : {}), ...(rescheduleRequest ? { rescheduleRequest } : {}), ...(staffNote ? { staffNote } : {}), updatedAt: new Date() } });
+      const changed = await updateWithNotice(database, 'appointments', revision, { $set: { date, time, ...(current.status === 'confirmed' ? { graceDeadline: new Date(frontDesk.startAt({ date, time }).getTime() + (current.gracePeriodMinutes ?? frontDesk.grace(settings)) * 60000) } : {}), ...(rescheduleRequest ? { rescheduleRequest } : {}), ...(staffNote ? { staffNote } : {}), updatedAt: new Date() } });
       if (!changed.modifiedCount) throw Object.assign(new Error('This appointment changed. Refresh and try again.'), { status: 409 });
       await database.collection('appointmentSlots').updateMany({ appointmentId: tempId }, { $set: { appointmentId: id }, $unset: { expiresAt: '' } });
       await database.collection('appointmentSlots').deleteMany({ appointmentId: id, _id: { $nin: newSlots } });
@@ -1222,7 +1275,7 @@ async function handler(req, res) {
     if (!current) return send(res, 404, { error: 'Appointment not found.' });
     if (!['pending', 'confirmed'].includes(current.status) || new Date(`${current.date}T${current.time}:00+08:00`).getTime() <= Date.now()) return send(res, 409, { error: 'Only upcoming active appointments can be cancelled.' });
     if (body.acceptNoRefund !== true) return send(res, 400, { error: 'Confirm that cancellation does not include a refund.' });
-    const changed = await database.collection('appointments').updateOne({ _id: current._id, status: current.status, date: current.date, time: current.time }, { $set: { status: 'cancelled', cancelledBy: 'customer', noRefund: true, updatedAt: new Date() } });
+    const changed = await updateWithNotice(database, 'appointments', { _id: current._id, status: current.status, date: current.date, time: current.time }, { $set: { status: 'cancelled', cancelledBy: 'customer', noRefund: true, updatedAt: new Date() } });
     if (!changed.modifiedCount) return send(res, 409, { error: 'This appointment changed. Refresh and try again.' });
     await database.collection('appointmentSlots').deleteMany({ appointmentId: id });
     await database.collection('queue').updateMany({ appointmentId: id, status: { $in: ['waiting', 'serving'] } }, { $set: { status: 'cancelled', updatedAt: new Date() } });
@@ -1239,17 +1292,19 @@ async function handler(req, res) {
   if (path.startsWith("/admin/appointments/") && req.method === "PATCH") {
     await requireRole(req, database, ["admin", "moderator"]);
     const id = path.split("/").pop();
-    const allowed = ["pending", "confirmed", "completed", "cancelled"];
+    const allowed = ["pending", "confirmed", "completed", "cancelled", "disapproved"];
     if (!ObjectId.isValid(id) || !allowed.includes(body.status)) return send(res, 400, { error: "Choose a valid appointment status." });
     const current = await database.collection('appointments').findOne({ _id: new ObjectId(id) });
     if (!current) return send(res, 404, { error: 'Appointment not found.' });
     const update = { status: body.status, updatedAt: new Date() };
     if (body.status === 'cancelled' && current.status === 'pending' && !current.demoPayment) Object.assign(update, { refundStatus: 'review-required', noRefund: false, cancelledBy: 'shop' });
+    if (body.status === 'disapproved' && current.status === 'pending') Object.assign(update, { ...(!current.demoPayment ? { refundStatus: 'review-required', noRefund: false } : {}), cancelledBy: 'shop' });
     if (current.rescheduleRequest?.status === 'pending' && ['confirmed', 'completed'].includes(body.status)) return send(res, 409, { error: 'Review the pending reschedule request first.' });
-    const staffNote = body.status === 'cancelled' ? String(body.reason || '').trim().slice(0, 500) : '';
+    const staffNote = ['cancelled', 'disapproved'].includes(body.status) ? String(body.reason || '').trim().slice(0, 500) : '';
+    if (body.status === 'disapproved' && !staffNote) return send(res, 400, { error: 'Enter a reason for disapproving the request.' });
     if (staffNote) update.staffNote = staffNote;
     if (current.status === body.status) return send(res, 200, { appointment: normalizeDoc(current) });
-    const transitions = { pending: ['confirmed', 'cancelled'], confirmed: ['completed', 'cancelled'], completed: [], cancelled: [] };
+    const transitions = { pending: ['confirmed', 'cancelled', 'disapproved'], confirmed: ['completed', 'cancelled'], completed: [], cancelled: [], disapproved: [] };
     if (!transitions[current.status]?.includes(body.status)) return send(res, 409, { error: 'This appointment has already changed. Refresh before proceeding.' });
     if (["confirmed", "completed"].includes(body.status) && !current.demoPayment) {
       update.paid = true;
@@ -1275,13 +1330,13 @@ async function handler(req, res) {
       update.gracePeriodMinutes = frontDesk.grace(settings);
     }
     try {
-      const changed = await database.collection("appointments").updateOne({ _id: new ObjectId(id), status: current.status, date: current.date, time: current.time, rescheduleRequest: current.rescheduleRequest || { $exists: false } }, { $set: update });
+      const changed = await updateWithNotice(database, "appointments", { _id: new ObjectId(id), status: current.status, date: current.date, time: current.time, rescheduleRequest: current.rescheduleRequest || { $exists: false } }, { $set: update });
       if (changed?.modifiedCount === 0) throw Object.assign(new Error('This appointment changed while you were reviewing it. Refresh and try again.'), { status: 409 });
     } catch (error) {
       if (acquiring) await database.collection('appointmentSlots').deleteMany({ appointmentId: id });
       throw error;
     }
-    if (["completed", "cancelled"].includes(body.status)) {
+    if (["completed", "cancelled", "disapproved"].includes(body.status)) {
       await database.collection("appointmentSlots").deleteMany({ appointmentId: id });
       await database.collection('queue').updateMany({ appointmentId: id, status: { $in: ['waiting', 'serving'] } }, { $set: { status: body.status === 'completed' ? 'done' : 'cancelled', updatedAt: new Date() } });
     }
@@ -1383,7 +1438,7 @@ async function handler(req, res) {
     if (customer != null) update.customer = customer;
     if (body.status === "serving") update.calledAt = new Date();
     if (body.status === "done" && ticket.source !== 'appointment') Object.assign(update, { paid: true, paidAt: new Date() });
-    await database.collection("queue").updateOne({ _id: new ObjectId(id) }, { $set: update });
+    await updateWithNotice(database, "queue", { _id: new ObjectId(id) }, { $set: update });
     if (['done', 'cancelled'].includes(body.status)) await frontDesk.complete(database, ticket, body.status);
     if (body.status === 'serving') await messaging.notify(database, ticket.userId, `It is your turn at The Barber Co. Queue #${ticket.queueNumber}. Please approach the counter.`, `queue:${id}:serving`, { queueTicketId: ticket._id });
     if (body.status === 'cancelled') await messaging.notify(database, ticket.userId, `Your Barber Co queue ticket #${ticket.queueNumber} was cancelled. Contact the counter if this is unexpected.`, `queue:${id}:cancelled`, { queueTicketId: ticket._id });
@@ -1399,11 +1454,11 @@ async function handler(req, res) {
     if (ticket.status === 'done') return send(res, 200, { ok: true });
     if (ticket.status === 'cancelled') return send(res, 409, { error: 'A cancelled queue ticket cannot be completed.' });
     if (ticket.source === 'appointment') {
-      await database.collection('queue').updateOne({ _id: ticket._id }, { $set: { status: 'done', updatedAt: new Date() } });
+      await updateWithNotice(database, 'queue', { _id: ticket._id }, { $set: { status: 'done', updatedAt: new Date() } });
       await frontDesk.complete(database, ticket, 'done');
       return send(res, 200, { ok: true });
     }
-    await database.collection("queue").updateOne({ _id: new ObjectId(id), status: ticket.status }, { $set: { status: "done", paid: true, paidAt: new Date(), updatedAt: new Date() } });
+    await updateWithNotice(database, "queue", { _id: new ObjectId(id), status: ticket.status }, { $set: { status: "done", paid: true, paidAt: new Date(), updatedAt: new Date() } });
     return send(res, 200, { ok: true });
   }
 
@@ -1439,7 +1494,7 @@ module.exports = async (req, res) => {
       await sweepRescheduleRequests(database);
       await frontDesk.sweep(database);
       await withAppointmentMutation(database, 'booking-capacity', () => withAppointmentMutation(database, mutation[1], () => handler(req, res)));
-    } else if (req.method === 'POST' && ['/appointments', '/appointment-holds', '/queue/walkin', '/admin/queue/next'].includes(path) || req.method === 'PATCH' && path.startsWith('/admin/queue/')) {
+    } else if (req.method === 'POST' && ['/appointments', '/appointment-holds', '/queue/walkin', '/admin/queue/next'].includes(path) || req.method === 'PATCH' && path.startsWith('/admin/queue/') || ['PATCH', 'DELETE'].includes(req.method) && path.startsWith('/admin/barbers/')) {
       const database = await db();
       await withAppointmentMutation(database, 'booking-capacity', () => handler(req, res));
     } else await handler(req, res);
@@ -1450,3 +1505,9 @@ module.exports = async (req, res) => {
 };
 module.exports.sweepRescheduleRequests = sweepRescheduleRequests;
 module.exports.sweepAttendance = async () => frontDesk.sweep(await db());
+module.exports.sweepNotifications = async () => {
+  const database = await db();
+  await require('../lib/notification-outbox').flush(database, messaging.notify);
+  await messaging.retryPending(database);
+};
+module.exports.checkReadiness = async () => (await db()).command({ ping: 1 });

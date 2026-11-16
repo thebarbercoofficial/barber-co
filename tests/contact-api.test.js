@@ -136,8 +136,11 @@ async function main() {
   assert.equal(booking.rescheduleRequest.status, 'pending');
   assert.equal((await request({ method: 'PATCH', path: `/api/admin/appointments/${booking._id}/archive`, role: 'admin', body: { archived: true } })).status, 409);
   const staffPath = `/api/admin/appointments/${booking._id}`;
+  assert.equal((await request({ method: 'PATCH', path: `${staffPath}/reschedule`, role: 'admin', body: { date: '2099-11-05', time: '14:00', reason: 'Barber unavailable' } })).status, 409, 'Staff cannot override a pending customer request');
+  assert.equal((await request({ method: 'PATCH', path: `${staffPath}/reschedule-review`, role: 'admin', body: { decision: 'reject', requestedAt: new Date(booking.rescheduleRequest.requestedAt).toISOString(), reason: 'Barber unavailable' } })).status, 200);
   assert.equal((await request({ method: 'PATCH', path: `${staffPath}/reschedule`, role: 'admin', body: { date: '2099-11-05', time: '14:00', reason: 'Barber unavailable' } })).status, 200);
-  assert.equal(booking.staffNote, 'Barber unavailable');
+  assert.equal(booking.rescheduleRequest.reason, 'Barber unavailable');
+  assert.equal(booking.date, '2099-11-03', 'Staff proposal keeps original schedule until customer approves');
   assert.ok(database.records.notifications.some(item => item.message.includes('Reason: Barber unavailable')));
   assert.equal((await request({ method: 'PATCH', path: `${customerPath}/cancel`, role: 'customer', body: { acceptNoRefund: true } })).status, 200);
   assert.equal(booking.status, 'cancelled');

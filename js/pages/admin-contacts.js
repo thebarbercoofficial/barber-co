@@ -46,6 +46,7 @@ function render(contacts) {
     <article class="contact-inbox-item">
       <header><div><h2>${escapeHtml(contact.name)}</h2><a href="mailto:${encodeURIComponent(contact.email)}">${escapeHtml(contact.email)}</a></div><time datetime="${escapeHtml(contact.createdAt)}">${escapeHtml(dateText(contact.createdAt))}</time></header>
       <p>${escapeHtml(contact.message)}</p>
+      ${contact.hasPaymentProof ? `<button class="button secondary" type="button" data-recovery-proof="${escapeHtml(contact._id)}">View payment proof</button>` : ''}
       ${(contact.replies || []).map((reply) => `<div class="contact-reply"><strong>Staff reply</strong><p>${escapeHtml(reply.message)}</p><small>${escapeHtml(dateText(reply.createdAt))} · ${escapeHtml(reply.status === 'accepted' ? 'Accepted by email provider' : reply.status === 'failed' ? 'Send failed' : 'Processing')}</small></div>`).join('')}
       <form class="inbox-composer" data-reply="${escapeHtml(contact._id)}"><label>Reply to customer<textarea name="message" required minlength="2" maxlength="5000" rows="3">${escapeHtml(drafts.get(contact._id) || '')}</textarea></label><button class="button primary small" type="submit">${icon('Send')} Send email reply</button><p role="status" data-reply-status></p></form>
       <button class="icon-button" type="button" data-archive-contact="${escapeHtml(contact._id)}" title="${showArchived ? 'Restore message' : 'Archive message'}" aria-label="${showArchived ? 'Restore message' : 'Archive message'}">${icon(showArchived ? 'ArchiveRestore' : 'Archive')}</button>
@@ -96,6 +97,18 @@ list.addEventListener('submit', async (event) => {
 });
 
 list.addEventListener('click', async event => {
+  const proof = event.target.closest('[data-recovery-proof]');
+  if (proof) {
+    try {
+      const result = await api(`/admin/contacts/${proof.dataset.recoveryProof}/payment-proof`);
+      const dialog = document.createElement('dialog');
+      const image = document.createElement('img');
+      image.src = result.paymentProof; image.alt = 'Customer payment recovery receipt'; image.style.cssText = 'max-width:100%;max-height:75vh;object-fit:contain';
+      const close = document.createElement('button'); close.textContent = 'Close'; close.className = 'button secondary'; close.onclick = () => dialog.close();
+      dialog.append(image, close); document.body.append(dialog); dialog.onclose = () => dialog.remove(); dialog.showModal();
+    } catch (error) { errorBox.hidden = false; errorBox.textContent = error.message; }
+    return;
+  }
   const selection = event.target.closest('[data-contact-select]');
   if (selection) { selectedId = selection.dataset.contactSelect; render(messages); return; }
   const button = event.target.closest('[data-archive-contact]');

@@ -196,11 +196,15 @@ const BarberCo = (() => {
   }
 
   function peso(value) {
-    return `PHP ${Number(value).toLocaleString("en-PH")}`;
+    return `PHP ${Number(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  function timeLabel(value) {
+    return String(value || '').replace(/\b([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?\b/g, (_, hour, minute) => `${Number(hour) % 12 || 12}:${minute} ${Number(hour) >= 12 ? 'PM' : 'AM'}`);
   }
 
   function byId(list, id) {
-    return list.find((item) => item.id === id || item.mongoId === id) || list[0] || { id: "", name: "Unassigned", price: 0, duration: "", role: "", status: "" };
+    return list.find((item) => item.id === id || item.mongoId === id) || { id: id || "", name: !id || id === 'any' ? "Any available barber" : "Unavailable item", price: 0, duration: "", role: "", status: "" };
   }
 
   function initials(name) {
@@ -439,7 +443,7 @@ const BarberCo = (() => {
     return `<option value="any" ${anySelected ? "selected" : ""}>Any available barber</option>${barbers.filter((barber) => barber.status !== "fired").map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""} ${barber.status === "on-leave" ? "disabled" : ""}>${barber.name}${barber.status === "on-leave" ? " - on leave" : ""}</option>`).join("")}`;
   }
 
-  return { state, barbers, save, peso, byId, initials, avatar, toast, initHeader, nav, shopEndcap, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, loadSettings, setSession, clearSession, authToken, isAuthenticated, currentRole, canAccess, icon, safeText };
+  return { state, barbers, save, peso, timeLabel, byId, initials, avatar, toast, initHeader, nav, shopEndcap, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, loadSettings, setSession, clearSession, authToken, isAuthenticated, currentRole, canAccess, icon, safeText };
 })();
 
 // A reschedule must move to another future slot, using the shop's time zone.
@@ -461,7 +465,7 @@ window.mountRescheduleTimes = function (form, item) {
       const time = `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
       const original = form.elements.date.value === item.date && time === item.time;
       const expired = new Date(`${form.elements.date.value}T${time}:00+08:00`).getTime() < Date.now() + 15 * 60000;
-      const option = new Option(`${time}${original ? ' - current booking' : expired ? ' - unavailable' : ''}`, time);
+      const option = new Option(`${BarberCo.timeLabel(time)}${original ? ' - current booking' : expired ? ' - unavailable' : ''}`, time);
       const closed = hours && (hours.closed || minute < minutes(hours.open) || minute + duration > minutes(hours.close));
       option.disabled = original || expired || Boolean(closed) || (settings.closedDates || []).includes(form.elements.date.value);
       select.add(option);

@@ -1,7 +1,7 @@
 const http = require('node:http');
 const handler = require('./api');
 
-function startRescheduleCleanup(sweep = async () => { await handler.sweepRescheduleRequests(); await handler.sweepAttendance(); }, intervalMs = 15000) {
+function startRescheduleCleanup(sweep = async () => { await handler.sweepRescheduleRequests(); await handler.sweepAttendance(); await handler.sweepNotifications(); }, intervalMs = 15000) {
   let running = false;
   const tick = async () => {
     if (running) return;
@@ -20,6 +20,16 @@ function createServer(apiHandler = handler) {
   return http.createServer((req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname;
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (pathname === '/readyz' && ['GET', 'HEAD'].includes(req.method)) {
+      Promise.resolve().then(() => apiHandler.checkReadiness()).then(() => {
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ status: 'ready' }));
+      }).catch(() => {
+        res.writeHead(503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ status: 'unavailable' }));
+      });
+      return;
+    }
     if (pathname === '/healthz' && ['GET', 'HEAD'].includes(req.method)) {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       return res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ status: 'ok', ...(process.env.RENDER_GIT_COMMIT ? { revision: process.env.RENDER_GIT_COMMIT } : {}) }));

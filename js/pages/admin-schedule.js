@@ -38,17 +38,17 @@ function attendanceDetails(item) {
 function rescheduleDetails(item) {
   const request = item.rescheduleRequest;
   if (!request) return '';
-  if (request.initiatedBy === 'staff') return `<small><strong>Shop proposal:</strong> ${safeText(request.date)} at ${safeText(request.time)} / ${safeText(request.status)}</small><small>${safeText(request.reason || '')}</small><small>Customer approval is required. Until accepted, the original schedule remains. An unanswered proposal expires without cancelling the original booking.</small>`;
+  if (request.initiatedBy === 'staff') return `<small><strong>Shop proposal:</strong> ${safeText(request.date)} at ${safeText(BarberCo.timeLabel(request.time))} / ${safeText(request.status)}</small><small>${safeText(request.reason || '')}</small><small>Customer approval is required. Until accepted, the original schedule remains. An unanswered proposal expires without cancelling the original booking.</small>`;
   const deadline = new Date(request.expiresAt);
   const originalLabel = request.originalDate || request.status === 'pending' ? 'Original' : 'Current schedule';
   const deadlineText = Number.isNaN(deadline.getTime()) ? 'Unavailable; refresh before reviewing' : `${deadline.toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })} (Asia/Manila)`;
-  return `<small><strong>${originalLabel}:</strong> ${safeText(request.originalDate || item.date)} at ${safeText(request.originalTime || item.time)}</small><small><strong>Requested:</strong> ${safeText(request.date)} at ${safeText(request.time)}</small><small><strong>Reschedule status:</strong> ${safeText(request.status)}</small>${request.reason ? `<small>Reason: ${safeText(request.reason)}</small>` : ''}<small><strong>Review deadline:</strong> ${safeText(deadlineText)}</small>${pendingReschedule(item) ? '<small>Unresolved requests automatically cancel the booking at the earlier of the original and requested start. No refund will be issued, including any booking fee.</small>' : ''}`;
+  return `<small><strong>${originalLabel}:</strong> ${safeText(request.originalDate || item.date)} at ${safeText(request.originalTime || item.time)}</small><small><strong>Requested:</strong> ${safeText(request.date)} at ${safeText(BarberCo.timeLabel(request.time))}</small><small><strong>Reschedule status:</strong> ${safeText(request.status)}</small>${request.reason ? `<small>Reason: ${safeText(request.reason)}</small>` : ''}<small><strong>Review deadline:</strong> ${safeText(deadlineText)}</small>${pendingReschedule(item) ? '<small>Unresolved requests automatically cancel the booking at the earlier of the original and requested start. No refund will be issued, including any booking fee.</small>' : ''}`;
 }
 
 function matchesAppointmentFilter(item, filter) {
   if (['no-show', 'in-queue', 'serving', 'completed', 'cancelled'].includes(filter)) return !item.archived && (item.attendanceStatus || item.status) === filter;
   return (filter === 'archived' ? item.archived === true : item.archived !== true) &&
-    (['all', 'archived'].includes(filter) || (filter === 'reschedule-review' ? pendingReschedule(item) : filter === 'history' ? ['completed', 'cancelled'].includes(item.status) : item.status === filter));
+    (['all', 'archived'].includes(filter) || (filter === 'reschedule-review' ? pendingReschedule(item) : filter === 'history' ? ['completed', 'cancelled', 'disapproved'].includes(item.status) : item.status === filter));
 }
 
 async function loadAppointments(refreshCatalog = false) {
@@ -74,10 +74,10 @@ function appointmentRows(connectionError = "") {
   if (connectionError) return `<div class="connection-error" role="alert">${safeText(connectionError)} <button class="button secondary small" type="button" data-retry>Try again</button></div>`;
   const query = document.querySelector('[data-appointment-search]')?.value.toLowerCase().trim() || '';
   if (statusFilter === 'awaiting-payment') {
-    return reservations.filter((item) => !query || `${item.customer} ${item.date} ${item.request || ''}`.toLowerCase().includes(query)).map((item) => `<div class="appointment-row appointment-record"><div class="appointment-date"><strong>${safeText(item.date)}</strong><small>${safeText(item.time)}</small></div><div class="row-main"><strong>${safeText(item.customer)}</strong>${item.demoPayment ? '<small class="text-action">DEMO / no real payment</small>' : ''}<small>${safeText(byId(state.services, item.serviceId).name)} / ${safeText(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned barber')}</small>${item.request ? `<small class="appointment-request"><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}</div><div><strong>${peso(item.total || 0)}</strong><small class="muted">Not yet submitted</small></div><span class="status-pill pending">Awaiting payment</span><small class="muted">Hold ends ${safeText(new Date(item.expiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</small></div>`).join('') || `<div class="staff-empty">${icon('Clock')}<strong>No active payment holds</strong></div>`;
+    return reservations.filter((item) => !query || `${item.customer} ${item.date} ${item.request || ''}`.toLowerCase().includes(query)).map((item) => `<div class="appointment-row appointment-record"><div class="appointment-date"><strong>${safeText(item.date)}</strong><small>${safeText(BarberCo.timeLabel(item.time))}</small></div><div class="row-main"><strong>${safeText(item.customer)}</strong>${item.demoPayment ? '<small class="text-action">DEMO / no real payment</small>' : ''}<small>${safeText(byId(state.services, item.serviceId).name)} / ${safeText(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned barber')}</small>${item.request ? `<small class="appointment-request"><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}</div><div><strong>${peso(item.total || 0)}</strong><small class="muted">Not yet submitted</small></div><span class="status-pill pending">Awaiting payment</span><small class="muted">Hold ends ${safeText(new Date(item.expiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</small></div>`).join('') || `<div class="staff-empty">${icon('Clock')}<strong>No active payment holds</strong></div>`;
   }
   const items = visibleAppointments(query);
-  return items.map((item) => `<div class="appointment-row appointment-record"><div class="appointment-date"><strong>${safeText(item.date || 'Unscheduled')}</strong><small>${safeText(item.time)} / #${String(item.queueNumber || '').padStart(2, '0')}</small></div><div class="row-main"><strong>${safeText(item.customer)}</strong>${item.demoPayment ? '<small class="text-action">DEMO / no real payment</small>' : ''}<small>${safeText(byId(state.services, item.serviceId).name)} / ${safeText(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned barber')}</small>${item.request ? `<small class="appointment-request"><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}${item.paymentProof ? `<a class="text-action" href="${item.paymentProof}" target="_blank" rel="noreferrer">${icon('Image')} Payment proof</a>` : ''}</div><div><strong>${peso(item.total || 0)}</strong><small class="muted">${item.demoPayment ? 'Demo total' : 'Advance payment'}</small></div><span class="status-pill ${item.status}">${item.status === 'pending' ? 'Needs review' : item.status === 'confirmed' ? 'Accepted' : item.status}</span><span class="button-row">${item.status === 'pending' ? `<button class="button primary small" type="button" data-status="${item.mongoId || item.id}:confirmed">${icon('Check')} ${item.demoPayment ? 'Accept demo' : 'Verify / accept'}</button>` : ''}${item.status === 'confirmed' ? `<button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:completed">Complete</button>` : ''}${!['completed', 'cancelled'].includes(item.status) ? `<button class="icon-button danger-icon" type="button" data-status="${item.mongoId || item.id}:cancelled" aria-label="Cancel appointment" title="Cancel appointment">${icon('X')}</button>` : ''}</span></div>`).join('') || `<div class="staff-empty">${icon('CalendarDays')}<strong>No ${statusFilter === 'pending' ? 'pending ' : ''}appointments${query ? ' match your search' : ' here'}</strong><span>Submitted bookings appear here for payment verification.</span></div>`;
+  return items.map((item) => `<div class="appointment-row appointment-record"><div class="appointment-date"><strong>${safeText(item.date || 'Unscheduled')}</strong><small>${safeText(BarberCo.timeLabel(item.time))} / #${String(item.queueNumber || '').padStart(2, '0')}</small></div><div class="row-main"><strong>${safeText(item.customer)}</strong>${item.demoPayment ? '<small class="text-action">DEMO / no real payment</small>' : ''}<small>${safeText(byId(state.services, item.serviceId).name)} / ${safeText(item.barberId ? byId(barbers, item.barberId).name : 'Unassigned barber')}</small>${item.request ? `<small class="appointment-request"><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}${item.paymentProof ? `<a class="text-action" href="${item.paymentProof}" target="_blank" rel="noreferrer">${icon('Image')} Payment proof</a>` : ''}</div><div><strong>${peso(item.total || 0)}</strong><small class="muted">${item.demoPayment ? 'Demo total' : 'Advance payment'}</small></div><span class="status-pill ${item.status}">${item.status === 'pending' ? 'Needs review' : item.status === 'confirmed' ? 'Accepted' : item.status}</span><span class="button-row">${item.status === 'pending' ? `<button class="button primary small" type="button" data-status="${item.mongoId || item.id}:confirmed">${icon('Check')} ${item.demoPayment ? 'Accept demo' : 'Verify / accept'}</button>` : ''}${item.status === 'confirmed' ? `<button class="button secondary small" type="button" data-status="${item.mongoId || item.id}:completed">Complete</button>` : ''}${!['completed', 'cancelled', 'disapproved'].includes(item.status) ? `<button class="icon-button danger-icon" type="button" data-status="${item.mongoId || item.id}:cancelled" aria-label="Cancel appointment" title="Cancel appointment">${icon('X')}</button>` : ''}</span></div>`).join('') || `<div class="staff-empty">${icon('CalendarDays')}<strong>No ${statusFilter === 'pending' ? 'pending ' : ''}appointments${query ? ' match your search' : ' here'}</strong><span>Submitted bookings appear here for payment verification.</span></div>`;
 }
 
 function snapshot(connectionError = "") {
@@ -105,12 +105,18 @@ function updatePanel(connectionError = "", force = false) {
     const expiry = row.lastElementChild;
     if (expiry) expiry.textContent = `Checkout expires ${new Date(drafts[index].expiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}; time is not reserved`;
   });
-  const visibleHistory = appointments.filter(item => ['completed', 'cancelled'].includes(item.status) && (statusFilter === 'archived' ? item.archived === true : item.archived !== true));
+  const visibleHistory = appointments.filter(item => ['completed', 'cancelled', 'disapproved'].includes(item.status) && (statusFilter === 'archived' ? item.archived === true : item.archived !== true));
   panel?.querySelectorAll('.appointment-record').forEach(row => {
     const entry = appointments.find(item => String(item.id) === row.dataset.appointmentId);
     if (entry) {
+      const cancel = row.querySelector('[data-status$=":cancelled"]');
+      if (entry.status === 'pending' && cancel) {
+        cancel.dataset.status = `${entry.mongoId || entry.id}:disapproved`;
+        cancel.title = 'Disapprove booking request';
+        cancel.setAttribute('aria-label', 'Disapprove booking request');
+      }
       const badge = row.querySelector('.status-pill');
-      if (badge) badge.textContent = ({ 'in-queue': 'In queue', serving: 'Now serving', 'no-show': 'No-show', pending: 'Pending / needs review', completed: 'Completed', cancelled: 'Cancelled', confirmed: 'Accepted' })[entry.attendanceStatus || entry.status] || entry.status;
+      if (badge) badge.textContent = ({ 'in-queue': 'In queue', serving: 'Now serving', 'no-show': 'No-show', disapproved: 'Disapproved', pending: 'Pending / needs review', completed: 'Completed', cancelled: 'Cancelled', confirmed: 'Accepted' })[entry.attendanceStatus || entry.status] || entry.status;
       if (entry.refundStatus === 'review-required') row.querySelector('.row-main')?.insertAdjacentHTML('beforeend', '<small><strong>Payment / refund review required.</strong> Verify the transfer and contact the customer to arrange a manual refund. No automatic refund has been sent.</small>');
     }
     const item = visibleHistory.find(entry => String(entry.id) === row.dataset.appointmentId);
@@ -122,7 +128,7 @@ function updatePanel(connectionError = "", force = false) {
     if (!item) return;
     if (pendingReschedule(item)) {
       row.querySelectorAll('[data-status]').forEach(button => {
-        if (!button.dataset.status.endsWith(':cancelled')) button.remove();
+        if (!button.dataset.status.endsWith(':cancelled') && !button.dataset.status.endsWith(':disapproved')) button.remove();
       });
       row.querySelector('.status-pill').textContent = item.rescheduleRequest.initiatedBy === 'staff' ? 'Waiting for customer approval' : 'Reschedule needs review';
       if (item.rescheduleRequest.initiatedBy !== 'staff')
@@ -175,7 +181,7 @@ async function render() {
   lastSnapshot = snapshot(connectionError);
   document.querySelector('.filter-tabs').insertAdjacentHTML('beforeend', '<button type="button" data-filter="archived" aria-pressed="false">Archived<span data-filter-count="archived">0</span></button>');
   document.querySelector('.filter-tabs').insertAdjacentHTML('beforeend', '<button type="button" data-filter="reschedule-review" aria-pressed="false">Reschedule review<span data-filter-count="reschedule-review">0</span></button>');
-  for (const [status, label] of Object.entries({ 'in-queue': 'In queue', serving: 'Now serving', 'no-show': 'No-show', completed: 'Completed', cancelled: 'Cancelled' })) {
+  for (const [status, label] of Object.entries({ 'in-queue': 'In queue', serving: 'Now serving', 'no-show': 'No-show', disapproved: 'Disapproved', completed: 'Completed', cancelled: 'Cancelled' })) {
     document.querySelector('.filter-tabs').insertAdjacentHTML('beforeend', `<button type="button" data-filter="${status}" aria-pressed="false">${label}<span data-filter-count="${status}">0</span></button>`);
   }
   updatePanel(connectionError, true);
@@ -258,7 +264,7 @@ async function render() {
         submit.preventDefault();
         if (submit.submitter.disabled) return;
         const values = Object.fromEntries(new FormData(submit.target));
-        if (!window.confirm(`Propose moving ${item.customer} from ${item.date} at ${item.time} to ${values.date} at ${values.time} (Asia/Manila)?\nReason: ${values.reason}\nCustomer approval is required. The original schedule stays unchanged until accepted.`)) return;
+        if (!window.confirm(`Propose moving ${item.customer} from ${item.date} at ${BarberCo.timeLabel(item.time)} to ${values.date} at ${BarberCo.timeLabel(values.time)} (Asia/Manila)?\nReason: ${values.reason}\nCustomer approval is required. The original schedule stays unchanged until accepted.`)) return;
         submit.submitter.disabled = true;
         try { await api(`/admin/appointments/${item.id}/reschedule`, { method: 'PATCH', body: JSON.stringify(Object.fromEntries(new FormData(submit.target))) }); modal.close(); toast('Request sent. Waiting for customer approval.'); await refreshAppointments({ force: true }); }
         catch (error) { modal.querySelector('[data-reschedule-error]').textContent = error.message; submit.submitter.disabled = false; }
@@ -295,10 +301,10 @@ async function render() {
     const button = event.target.closest("[data-status]");
     if (!button || button.disabled) return;
     const [id, status] = button.dataset.status.split(":");
-    if (status !== 'cancelled' && pendingReschedule(appointments.find(item => String(item.id) === id) || {})) return;
+    if (!['cancelled', 'disapproved'].includes(status) && pendingReschedule(appointments.find(item => String(item.id) === id) || {})) return;
     let reason = '';
-    if (status === 'cancelled') {
-      const message = window.prompt('Cancel this appointment? Enter the reason to share with the customer. Their account will be updated and SMS/email will be attempted.');
+    if (['cancelled', 'disapproved'].includes(status)) {
+      const message = window.prompt(status === 'disapproved' ? 'Disapprove this booking request? Enter the reason. Any submitted payment needs manual review; no automatic refund is sent.' : 'Cancel this accepted appointment? Enter the reason to share with the customer.');
       if (message === null) return;
       reason = message.trim().slice(0, 500);
       if (!reason) return toast('Enter a cancellation reason for the customer.');

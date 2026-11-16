@@ -14,13 +14,13 @@ let myAppointments = [];
 function rescheduleUpdate(item) {
   const request = item.rescheduleRequest;
   if (!request) return '';
-  if (request.initiatedBy === 'staff') return `<div style="grid-column:1/-1"><p><strong>Shop reschedule proposal:</strong> ${escapeValue(request.date)} at ${escapeValue(request.time)}<br>${escapeValue(request.reason || '')}</p><p>Status: ${escapeValue(request.status)}. Your original schedule stays unchanged unless you accept. An unanswered proposal expires without cancelling your original booking.</p>${request.status === 'pending' && ['pending', 'confirmed'].includes(item.status) ? `<button class="button primary" data-customer-review="${escapeValue(item.id)}" data-decision="approve">Accept new schedule</button> <button class="button secondary" data-customer-review="${escapeValue(item.id)}" data-decision="reject">Keep original schedule</button>` : ''}</div>`;
+  if (request.initiatedBy === 'staff') return `<div style="grid-column:1/-1"><p><strong>Shop reschedule proposal:</strong> ${escapeValue(request.date)} at ${escapeValue(BarberCo.timeLabel(request.time))}<br>${escapeValue(request.reason || '')}</p><p>Status: ${escapeValue(request.status)}. Your original schedule stays unchanged unless you accept. An unanswered proposal expires without cancelling your original booking.</p>${request.status === 'pending' && ['pending', 'confirmed'].includes(item.status) ? `<button class="button primary" data-customer-review="${escapeValue(item.id)}" data-decision="approve">Accept new schedule</button> <button class="button secondary" data-customer-review="${escapeValue(item.id)}" data-decision="reject">Keep original schedule</button>` : ''}</div>`;
   const deadline = new Date(request.expiresAt);
   const originalLabel = request.originalDate || request.status === 'pending' ? 'Original' : 'Current schedule';
   const originalDate = request.originalDate || item.date;
   const originalTime = request.originalTime || item.time;
   const deadlineText = Number.isNaN(deadline.getTime()) ? 'Unavailable; contact the shop' : `${deadline.toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })} (Asia/Manila)`;
-  return `<div style="grid-column:1/-1"><p><strong>${originalLabel}:</strong> ${escapeValue(originalDate)} at ${escapeValue(originalTime)}<br><strong>Requested:</strong> ${escapeValue(request.date)} at ${escapeValue(request.time)}<br><strong>Reschedule status:</strong> ${escapeValue(request.status === 'pending' ? 'Waiting for staff approval; not accepted yet' : request.status)}<br><strong>Review deadline:</strong> ${escapeValue(deadlineText)}</p>${request.reason ? `<p>Reason: ${escapeValue(request.reason)}</p>` : ''}${request.status === 'pending' ? '<p>The current schedule stays in place until staff approves. If unresolved at the earlier of the original and requested start, the booking is automatically cancelled. No refund will be issued, including any booking fee.</p>' : request.status === 'rejected' ? '<p>Your reschedule request was rejected. The original schedule is retained unless the booking is cancelled.</p>' : ''}</div>`;
+  return `<div style="grid-column:1/-1"><p><strong>${originalLabel}:</strong> ${escapeValue(originalDate)} at ${escapeValue(BarberCo.timeLabel(originalTime))}<br><strong>Requested:</strong> ${escapeValue(request.date)} at ${escapeValue(BarberCo.timeLabel(request.time))}<br><strong>Reschedule status:</strong> ${escapeValue(request.status === 'pending' ? 'Waiting for staff approval; not accepted yet' : request.status)}<br><strong>Review deadline:</strong> ${escapeValue(deadlineText)}</p>${request.reason ? `<p>Reason: ${escapeValue(request.reason)}</p>` : ''}${request.status === 'pending' ? '<p>The current schedule stays in place until staff approves. If unresolved at the earlier of the original and requested start, the booking is automatically cancelled. No refund will be issued, including any booking fee.</p>' : request.status === 'rejected' ? '<p>Your reschedule request was rejected. The original schedule is retained unless the booking is cancelled.</p>' : ''}</div>`;
 }
 
 function bookingActions(item) {
@@ -37,6 +37,7 @@ function bookingActionButtons(item) {
 }
 
 function bookingStatus(status, demo = false) {
+  if (status === 'disapproved') return 'Disapproved by staff';
   if (['in-queue', 'serving', 'no-show'].includes(status)) return ({ 'in-queue': 'In queue', serving: 'Now serving', 'no-show': 'No-show' })[status];
   if (demo) return status === 'confirmed' ? 'Demo booking accepted' : status === 'completed' ? 'Demo completed' : status === 'cancelled' ? 'Demo cancelled' : 'Demo awaiting staff approval';
   return status === "confirmed" ? "Accepted and payment verified" : status === "completed" ? "Completed" : status === "cancelled" ? "Cancelled" : "Waiting for staff approval";
@@ -44,7 +45,7 @@ function bookingStatus(status, demo = false) {
 
 function bookingRows() {
   if (!myAppointments.length) return `<div class="empty-state">You have no online bookings yet.</div>`;
-  return myAppointments.map((item) => `<div class="appointment-row"><span>${item.demoPayment ? 'DEMO / ' : ''}Queue #${String(item.queueNumber || 0).padStart(2, "0")}<br><small class="muted">${escapeValue(item.date)} at ${escapeValue(item.time)}</small></span><strong>${escapeValue(item.customer)}<br><small class="muted">${escapeValue(byId(state.services, item.serviceId).name)} - ${peso(item.total || 0)}${item.demoPayment ? ' (not charged)' : ''}</small></strong><span class="status-pill ${escapeValue(item.status)}">${item.rescheduleRequest?.status === 'pending' && ['pending', 'confirmed'].includes(item.status) ? 'Reschedule awaiting staff approval' : bookingStatus(item.status, item.demoPayment)}</span>${bookingActions(item)}</div>`).join("");
+  return myAppointments.map((item) => `<div class="appointment-row"><span>${item.demoPayment ? 'DEMO / ' : ''}Queue #${String(item.queueNumber || 0).padStart(2, "0")}<br><small class="muted">${escapeValue(item.date)} at ${escapeValue(BarberCo.timeLabel(item.time))}</small></span><strong>${escapeValue(item.customer)}<br><small class="muted">${escapeValue(byId(state.services, item.serviceId).name)} - ${peso(item.total || 0)}${item.demoPayment ? ' (not charged)' : ''}</small></strong><span class="status-pill ${escapeValue(item.status)}">${item.rescheduleRequest?.status === 'pending' && ['pending', 'confirmed'].includes(item.status) ? 'Reschedule awaiting staff approval' : bookingStatus(item.status, item.demoPayment)}</span>${bookingActions(item)}</div>`).join("");
 }
 
 async function refreshBookings({ quiet = false } = {}) {
@@ -79,7 +80,7 @@ function draw() {
     if (review) {
       const item = myAppointments.find(entry => String(entry.id) === review.dataset.customerReview);
       if (review.disabled || !item || item.rescheduleRequest?.initiatedBy !== 'staff') return;
-      if (!window.confirm(review.dataset.decision === 'approve' ? `Accept ${item.rescheduleRequest.date} at ${item.rescheduleRequest.time} (Philippine time)? This replaces your original schedule.` : 'Reject this proposal and keep your original schedule?')) return;
+      if (!window.confirm(review.dataset.decision === 'approve' ? `Accept ${item.rescheduleRequest.date} at ${BarberCo.timeLabel(item.rescheduleRequest.time)} (Philippine time)? This replaces your original schedule.` : 'Reject this proposal and keep your original schedule?')) return;
       review.disabled = true;
       try { await api(`/appointments/${item.id}/reschedule-review`, { method: 'PATCH', body: JSON.stringify({ decision: review.dataset.decision, requestedAt: item.rescheduleRequest.requestedAt }) }); await refreshBookings(); toast('Reschedule response recorded.'); }
       catch (error) { toast(error.message); review.disabled = false; }
@@ -108,7 +109,7 @@ function draw() {
     const form = document.createElement('form');
     form.dataset.rescheduleForm = '';
     form.className = 'form-card';
-    form.innerHTML = `<h3>Request reschedule</h3><p>Current booking: ${escapeValue(item.date)} at ${escapeValue(item.time)} (Asia/Manila).</p><label>Date<input type="date" name="date" min="${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })}" value="${escapeValue(item.date)}" required></label><label>Time<input type="time" name="time" step="1800" value="${escapeValue(item.time)}" required></label><p>This sends a request, not an accepted schedule change. Staff must review it before the earlier of the current and requested start, or the booking is automatically cancelled.</p><p data-request-deadline></p><button class="button primary" type="submit">Send reschedule request</button><button class="button secondary" type="button" data-dismiss>Keep current schedule</button><p role="alert" data-schedule-error></p>`;
+    form.innerHTML = `<h3>Request reschedule</h3><p>Current booking: ${escapeValue(item.date)} at ${escapeValue(BarberCo.timeLabel(item.time))} (Asia/Manila).</p><label>Date<input type="date" name="date" min="${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })}" value="${escapeValue(item.date)}" required></label><label>Time<input type="time" name="time" step="1800" value="${escapeValue(item.time)}" required></label><p>This sends a request, not an accepted schedule change. Staff must review it before the earlier of the current and requested start, or the booking is automatically cancelled.</p><p data-request-deadline></p><button class="button primary" type="submit">Send reschedule request</button><button class="button secondary" type="button" data-dismiss>Keep current schedule</button><p role="alert" data-schedule-error></p>`;
     window.mountRescheduleTimes(form, item);
     const updateDeadline = () => {
       const requested = new Date(`${form.elements.date.value}T${form.elements.time.value}:00+08:00`).getTime();
@@ -133,7 +134,7 @@ function draw() {
         form.querySelector('[data-schedule-error]').textContent = 'This booking has changed. Close this dialog and review the latest booking status.';
         return;
       }
-      if (!window.confirm(`Send a reschedule request from ${item.date} at ${item.time} to ${values.date} at ${values.time} (Asia/Manila)?\n${form.querySelector('[data-request-deadline]').textContent}\nStaff approval is required. If unresolved by this deadline, the booking is automatically cancelled. No refund will be issued, including any booking fee. Continue?`)) return;
+      if (!window.confirm(`Send a reschedule request from ${item.date} at ${BarberCo.timeLabel(item.time)} to ${values.date} at ${BarberCo.timeLabel(values.time)} (Asia/Manila)?\n${form.querySelector('[data-request-deadline]').textContent}\nStaff approval is required. If unresolved by this deadline, the booking is automatically cancelled. No refund will be issued, including any booking fee. Continue?`)) return;
       save.disabled = true;
       try { await api(`/appointments/${id}/reschedule`, { method: 'PATCH', body: JSON.stringify(Object.fromEntries(new FormData(form))) }); modal.close(); toast('Reschedule requested. Waiting for staff approval; your current schedule is unchanged.'); await refreshBookings(); }
       catch (error) { form.querySelector('[data-schedule-error]').textContent = error.message; save.disabled = false; }
@@ -174,7 +175,9 @@ function draw() {
     const button = event.submitter;
     button.disabled = true;
     try {
-      const payload = await api("/me", { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(event.target))) });
+      const values = Object.fromEntries(new FormData(event.target));
+      values.smsConsent = event.target.querySelector('[data-sms-consent]').checked;
+      const payload = await api("/me", { method: "PATCH", body: JSON.stringify(values) });
       setSession(payload);
       toast("Profile saved.");
       draw();

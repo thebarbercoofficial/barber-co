@@ -13,6 +13,7 @@
     "test:attendance": "node tests/front-desk.test.js && node tests/attendance-api.test.js",
     "test:guards": "node tests/booking-guards.test.js",
     "test:alerts": "node tests/site-alerts.test.js",
+    "test:safety": "node tests/safety-hardening.test.js && node tests/reliability-recovery.test.js && node tests/safety-hardening-ui.test.js",
     "test:ui": "node tests/staff-ui.test.js",
     "test:booking": "node tests/booking-review.test.js",
     "test:phone": "node tests/phone-login.test.js",

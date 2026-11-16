@@ -14,10 +14,11 @@ function rows() {
   return barbers.map((barber) => `
     <div class="appointment-row management-record">
       <div class="person-cell"><span class="staff-avatar">${initials(barber.name)}</span><div><strong>${safeText(barber.name)}</strong><small>${safeText(barber.role)}</small></div></div>
-      <span class="status-pill ${barber.status}">${statusLabel(barber.status)}</span>
+      <span class="status-pill ${barber.status}">${statusLabel(barber.status)}${barber.leaveFrom ? `<small>Leave: ${safeText(barber.leaveFrom)} to ${safeText(barber.leaveTo)}</small>` : ''}</span>
       <span class="button-row">
         <button class="button secondary small" type="button" data-status="${barber.mongoId || barber.id}:active" ${barber.status === 'active' ? 'disabled' : ''}>Active</button>
         <button class="button secondary small" type="button" data-status="${barber.mongoId || barber.id}:on-leave" ${barber.status === 'on-leave' ? 'disabled' : ''}>On leave</button>
+        ${barber.leaveFrom ? `<button class="button secondary small" type="button" data-clear-leave="${barber.mongoId || barber.id}">Clear leave</button>` : ''}
         <button class="icon-button danger-icon" type="button" data-delete="${barber.mongoId || barber.id}" title="Remove barber" aria-label="Remove ${safeText(barber.name)}">${icon('Trash2')}</button>
       </span>
     </div>
@@ -75,6 +76,22 @@ async function render() {
     try {
       if (status) {
         const [id, value] = status.dataset.status.split(":");
+        if (value === 'on-leave') {
+          const modal = document.createElement('dialog');
+          modal.className = 'receipt-dialog';
+          modal.innerHTML = '<form class="form-card"><h3>Schedule barber leave</h3><label>From<input type="date" name="leaveFrom" required></label><label>Through<input type="date" name="leaveTo" required></label><p role="alert"></p><div class="button-row"><button class="button secondary" type="button" data-close>Cancel</button><button class="button primary" type="submit">Save leave dates</button></div></form>';
+          const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+          modal.querySelectorAll('input').forEach(input => { input.min = today; input.value = today; });
+          modal.querySelector('[data-close]').onclick = () => modal.close();
+          modal.addEventListener('close', () => modal.remove());
+          modal.querySelector('form').onsubmit = async event => {
+            event.preventDefault();
+            event.submitter.disabled = true;
+            try { await api(`/admin/barbers/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'active', ...Object.fromEntries(new FormData(event.target)) }) }); modal.close(); render(); }
+            catch (error) { modal.querySelector('[role="alert"]').textContent = error.message; event.submitter.disabled = false; }
+          };
+          document.body.append(modal); modal.showModal(); return;
+        }
         await api(`/admin/barbers/${id}`, { method: "PATCH", body: JSON.stringify({ status: value }) });
         toast("Barber status updated.");
         render();
@@ -92,6 +109,13 @@ async function render() {
       if (del) del.disabled = false;
       toast(error.message || "Backend is not online yet.");
     }
+  });
+  document.querySelector('[data-barber-rows]').addEventListener('click', async event => {
+    const button = event.target.closest('[data-clear-leave]');
+    if (!button || !window.confirm('Clear these leave dates and make the barber available for bookings?')) return;
+    button.disabled = true;
+    try { await api(`/admin/barbers/${button.dataset.clearLeave}`, { method: 'PATCH', body: JSON.stringify({ status: 'active', leaveFrom: '', leaveTo: '' }) }); render(); }
+    catch (error) { toast(error.message); button.disabled = false; }
   });
   initHeader("admin");
 }

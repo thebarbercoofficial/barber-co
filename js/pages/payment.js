@@ -12,6 +12,32 @@ if (!state.booking?.date || !state.booking?.time) {
 const booking = state.booking;
 const service = byId(state.services, booking.serviceId);
 let receiptFile = null;
+let checkoutTimer;
+let validationRunning = false;
+function mountRecovery() {
+  document.querySelector('#app').insertAdjacentHTML('beforeend', '<section class="section"><details class="panel"><summary>Already paid but could not submit?</summary><form data-payment-recovery><label>Wallet transaction reference<input name="reference" required maxlength="120"></label><label>Payment proof<input name="proof" type="file" accept="image/jpeg,image/png,image/webp" required></label><button class="button secondary" type="submit">Send proof to staff</button><p role="status" data-recovery-status></p></form></details></section>');
+  document.querySelector('[data-payment-recovery]').onsubmit = async event => {
+    event.preventDefault();
+    const form = event.target;
+    const button = form.querySelector('button');
+    if (button.disabled) return;
+    const file = form.elements.proof.files[0];
+    if (!file || file.size > 2 * 1024 * 1024) return toast('Choose a receipt image up to 2 MB.');
+    button.disabled = true;
+    try {
+      const paymentProof = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(new Error('Could not read receipt.')); reader.readAsDataURL(file); });
+      const result = await api('/payments/recovery', { method: 'POST', body: JSON.stringify({ reference: form.elements.reference.value, paymentProof, date: booking.date, time: booking.time }) });
+      form.querySelector('[data-recovery-status]').textContent = `${result.message} Case: ${result.reference}`;
+    } catch (error) { form.querySelector('[data-recovery-status]').textContent = error.message; button.disabled = false; }
+  };
+}
+function invalidateCheckout(message) {
+  clearInterval(checkoutTimer);
+  const panel = document.querySelector('.payment-layout > .panel');
+  if (panel) { panel.replaceChildren(); const warning = document.createElement('p'); warning.setAttribute('role', 'alert'); warning.textContent = message; panel.append(warning); }
+  const button = document.querySelector('[data-confirm-payment]');
+  if (button) { button.disabled = true; button.textContent = 'Checkout unavailable'; }
+}
 const escapeText = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const partySize = Number(booking.partySize || 1);
 const partyMembers = booking.partyMembers || [booking.customer || state.user.name];
@@ -23,12 +49,14 @@ function unitDuration(value) {
 }
 
 async function render() {
+  clearInterval(checkoutTimer);
   let settings;
   try { settings = await loadSettings(); }
   catch (error) {
     document.querySelector('#app').innerHTML = `${nav('booking')}<section class="section top"><div class="panel"><h2>Payment details could not be loaded.</h2><p>Do not transfer money using old details. Retry to get the current recipient and amount.</p><button class="button primary" type="button" data-retry-payment>Retry</button></div></section>`;
     document.querySelector('[data-retry-payment]').addEventListener('click', render);
     initHeader('booking');
+    mountRecovery();
     return;
   }
   const demo = false;
@@ -41,7 +69,15 @@ async function render() {
     document.querySelector("#app").innerHTML = `${nav("booking")}<section class="section top"><div class="panel"><p class="eyebrow">Payment unavailable</p><h2>Online payment is not configured yet.</h2><p class="muted">Checkout does not block this time for other customers. No booking has been submitted for staff approval.</p>${BarberCo.canAccess('admin') ? '<a class="button primary" href="admin-profile.html">Set up payments</a><a class="button secondary" href="admin-schedule.html">View appointments</a>' : '<p class="muted">Please contact the shop or join the walk-in queue instead.</p>'}<a class="button secondary" href="queue.html?walkin=1">Join as walk-in</a></div></section>`;
     document.querySelector('.panel h2').textContent = 'Payment method is currently unavailable.';
     initHeader("booking");
+    mountRecovery();
     return;
+  }
+  try {
+    await api('/checkout/validate', { method: 'POST', body: JSON.stringify({ holdId: booking.holdId, paymentRevision: settings.paymentRevision }) });
+  } catch (error) {
+    document.querySelector('#app').innerHTML = `${nav('booking')}<section class="section top"><div class="panel"><h2>Checkout unavailable</h2><p data-checkout-error></p><a class="button primary" href="booking.html">Start a new booking</a></div></section>`;
+    document.querySelector('[data-checkout-error]').textContent = error.message;
+    mountRecovery(); initHeader('booking'); return;
   }
   if (!methods.some((method) => method.id === state.paymentMethod)) state.paymentMethod = methods[0].id;
   const selectedMethod = methods.find((method) => method.id === state.paymentMethod) || methods[0];
@@ -53,7 +89,7 @@ async function render() {
   document.querySelector("#app").innerHTML = `
     ${nav("booking")}
     <section class="section top"><div class="payment-layout">
-      <div class="form-card"><p class="eyebrow">${demo ? 'DEMO - NO REAL PAYMENT' : 'Advance Payment'}</p><h2>Appointment request summary</h2><p class="field-help">Time is reserved only after staff approval. ${checkoutUntil ? `Checkout details expire ${escapeText(checkoutUntil)}; this does not reserve the time.` : ''}</p><div class="summary-list"><div><span>Service</span><strong>${service.name}</strong></div><div><span>Barber</span><strong>${byId(barbers, booking.barberId).name}</strong></div><div><span>Date and time</span><strong>${booking.date} ${booking.time}</strong></div><div><span>Group (${partySize} people)</span><strong>${partyMembers.map(escapeText).join(', ')}</strong></div><div><span>Duration</span><strong>${duration} minutes, sequential service with the same barber</strong></div><div><span>Service subtotal</span><strong>${peso(total - bookingFee)}</strong></div><div><span>One group booking fee</span><strong>${peso(bookingFee)}</strong></div><div><span>${demo ? 'Demo total (not charged)' : 'Total advance payment'}</span><strong>${peso(total)}</strong></div></div><div class="payment-methods">${methods.map((method) => `<button class="method ${state.paymentMethod === method.id ? "active" : ""}" type="button" data-payment="${method.id}">${method.id}${demo ? ' demo' : ''}</button>`).join("")}</div>
+      <div class="form-card"><p class="eyebrow">${demo ? 'DEMO - NO REAL PAYMENT' : 'Advance Payment'}</p><h2>Appointment request summary</h2><p class="field-help">Time is reserved only after staff approval. ${checkoutUntil ? `Checkout details expire ${escapeText(checkoutUntil)}; this does not reserve the time.` : ''}</p><div class="summary-list"><div><span>Service</span><strong>${service.name}</strong></div><div><span>Barber</span><strong>${byId(barbers, booking.barberId).name}</strong></div><div><span>Date and time</span><strong>${booking.date} ${BarberCo.timeLabel(booking.time)}</strong></div><div><span>Group (${partySize} people)</span><strong>${partyMembers.map(escapeText).join(', ')}</strong></div><div><span>Duration</span><strong>${duration} minutes, sequential service with the same barber</strong></div><div><span>Service subtotal</span><strong>${peso(total - bookingFee)}</strong></div><div><span>One group booking fee</span><strong>${peso(bookingFee)}</strong></div><div><span>${demo ? 'Demo total (not charged)' : 'Total advance payment'}</span><strong>${peso(total)}</strong></div></div><div class="payment-methods">${methods.map((method) => `<button class="method ${state.paymentMethod === method.id ? "active" : ""}" type="button" data-payment="${method.id}">${method.id}${demo ? ' demo' : ''}</button>`).join("")}</div>
         ${demo ? '<p class="field-help">Upload a sample receipt for staff review. Do not send real money.</p>' : ''}
         <label class="upload-box payment-receipt-upload">${demo ? 'Upload sample payment receipt' : 'Upload proof of payment'}<input type="file" accept="image/jpeg,image/png,image/webp" data-payment-proof required><small>JPG, PNG, or WebP. Maximum 2 MB.</small></label>
         <p class="field-help">Payment is subject to staff approval.</p><button class="button primary full" type="button" data-confirm-payment>${demo ? 'Submit demo booking' : 'Submit for verification'}</button></div>
@@ -90,6 +126,7 @@ async function render() {
   document.querySelector("[data-confirm-payment]").addEventListener("click", async () => {
     const button = document.querySelector("[data-confirm-payment]");
     if (button.disabled) return;
+    if (!(new Date(booking.holdExpiresAt).getTime() > Date.now())) { invalidateCheckout('Checkout expired. Do not transfer money. Start a new booking or send payment recovery below if already paid.'); return; }
     const proofFile = document.querySelector("[data-payment-proof]")?.files[0];
     if (!proofFile) return toast("Upload your payment proof before submitting.");
     if (proofFile?.size > 2 * 1024 * 1024) return toast("Payment proof must be 2 MB or smaller.");
@@ -99,6 +136,7 @@ async function render() {
     button.textContent = "Submitting...";
     try {
       const latest = await loadSettings();
+      await api('/checkout/validate', { method: 'POST', body: JSON.stringify({ holdId: booking.holdId, paymentRevision: settings.paymentRevision }) });
       if (latest.paymentRevision !== settings.paymentRevision || latest.paymentMode !== settings.paymentMode) {
         toast('Payment details changed. Check the updated recipient and total. If you already paid, contact the shop before paying again.');
         await render();
@@ -121,6 +159,16 @@ async function render() {
       button.textContent = demo ? 'Submit demo booking' : 'Submit for verification';
     }
   });
+  mountRecovery();
+  let ticks = 0;
+  checkoutTimer = setInterval(async () => {
+    if (!(new Date(booking.holdExpiresAt).getTime() > Date.now())) { invalidateCheckout('Checkout expired. Do not transfer money. Start again or submit payment recovery below.'); return; }
+    if (++ticks % 30 || validationRunning) return;
+    validationRunning = true;
+    try { await api('/checkout/validate', { method: 'POST', body: JSON.stringify({ holdId: booking.holdId, paymentRevision: settings.paymentRevision }) }); }
+    catch (error) { invalidateCheckout(error.message); }
+    finally { validationRunning = false; }
+  }, 1000);
   initHeader("booking");
 }
 

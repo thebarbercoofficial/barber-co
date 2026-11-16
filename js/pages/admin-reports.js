@@ -48,6 +48,17 @@ async function render() {
   duplicateBreakdown.lastElementChild.remove();
   duplicateBreakdown.className = 'report-services';
   BarberAnalytics.mount(analytics);
+  const ledger = document.createElement('section');
+  ledger.className = 'panel collections-ledger';
+  ledger.setAttribute('aria-label', 'Recorded collections audit');
+  document.querySelector('.workspace').append(ledger);
+  function updateLedger() {
+    const audit = analytics.collections;
+    if (!audit) { ledger.hidden = true; return; }
+    ledger.hidden = false;
+    ledger.innerHTML = `<div class="panel-heading"><h3>All-time collection records</h3><span>${peso(audit.online)} online / ${peso(audit.walkins)} walk-ins</span></div><p class="muted">Staff-recorded payments, not automatic GCash/Maya reconciliation. Test payments are excluded. ${analytics.legacyPayments || 0} records lack an original payment timestamp.</p><div class="data-table-scroll"><table><thead><tr><th>Customer / reference</th><th>Source</th><th>Payment date</th><th>Amount</th></tr></thead><tbody>${audit.records.slice(0, 50).map(item => `<tr><th>${safeText(item.customer)}<small>${safeText(item.id)}</small></th><td>${item.source === 'online' ? 'Booking' : 'Walk-in'}</td><td>${item.paidAt ? safeText(new Date(item.paidAt).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })) : 'Legacy: payment date unknown'}</td><td>${peso(item.amount)}</td></tr>`).join('') || '<tr><td colspan="4">No recorded collections.</td></tr>'}</tbody><tfoot><tr><th>All-time total (${audit.records.length} records)</th><td colspan="2">${audit.records.length > 50 ? 'Latest 50 shown' : ''}</td><td>${peso(analytics.totals.revenue)}</td></tr></tfoot></table></div>`;
+  }
+  updateLedger();
   const reportLayout = document.createElement('div');
   reportLayout.className = 'reports-layout';
   const performancePanel = document.querySelector('[aria-labelledby="barber-performance-title"]');
@@ -59,7 +70,7 @@ async function render() {
   let performance = analytics.barberPerformance || [];
   const metricKeys = ['bookings', 'customers', 'waiting', 'revenue'];
   document.querySelectorAll('.metric-grid .metric').forEach((node, index) => { node.dataset.metric = metricKeys[index]; });
-  document.querySelector('[data-metric="revenue"] small').textContent = 'All time / recorded paid / excludes tests';
+  document.querySelector('[data-metric="revenue"] small').textContent = 'All-time recorded collections / not the selected-day total';
   document.querySelector('[data-metric="waiting"] small').textContent = 'Waiting walk-ins / excludes now serving';
   document.querySelector('[data-metric="customers"] small').textContent = 'Customer accounts / excludes staff';
   const countNote = () => {
@@ -108,6 +119,7 @@ async function render() {
       });
       countNote();
       performance = analytics.barberPerformance || [];
+      updateLedger();
       updatePerformance();
       document.querySelector('[data-barber-export]').disabled = false;
       printButton.disabled = !analytics.daily?.length;

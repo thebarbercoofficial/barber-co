@@ -28,7 +28,12 @@ function apply(item, changes, inserted) {
     parent[last] = value;
   }
   Object.entries(changes.$inc || {}).forEach(([key, value]) => { item[key] = (item[key] || 0) + value; });
-  Object.keys(changes.$unset || {}).forEach((key) => { delete item[key]; });
+  Object.keys(changes.$unset || {}).forEach((key) => {
+    const parts = key.split('.');
+    const last = parts.pop();
+    const parent = parts.reduce((parent, part) => parent?.[part], item);
+    if (parent) delete parent[last];
+  });
 }
 function memoryDb(records = {}) {
   function unique(name, item, ignored) {

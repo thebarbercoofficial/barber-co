@@ -98,6 +98,7 @@ const BarberCo = (() => {
   }
 
   const pendingReads = new Map();
+  const recentReads = new Map();
 
   if (!window.staffModule && /\/admin-[a-z-]+\.html$/.test(location.pathname)) {
     const app = document.querySelector('#app');
@@ -135,15 +136,19 @@ const BarberCo = (() => {
     const method = String(options.method || 'GET').toUpperCase();
     const shareRead = method === 'GET' && Object.keys(options).length === 0;
     const key = `${authToken()}:${path}`;
-    if (method !== 'GET') pendingReads.clear();
+    if (method !== 'GET') { pendingReads.clear(); recentReads.clear(); }
     if (!shareRead) return requestApi(path, options);
+    const cached = recentReads.get(key);
+    if (cached && Date.now() - cached.at < 5000) return structuredClone(cached.data);
     let pending = pendingReads.get(key);
     if (!pending) {
       pending = requestApi(path, options);
       pendingReads.set(key, pending);
     }
     try {
-      return structuredClone(await pending);
+      const data = await pending;
+      if (path.startsWith('/admin/')) recentReads.set(key, { at: Date.now(), data });
+      return structuredClone(data);
     } finally {
       if (pendingReads.get(key) === pending) pendingReads.delete(key);
     }

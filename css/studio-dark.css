@@ -146,6 +146,7 @@
   .staff-page .workspace-rail { display: none; }
 }
 @media screen and (min-width: 1440px) {
+  .staff-page .sidebar a[href="admin-schedule.html"] { display: none; }
   .staff-page .workspace { width: calc(100% - var(--staff-sidebar) - 286px); margin-right: 286px; }
   .staff-page .sidebar { justify-content: space-between; gap: clamp(18px, 2.2vh, 30px); padding-block: 20px 18px; }
   .staff-page .sidebar-group { gap: 7px; }

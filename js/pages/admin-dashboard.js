@@ -106,7 +106,8 @@ async function render() {
     publishWorkspaceSnapshot(results[0], results[1]);
   });
   const analytics = await getAnalytics();
-  const results = await summaries;
+  const results = await Promise.race([summaries, new Promise(resolve => setTimeout(() => resolve([{ status: 'rejected' }, { status: 'rejected' }]), 100))]);
+  void summaries.then(() => setTimeout(refreshDashboard, 0));
   const queue = results[0].status === 'fulfilled' ? results[0].value.queue.filter((item) => ['waiting', 'serving'].includes(item.status)) : [];
   const schedule = results[1].status === 'fulfilled' ? results[1].value : { appointments: [], reservations: [] };
   const requests = schedule.appointments.filter((item) => item.status === 'pending');

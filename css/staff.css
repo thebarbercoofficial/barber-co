@@ -115,7 +115,7 @@ body.staff-page .site-header.staff-header { position: fixed; inset: 0 0 auto; he
 .staff-page .appointment-request { color: var(--ink); overflow-wrap: anywhere; }
 .staff-page .appointment-request strong { color: var(--copper); }
 .staff-page .appointment-row strong, .staff-page .appointment-row span { min-width: 0; overflow-wrap: anywhere; }
-.queue-list, .record-list { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fff; }
+.queue-list, .record-list { max-height: min(68vh, 680px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: #8f6a3c #292521; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
 .appointment-row:last-child { border-bottom: 0; }
 .staff-page .queue-list .appointment-row { grid-template-columns: 78px minmax(0,1fr) auto; gap: 10px 14px; }
 .queue-list .queue-barber { grid-column: 2; grid-row: 2; font-size: 10px; color: #718078; }

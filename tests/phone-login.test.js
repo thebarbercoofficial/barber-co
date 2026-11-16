@@ -140,7 +140,7 @@ async function main() {
       await page.locator('[name="identifier"]').fill('admin@phone.test');
       await page.locator('[name="password"]').fill(registration.password);
       await page.getByRole('button', { name: 'Sign In', exact: true }).click();
-      await page.waitForURL('**/admin-workspace.html#dashboard');
+      await page.waitForURL('**/admin-dashboard.html');
       await page.goto(`${base}/register.html?next=booking.html`);
       await page.locator('[name="name"]').fill('Phone UI Customer');
       await page.locator('[name="phone"]').fill(width === 1440 ? '09201234567' : '09211234567');

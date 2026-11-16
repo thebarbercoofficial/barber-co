@@ -34,10 +34,26 @@ function callNextLocal() {
 }
 
 function compactGroupDetails(item) {
+  if (item.bookingPaymentMethod === 'onsite') return `<small>Pay at shop / no advance payment received</small><small>Amount due: ${peso(item.servicePaid ? 0 : item.cashDue || item.total)}</small>`;
+  if (item.servicePaymentMethod) return `<small>Service: ${item.servicePaymentMethod === 'cash' ? 'Cash at shop' : 'Online'} / Online transfer: ${peso(item.onlineAmount)}</small><small>Reservation fee: ${item.bookingFeePaid ? 'verified' : 'awaiting verification'} / Cash balance: ${peso(item.servicePaid ? 0 : item.cashDue)}</small>`;
   if (!(Number(item.partySize) > 1)) return '';
   const names = Array.isArray(item.partyMembers) ? item.partyMembers.map(safeText).join(', ') : '';
   const duration = Number(item.durationMinutes);
   return `<small style="overflow-wrap:anywhere">Group of ${Number(item.partySize)}${names ? `: ${names}` : ''}</small><small>${Number.isFinite(duration) && duration > 0 ? `${duration} minutes / ` : ''}Sequential, same barber / ${peso(item.total)} total / one group fee</small><small>Actions apply to the whole group.</small>`;
+}
+
+function publishWorkspaceSnapshot(queueResult, scheduleResult) {
+  if (window.parent === window) return;
+  const snapshot = { type: 'barberco-workspace-snapshot', updatedAt: new Date().toISOString() };
+  if (queueResult?.status === 'fulfilled') {
+    const queue = queueResult.value.queue.filter((item) => ['waiting', 'serving'].includes(item.status));
+    snapshot.queue = { waiting: queue.filter((item) => item.status === 'waiting').length, serving: queue.filter((item) => item.status === 'serving').length };
+  }
+  if (scheduleResult?.status === 'fulfilled') {
+    const { appointments = [], reservations = [] } = scheduleResult.value;
+    snapshot.bookings = { review: appointments.filter((item) => item.status === 'pending').length, drafts: reservations.length };
+  }
+  window.parent.postMessage(snapshot, location.origin);
 }
 
 function onlineBookingRows(appointments = [], reservations = []) {
@@ -50,14 +66,26 @@ function onlineBookingRows(appointments = [], reservations = []) {
 }
 
 async function render() {
+  const dateLabel = new Intl.DateTimeFormat('en-PH', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'Asia/Manila' }).format(new Date());
+  document.querySelector('#app').innerHTML = `
+    <main class="workspace studio-dashboard dashboard-loading-shell" aria-busy="true">
+      <div class="workspace-heading"><div><p class="eyebrow">DAILY OPERATIONS</p><h1>Shop overview</h1><p class="muted">${dateLabel}</p></div><span class="sync-indicator">Connecting...</span></div>
+      <div class="grid-4 metric-grid" aria-hidden="true">
+        <article class="metric"><div class="metric-label">Customers</div><strong>--</strong><small class="muted">Loading live data</small></article>
+        <article class="metric"><div class="metric-label">Bookings</div><strong>--</strong><small class="muted">Loading live data</small></article>
+        <article class="metric"><div class="metric-label">Collected revenue</div><strong>--</strong><small class="muted">Loading live data</small></article>
+        <article class="metric"><div class="metric-label">Waiting customers</div><strong>--</strong><small class="muted">Loading live data</small></article>
+      </div>
+      <div class="dashboard-loading-state" data-dashboard-loading role="status"><span class="dashboard-loading-indicator" aria-hidden="true"></span><strong>Connecting to live shop data...</strong></div>
+    </main>`;
   const summaries = Promise.allSettled([api('/admin/queue'), api('/admin/appointments')]);
+  void summaries.then((results) => publishWorkspaceSnapshot(results[0], results[1]));
   const analytics = await getAnalytics();
   const results = await summaries;
   const queue = results[0].status === 'fulfilled' ? results[0].value.queue.filter((item) => ['waiting', 'serving'].includes(item.status)) : [];
   const schedule = results[1].status === 'fulfilled' ? results[1].value : { appointments: [], reservations: [] };
   const requests = schedule.appointments.filter((item) => item.status === 'pending');
   const reservations = schedule.reservations || [];
-  const dateLabel = new Intl.DateTimeFormat('en-PH', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'Asia/Manila' }).format(new Date());
   if (analytics.barbers) {
     state.barbers.splice(0, state.barbers.length, ...analytics.barbers);
     save();
@@ -69,7 +97,7 @@ async function render() {
       <div class="workspace">
         <div class="workspace-heading"><div><p class="eyebrow">DAILY OPERATIONS</p><h1>Shop overview</h1><p class="muted">${dateLabel}</p></div><a class="button primary" href="admin-logbook.html">${icon('ListOrdered')} Open front desk</a></div>
         ${analytics.connectionError ? `<div class="connection-error" role="alert">${safeText(analytics.connectionError)}</div>` : ''}
-        <div class="grid-4 metric-grid">${[['Users', 'Customers', analytics.totals.customers, 'Registered accounts'], ['CalendarDays', 'Bookings', analytics.totals.bookings, 'All appointments'], ['Wallet', 'Collected revenue', peso(analytics.totals.revenue), 'Online + paid walk-ins'], ['ListOrdered', 'In the queue', analytics.totals.waiting, 'Waiting walk-ins']].map(([symbol, label, value, detail]) => `<article class="metric"><div class="metric-label">${label}${icon(symbol)}</div><strong>${analytics.connectionError ? '--' : value}</strong><small class="muted">${detail}</small></article>`).join('')}</div>
+        <div class="grid-4 metric-grid">${[['Users', 'Customers', analytics.totals.customers, 'Registered accounts'], ['CalendarDays', 'Bookings', analytics.totals.bookings, 'All appointments'], ['Wallet', 'Collected revenue', peso(analytics.totals.revenue), 'Recorded bookings + paid walk-ins'], ['ListOrdered', 'In the queue', analytics.totals.waiting, 'Waiting walk-ins']].map(([symbol, label, value, detail]) => `<article class="metric"><div class="metric-label">${label}${icon(symbol)}</div><strong>${analytics.connectionError ? '--' : value}</strong><small class="muted">${detail}</small></article>`).join('')}</div>
         ${BarberAnalytics.markup()}
         <div class="dashboard-layout"><div><section class="panel"><div class="panel-heading"><h3>At the front desk <span class="count-badge">${queue.length}</span></h3><a class="text-action" href="admin-logbook.html">View queue ${icon('ArrowUpRight')}</a></div>${queue.length ? queue.slice(0, 6).map((item) => `<div class="compact-row"><span class="ticket-number">#${String(item.queueNumber).padStart(2, '0')}</span><div class="row-main"><strong>${safeText(item.customer)}</strong><small>${safeText(item.cutName || 'Service to be assigned')}</small></div><span class="status-pill ${item.status}">${item.status === 'serving' ? 'Serving' : 'Waiting'}</span></div>`).join('') : `<div class="staff-empty">${icon('ListOrdered')}<strong>${results[0].status === 'rejected' ? 'Queue could not load' : 'The line is clear'}</strong><span>Add a walk-in at the front desk or open the shop QR.</span></div>`}<div class="panel-actions"><button class="button primary" type="button" data-call-next ${!queue.some((item) => item.status === 'waiting') || queue.some((item) => item.status === 'serving') ? 'disabled' : ''}>${icon('Megaphone')} Call next</button><a class="button secondary" href="printables/walk-in-qr.html" target="_blank" rel="noreferrer">${icon('QrCode')} Shop QR</a></div></section><section class="panel"><div class="panel-heading"><h3>Awaiting payment verification <span class="count-badge">${requests.length}</span></h3><a class="text-action" href="admin-schedule.html">Review ${icon('ArrowUpRight')}</a></div>${requests.length ? requests.slice(0, 4).map((item) => `<div class="compact-row"><div class="row-main"><strong>${safeText(item.customer)}</strong><small>${safeText(item.date)} / ${safeText(BarberCo.timeLabel(item.time))}</small>${item.request ? `<small><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}</div><strong>${peso(item.total)}</strong><a class="button secondary small" href="admin-schedule.html">Review</a></div>`).join('') : `<div class="staff-empty compact">${icon('CalendarCheck')}<strong>${results[1].status === 'rejected' ? 'Requests could not load' : 'No pending requests'}</strong></div>`}</section></div><div><section class="panel"><div class="panel-heading"><h3>Team availability</h3><a class="text-action" href="admin-barbers.html" aria-label="Manage barbers">${icon('ArrowUpRight')}</a></div>${state.barbers.length ? state.barbers.map((barber) => `<div class="compact-row"><span class="staff-avatar">${BarberCo.initials(barber.name)}</span><div class="row-main"><strong>${safeText(barber.name)}</strong><small>${safeText(barber.role || 'Barber')}</small></div><span class="status-pill ${barber.status || 'active'}">${barber.status === 'on-leave' ? 'On leave' : barber.status === 'fired' ? 'Inactive' : 'Active'}</span></div>`).join('') : `<div class="staff-empty compact"><strong>No barbers added</strong><a href="admin-barbers.html">Add your team</a></div>`}</section><form class="panel" data-quick-service><div class="panel-heading"><h3>Add a service</h3>${icon('Scissors')}</div><label>Service name<input name="name" required placeholder="e.g. Basic haircut"></label><label>Price (PHP)<input type="number" min="0" name="price" required placeholder="150"></label><button class="button secondary full" type="submit">${icon('Plus')} Add service</button></form></div></div>
       </div>
@@ -169,6 +197,7 @@ async function refreshDashboard() {
       receivedUpdate = true;
     }
     const failures = [analyticsResult, lineResult, scheduleResult].filter((result) => result.status === 'rejected');
+    publishWorkspaceSnapshot(lineResult, scheduleResult);
     if (failures.some((result) => [401, 403].includes(result.reason?.status))) {
       location.replace('login.html');
       return;

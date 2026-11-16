@@ -1,5 +1,5 @@
 (() => {
-  const { nav, adminSidebar, initHeader, canAccess, currentRole, safeText } = BarberCo;
+  const { nav, adminSidebar, initHeader, canAccess, currentRole, safeText, icon } = BarberCo;
   if (!canAccess('moderator')) { location.replace('login.html'); return; }
   const all = [
     ['dashboard', 'Dashboard'], ['logbook', 'Staff Logbook'], ['contacts', 'Contact Inbox'],
@@ -9,8 +9,42 @@
   const sections = currentRole() === 'admin' ? all : all.filter(([key]) => ['logbook', 'contacts', 'schedule'].includes(key));
   const permitted = new Set(sections.map(([key]) => key));
   const initial = permitted.has(location.hash.slice(1)) ? location.hash.slice(1) : sections[0][0];
+  const rail = currentRole() === 'admin'
+    ? `
+      <aside class="workspace-rail" data-workspace-rail aria-label="Live operations">
+        <div class="workspace-rail-heading"><p>WORKSPACE</p><h2>Needs attention</h2><small data-rail-updated role="status">Connecting to live data...</small></div>
+        <section class="workspace-rail-section"><h3>Appointments</h3>
+          <a class="workspace-rail-link" href="admin-workspace.html#schedule"><span>${icon('CalendarClock')}<span><strong>Bookings to review</strong><small>Awaiting staff approval</small></span></span><b data-rail-review>--</b></a>
+          <div class="workspace-rail-link is-static"><span>${icon('Wallet')}<span><strong>Payment drafts</strong><small>No time held until approved</small></span></span><b data-rail-drafts>--</b></div>
+        </section>
+        <section class="workspace-rail-section"><h3>Walk-in queue</h3>
+          <a class="workspace-rail-link" href="admin-workspace.html#logbook"><span>${icon('ListOrdered')}<span><strong>Waiting</strong><small>Customers in line</small></span></span><b data-rail-waiting>--</b></a>
+          <div class="workspace-rail-link is-static"><span>${icon('Scissors')}<span><strong>Now serving</strong><small>Currently in the chair</small></span></span><b data-rail-serving>--</b></div>
+        </section>
+        <section class="workspace-rail-section"><h3>Quick access</h3>
+          <a class="workspace-rail-shortcut" href="admin-workspace.html#contacts">${icon('Mail')} Contact inbox ${icon('ArrowUpRight')}</a>
+          <a class="workspace-rail-shortcut" href="admin-workspace.html#reports">${icon('ChartNoAxesCombined')} Reports ${icon('ArrowUpRight')}</a>
+        </section>
+      </aside>`
+    : `
+      <aside class="workspace-rail" data-workspace-rail aria-label="Staff shortcuts">
+        <div class="workspace-rail-heading"><p>STAFF WORKSPACE</p><h2>Quick access</h2><small>Front desk tools</small></div>
+        <section class="workspace-rail-section"><h3>Daily operations</h3>
+          <a class="workspace-rail-shortcut" href="admin-workspace.html#logbook">${icon('ListOrdered')} Staff Logbook ${icon('ArrowUpRight')}</a>
+          <a class="workspace-rail-shortcut" href="admin-workspace.html#schedule">${icon('CalendarDays')} Appointments ${icon('ArrowUpRight')}</a>
+          <a class="workspace-rail-shortcut" href="admin-workspace.html#contacts">${icon('Mail')} Contact inbox ${icon('ArrowUpRight')}</a>
+        </section>
+      </aside>`;
   history.scrollRestoration = 'manual';
-  document.querySelector('#app').innerHTML = `${nav('admin')}<div class="app-shell">${adminSidebar(initial)}<main class="workspace workspace-stream" aria-label="Staff workspace">${sections.map(([key, label]) => `<section class="staff-stream-section" id="${key}" aria-label="${safeText(label)}"><h2>${safeText(label)}</h2><iframe title="${safeText(label)}" data-staff-section="${key}" data-src="admin-${key}.html" scrolling="no"></iframe></section>`).join('')}</main></div>`;
+  document.querySelector('#app').innerHTML = `
+    ${nav('admin')}
+    <div class="app-shell">
+      ${adminSidebar(initial)}
+      <main class="workspace workspace-stream" aria-label="Staff workspace">
+        ${sections.map(([key, label]) => `<section class="staff-stream-section" id="${key}" aria-label="${safeText(label)}"><h2>${safeText(label)}</h2><iframe title="${safeText(label)}" data-staff-section="${key}" data-src="admin-${key}.html" scrolling="no"></iframe></section>`).join('')}
+      </main>
+      ${rail}
+    </div>`;
   initHeader('admin');
   let active = initial;
   let pendingTarget = initial;
@@ -18,6 +52,22 @@
   let scheduled = false;
   const frames = [...document.querySelectorAll('[data-staff-section]')];
   const cleanups = [];
+  const railSnapshot = { queue: null, bookings: null };
+
+  function updateRail(event) {
+    const dashboard = frames.find(frame => frame.dataset.staffSection === 'dashboard');
+    if (!dashboard || event.origin !== location.origin || event.source !== dashboard.contentWindow || event.data?.type !== 'barberco-workspace-snapshot') return;
+    if (event.data.queue) railSnapshot.queue = event.data.queue;
+    if (event.data.bookings) railSnapshot.bookings = event.data.bookings;
+    const show = (selector, value) => { document.querySelector(selector).textContent = Number.isFinite(value) ? String(value) : '--'; };
+    show('[data-rail-review]', railSnapshot.bookings?.review);
+    show('[data-rail-drafts]', railSnapshot.bookings?.drafts);
+    show('[data-rail-waiting]', railSnapshot.queue?.waiting);
+    show('[data-rail-serving]', railSnapshot.queue?.serving);
+    const updated = new Date(event.data.updatedAt || Date.now());
+    document.querySelector('[data-rail-updated]').textContent = `Updated ${updated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  }
+  window.addEventListener('message', updateRail);
 
   function settleAnchor() {
     if (!pendingTarget) return;
@@ -123,7 +173,7 @@
   window.addEventListener('wheel', cancelAnchor, { passive: true });
   window.addEventListener('touchstart', cancelAnchor, { passive: true });
   window.addEventListener('popstate', () => navigate(permitted.has(location.hash.slice(1)) ? location.hash.slice(1) : sections[0][0], 'instant', false));
-  window.addEventListener('pagehide', () => { lazy.disconnect(); cleanups.forEach(cleanup => cleanup()); });
+  window.addEventListener('pagehide', () => { lazy.disconnect(); cleanups.forEach(cleanup => cleanup()); window.removeEventListener('message', updateRail); });
   load(document.getElementById(initial).querySelector('iframe'));
   requestAnimationFrame(settleAnchor);
 })();

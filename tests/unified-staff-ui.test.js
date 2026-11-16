@@ -24,10 +24,13 @@ async function main() {
         localStorage.setItem('barberCoToken', 'isolated-token');
         localStorage.setItem('barberCoState', JSON.stringify({ user, services: [], barbers: [] }));
       }, { base, user });
-      await context.route('**/*', route => {
+      const authCheckFrames = [];
+      await context.route('**/*', async route => {
         const url = new URL(route.request().url());
         if (url.origin !== base) return route.abort();
         if (!url.pathname.startsWith('/api/')) return route.continue();
+        if (url.pathname === '/api/me') authCheckFrames.push(route.request().frame().url());
+        if (url.pathname === '/api/admin/analytics') await new Promise(resolve => setTimeout(resolve, 800));
         if (route.request().method() === 'POST' && url.pathname === '/api/admin/services') {
           fixtureServices.push(route.request().postDataJSON());
           return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ service: fixtureServices.at(-1) }) });
@@ -42,6 +45,26 @@ async function main() {
       await page.goto(`${base}/admin-workspace.html`);
       await page.locator('[data-alert-bell]').waitFor();
       assert.equal(await page.locator('.sidebar').count(), 1);
+      assert.equal(await page.locator('[data-workspace-rail]').count(), 1);
+      assert.equal(await page.locator('[data-workspace-rail]').isVisible(), width >= 1440, `Operations rail responsive visibility at ${width}px`);
+      const outerLayout = await page.evaluate(() => ({ documentWidth: document.documentElement.scrollWidth, viewport: innerWidth, workspace: document.querySelector('.workspace-stream').getBoundingClientRect().toJSON(), rail: document.querySelector('[data-workspace-rail]').getBoundingClientRect().toJSON() }));
+      assert.ok(outerLayout.documentWidth <= outerLayout.viewport + 1, `Outer workspace horizontal overflow at ${width}px: ${JSON.stringify(outerLayout)}`);
+      if (width >= 1440) assert.ok(outerLayout.workspace.right <= outerLayout.rail.left + 1 && outerLayout.rail.right <= outerLayout.viewport + 1, `Main content and rail must not overlap: ${JSON.stringify(outerLayout)}`);
+      if (width >= 1440 && role === 'admin') {
+        await page.waitForFunction(() => document.querySelector('[data-rail-updated]')?.textContent.startsWith('Updated'));
+        await page.frameLocator('[data-staff-section="dashboard"]').locator('[data-dashboard-loading]').waitFor();
+        assert.equal(await page.locator('[data-rail-review]').textContent(), '0');
+        assert.equal(await page.locator('[data-rail-waiting]').textContent(), '0');
+        const dashboardFrame = page.frames().find(frame => frame.url().includes('admin-dashboard.html'));
+        assert.ok(dashboardFrame, 'Admin dashboard module is loaded');
+        await dashboardFrame.evaluate(() => window.parent.postMessage({ type: 'barberco-workspace-snapshot', queue: { waiting: 2, serving: 1 }, bookings: { review: 3, drafts: 4 }, updatedAt: new Date().toISOString() }, location.origin));
+        await page.waitForFunction(() => document.querySelector('[data-rail-review]')?.textContent === '3' && document.querySelector('[data-rail-drafts]')?.textContent === '4' && document.querySelector('[data-rail-waiting]')?.textContent === '2' && document.querySelector('[data-rail-serving]')?.textContent === '1');
+        await dashboardFrame.evaluate(() => window.parent.postMessage({ type: 'barberco-workspace-snapshot', queue: { waiting: 0, serving: 0 }, bookings: { review: 0, drafts: 0 }, updatedAt: new Date().toISOString() }, location.origin));
+      }
+      if (width >= 1440) {
+        await page.locator('.workspace-rail-shortcut[href$="#contacts"]').click();
+        await page.waitForFunction(() => location.hash === '#contacts');
+      }
       const keys = role === 'admin' ? ['dashboard', 'logbook', 'contacts', 'schedule', 'users', 'profile', 'services', 'barbers', 'reports'] : ['logbook', 'contacts', 'schedule'];
       assert.equal(await page.locator('iframe').count(), keys.length);
       for (const key of keys) {
@@ -98,6 +121,7 @@ async function main() {
       await page.frameLocator(`[data-staff-section="${last}"]`).locator('.workspace h1').waitFor();
       await page.waitForTimeout(600);
       assert.equal(await page.locator(`.sidebar a[href$="#${last}"]`).getAttribute('aria-current'), 'location', 'Reload restores the current section');
+      assert.ok(authCheckFrames.length > 0 && authCheckFrames.every(url => new URL(url).pathname.endsWith('/admin-workspace.html')), `Only the outer workspace verifies the session: ${JSON.stringify(authCheckFrames)}`);
       await context.close();
       console.log(`${role} ${width}px: continuous sections, navigation, scrollspy, auto-height, single bell and no script errors passed`);
     }

@@ -90,7 +90,7 @@ async function main() {
     const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png' };
     res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream' });
     // This suite isolates module behavior; unified-staff-ui covers the outer shell.
-    if (path.basename(file) === 'admin-dashboard.html') return res.end(fs.readFileSync(file, 'utf8').replace('js/staff-entry.js?v=unified-20261116', 'js/pages/admin-dashboard.js?v=followup-20261116'));
+    if (path.basename(file) === 'admin-dashboard.html') return res.end(fs.readFileSync(file, 'utf8').replace(/js\/staff-entry\.js\?v=[^"']+/, 'js/pages/admin-dashboard.js?v=staff-ui-test'));
     fs.createReadStream(file).pipe(res);
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));

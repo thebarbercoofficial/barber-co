@@ -1,9 +1,15 @@
 .unified-staff .workspace-stream { padding: 0 24px 32px; }
+.unified-staff .workspace-rail { display: none; }
 .staff-stream-section { scroll-margin-top: 80px; border-bottom: 1px solid var(--line); padding-block: 20px; min-width: 0; }
 .staff-stream-section:last-child { min-height: calc(100svh - 80px); }
 .staff-stream-section > h2 { font: 600 22px Inter, Arial, sans-serif; margin: 0 0 14px; color: var(--gold); }
 .staff-stream-section iframe { width: 100%; height: 700px; display: block; border: 0; background: #1b1917; }
 .staff-stream-section[data-loaded] > h2 { display: none; }
+.dashboard-loading-shell { min-height: 100%; }
+.dashboard-loading-state { display: flex; align-items: center; gap: 12px; min-height: 170px; padding: 18px 0; border-block: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+.dashboard-loading-indicator { width: 19px; height: 19px; flex: none; border: 2px solid #5a4b38; border-top-color: var(--gold); border-radius: 50%; animation: dashboard-spin .8s linear infinite; }
+@keyframes dashboard-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .dashboard-loading-indicator { animation: none; border-color: var(--gold); } }
 .staff-module .staff-header, .staff-module .sidebar, .staff-module .sidebar-backdrop { display: none !important; }
 html.staff-module-root, body.staff-module { min-height: 0 !important; height: auto !important; overflow: hidden; }
 .staff-module .app-shell { min-height: 0 !important; padding-top: 0 !important; }
@@ -13,6 +19,27 @@ html.staff-module-root, body.staff-module { min-height: 0 !important; height: au
 .staff-module dialog[open] { position: fixed; top: var(--module-dialog-top, 32px); bottom: auto; margin-block: 0; max-height: var(--module-dialog-height, 75vh); overflow: auto; }
 @media (max-width: 960px) {
   .unified-staff .workspace-stream { padding-inline: 16px; }
+}
+@media (min-width: 1440px) {
+  .unified-staff .workspace-stream { width: calc(100% - var(--staff-sidebar) - 286px); margin-right: 286px; }
+  .unified-staff .workspace-rail { position: fixed; inset: var(--staff-header) 0 0 auto; z-index: 80; display: block; width: 286px; overflow-y: auto; padding: 20px 16px 24px; background: #211d1a; border-left: 1px solid #45403b; color: #f2efea; }
+  .workspace-rail-heading { padding: 2px 0 16px; border-bottom: 1px solid #45403b; }
+  .workspace-rail-heading p { margin: 0 0 5px; color: #d9ac68; font-size: 10px; font-weight: 700; }
+  .workspace-rail-heading h2 { margin: 0 0 5px; color: #f2efea; font-size: 18px; }
+  .workspace-rail-heading small { color: #b7b1a9; font-size: 11px; }
+  .workspace-rail-section { padding: 15px 0; border-bottom: 1px solid #45403b; }
+  .workspace-rail-section h3 { margin: 0 0 7px; color: #c5b49b; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+  .workspace-rail-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 54px; padding: 8px 6px; color: #eee8df; text-decoration: none; border-radius: 4px; }
+  .workspace-rail-link:hover, .workspace-rail-shortcut:hover { background: #332b24; }
+  .workspace-rail-link > span { display: flex; align-items: center; gap: 9px; min-width: 0; }
+  .workspace-rail-link > span > svg, .workspace-rail-shortcut > svg:first-child { width: 17px; height: 17px; flex: none; color: #d9ac68; }
+  .workspace-rail-link > span > span { display: grid; gap: 3px; min-width: 0; }
+  .workspace-rail-link strong { font-size: 12px; font-weight: 600; }
+  .workspace-rail-link small { color: #b7b1a9; font-size: 10px; line-height: 1.3; }
+  .workspace-rail-link > b { display: inline-grid; place-items: center; min-width: 26px; height: 24px; padding-inline: 6px; border-radius: 4px; background: #40362a; color: #edc68c; font-size: 12px; }
+  .workspace-rail-link.is-static { cursor: default; }
+  .workspace-rail-shortcut { display: flex; align-items: center; gap: 9px; min-height: 40px; padding: 8px 6px; color: #eee8df; font-size: 12px; text-decoration: none; border-radius: 4px; }
+  .workspace-rail-shortcut > svg:last-child { width: 14px; height: 14px; margin-left: auto; color: #b7b1a9; }
 }
 @media print {
   .unified-staff .staff-stream-section { break-before: page; }

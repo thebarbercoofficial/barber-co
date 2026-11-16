@@ -5,7 +5,7 @@
   document.documentElement.classList.add('staff-module-root');
   const style = document.createElement('link');
   style.rel = 'stylesheet';
-  style.href = 'css/staff-workspace.css?v=unified-20261116';
+  style.href = 'css/staff-workspace.css?v=operations-rail-20261117';
   document.head.append(style);
   const originalInterval = window.setInterval.bind(window);
   window.setInterval = (callback, delay, ...args) => originalInterval(() => {

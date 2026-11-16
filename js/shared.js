@@ -490,7 +490,7 @@ const BarberCo = (() => {
       if (requestRailBusy || document.hidden || !list.isConnected) return;
       requestRailBusy = true;
       try {
-        const data = await api('/admin/appointments');
+        const data = await api('/admin/appointment-requests');
         if (!list.isConnected) return;
         const requests = (data.appointments || []).filter(item => !item.archived && (item.status === 'pending' || item.rescheduleRequest?.status === 'pending'));
         list.innerHTML = requests.map(item => {

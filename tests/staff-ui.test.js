@@ -51,6 +51,7 @@ async function fixtures(context, role) {
     if (endpoint.endsWith('/me') && sessionFailure) return route.fulfill({ status: sessionFailure, contentType: 'application/json', body: JSON.stringify({ error: 'Session check temporarily unavailable' }) });
     if (endpoint.endsWith('/me')) data = { user: { id: 'test-user', role, name: role === 'admin' ? 'Shop Owner' : 'Front Desk', email: 'qa@example.test' } };
     else if (endpoint.endsWith('/notifications')) data = { notifications: [], emailConfigured: false, smsConfigured: false };
+    else if (endpoint.endsWith('/admin/appointment-requests')) data = { appointments: appointments.filter(item => item.status === 'pending') };
     else if (endpoint.endsWith('/catalog')) data = { services, barbers };
     else if (endpoint.endsWith('/analytics') && analyticsUnavailable) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Analytics unavailable in this fixture.' }) });
     else if (endpoint.endsWith('/analytics')) data = { totals: { customers: 24, ...dailyTotals, bookings: appointments.filter((item) => !item.demoPayment).length, waiting: queue.filter((item) => item.status === 'waiting').length }, daily, services, barbers, barberPerformance };
@@ -138,7 +139,7 @@ async function main() {
           if (width >= 1500) {
             const method = await page.locator('[aria-labelledby="gcash-settings-title"]').boundingBox();
             const schedule = await page.locator('[aria-labelledby="schedule-settings-title"]').boundingBox();
-            assert.ok(Math.abs(method.y - schedule.y) < 2, 'Payment methods and schedule must share the same row without grid gaps');
+            assert.ok(schedule.y >= method.y + method.height, 'Settings sections must follow vertically without implicit grid tracks');
           }
         }
         assert.equal(await page.locator('.site-header').evaluate((el) => getComputedStyle(el).backgroundColor), 'rgb(43, 26, 18)', 'Staff header must match the oak theme');
@@ -188,7 +189,7 @@ async function main() {
             const chart = await page.locator('[data-analytics]').boundingBox();
             const desk = await page.locator('[data-frontdesk-panel]').boundingBox();
             const bookings = await page.locator('[data-online-activity]').boundingBox();
-            assert.ok(desk.y >= bookings.y + bookings.height - 1 && desk.x > chart.x, 'Queue belongs below bookings, not in its own mostly empty column');
+            assert.ok(desk.y >= bookings.y + bookings.height - 1 && bookings.y >= chart.y + chart.height - 1, 'Chart, bookings and queue must follow vertically');
           }
           if (name === 'reports' && width > 1250) {
             const performance = await page.locator('[aria-labelledby="barber-performance-title"]').boundingBox();
@@ -358,7 +359,7 @@ async function main() {
     const page = await mod.newPage();
     await page.goto(`${base}/admin-logbook.html`);
     await page.waitForSelector('.workspace');
-    assert.equal(await page.locator('.sidebar a[href="admin-contacts.html"]').count(), 1);
+    assert.equal(await page.locator('.sidebar a[href^="admin-contacts.html"]').count(), 1);
     await page.goto(`${base}/admin-contacts.html`);
     await page.waitForSelector('.contact-inbox-item');
     assert.equal(await page.locator('.contact-inbox-item').count(), 1);

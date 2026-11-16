@@ -144,9 +144,11 @@ function updatePanel(connectionError = "", force = false) {
     if (item) {
       row.querySelector('.row-main')?.insertAdjacentHTML('beforeend', groupDetails(item) + attendanceDetails(item) + rescheduleDetails(item));
       if (item.servicePaymentMethod) row.querySelector('.muted').textContent = 'Booking total';
-      if (item.servicePaymentMethod === 'cash' && !item.servicePaid) {
-        const complete = row.querySelector('[data-status$=":completed"]');
-        if (complete) complete.textContent = 'Collect cash / complete';
+      const complete = row.querySelector('[data-status$=":completed"]');
+      if (complete) {
+        complete.textContent = 'Finish';
+        complete.disabled = item.attendanceStatus !== 'serving';
+        complete.title = complete.disabled ? 'Serve the customer from the staff logbook first' : 'Finish service and confirm any remaining payment';
       }
     }
   });

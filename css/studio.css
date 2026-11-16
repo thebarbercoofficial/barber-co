@@ -233,6 +233,35 @@ body.staff-page .site-header.staff-header { background: var(--oak-deep); border-
   .staff-page .schedule-setting-row > label { font-size: 11px; }
   .staff-page .schedule-setting-row { grid-template-columns: 1fr 1fr; }
 }
+
+/* Keep legacy settings placements from creating implicit narrow columns. */
+.staff-page .workspace .settings-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.staff-page .workspace .settings-form > * {
+  grid-column: 1;
+  grid-row: auto;
+  min-width: 0;
+}
+.staff-page .workspace .settings-form > .settings-group:first-child {
+  display: block;
+}
+.staff-page .workspace .settings-form .booking-rules {
+  margin-top: 20px;
+}
+.staff-page .workspace .settings-form .settings-group {
+  grid-column: 1;
+  grid-row: auto;
+  border: 1px solid var(--border, #50463a);
+  padding: 22px;
+  overflow-wrap: anywhere;
+}
+.staff-page .workspace .settings-form input[type="file"] { max-width: 100%; }
+@media screen and (max-width: 680px) {
+  .staff-page .workspace .settings-form .form-row { grid-template-columns: minmax(0, 1fr); }
+  .staff-page .workspace .settings-form .settings-group { padding: 16px; }
+}
 @media print {
   body.printing-report { background: white !important; margin: 0 !important; overflow: visible !important; }
   body.printing-report > *:not([data-report-dialog]) { display: none !important; }

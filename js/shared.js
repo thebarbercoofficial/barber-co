@@ -551,8 +551,16 @@ window.mountRescheduleTimes = function (form, item) {
   const refresh = () => {
     const previous = select.value;
     const settings = BarberCo.state.shopSettings || {};
-    const day = new Date(`${form.elements.date.value}T12:00:00+08:00`).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', weekday: 'long' }).toLowerCase();
-    const hours = settings.operatingHours?.[day];
+    const date = form.elements.date.value;
+    if (!date) {
+      select.replaceChildren(new Option('Choose a date first', ''));
+      select.disabled = true;
+      return;
+    }
+    const day = new Date(`${date}T12:00:00+08:00`).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', weekday: 'long' }).toLowerCase();
+    const hours = { open: '13:00', close: '20:00', ...settings.operatingHours?.[day] };
+    const barber = BarberCo.barbers.find(entry => entry.id === item.barberId);
+    const onLeave = barber && (barber.status === 'on-leave' || (barber.leaveFrom && barber.leaveTo && date >= barber.leaveFrom && date <= barber.leaveTo));
     const duration = Number(item.durationMinutes) || 30;
     const minutes = value => { const [hour, minute] = String(value).split(':').map(Number); return hour * 60 + minute; };
     select.replaceChildren(new Option('Choose another time', ''));
@@ -562,12 +570,18 @@ window.mountRescheduleTimes = function (form, item) {
       const expired = new Date(`${form.elements.date.value}T${time}:00+08:00`).getTime() < Date.now() + 15 * 60000;
       const option = new Option(`${BarberCo.timeLabel(time)}${original ? ' - current booking' : expired ? ' - unavailable' : ''}`, time);
       const closed = hours && (hours.closed || minute < minutes(hours.open) || minute + duration > minutes(hours.close));
-      option.disabled = original || expired || Boolean(closed) || (settings.closedDates || []).includes(form.elements.date.value);
-      select.add(option);
+      option.disabled = original || expired || Boolean(closed) || onLeave || (settings.closedDates || []).includes(form.elements.date.value);
+      if (!option.disabled || (original && !expired && !closed)) select.add(option);
     }
+    select.disabled = ![...select.options].some(option => option.value && !option.disabled);
+    if (select.disabled) select.options[0].textContent = 'No available times - choose another date';
     if ([...select.options].some(option => option.value === previous && !option.disabled)) select.value = previous;
     form.elements.date.min = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
   };
   form.elements.date.addEventListener('change', refresh);
   refresh();
+  BarberCo.loadSettings().then(() => { if (select.isConnected) refresh(); }).catch(() => {
+    select.replaceChildren(new Option('Unable to load hours - reopen to retry', ''));
+    select.disabled = true;
+  });
 };

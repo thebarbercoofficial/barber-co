@@ -21,6 +21,8 @@ const root = path.resolve(__dirname, '..');
       const user = { id: 'admin', role: 'admin', name: 'Owner', email: 'owner@example.test' };
       let booking = { id: 'booking', mongoId: 'booking', customer: 'Action Customer', status: 'pending', date: '2099-01-05', time: '14:00', serviceId: 'cut', barberId: 'barber', total: 250, hasPaymentProof: true };
       let reads = 0;
+      let failCancel = false;
+      const cancellations = [];
       let releaseStale;
       await context.addInitScript(user => {
         window.setInterval = () => 0;
@@ -32,7 +34,12 @@ const root = path.resolve(__dirname, '..');
       await context.route('**/api/**', async route => {
         const endpoint = new URL(route.request().url()).pathname;
         if (route.request().method() === 'PATCH') {
-          const status = route.request().postDataJSON().status;
+          const body = route.request().postDataJSON();
+          const status = body.status;
+          if (status === 'cancelled') {
+            cancellations.push(body);
+            if (failCancel) return route.fulfill({ status: 503, json: { error: 'Cancellation unavailable. Try again.' } });
+          }
           booking = { ...booking, status };
           return route.fulfill({ json: { appointment: booking } });
         }
@@ -48,6 +55,8 @@ const root = path.resolve(__dirname, '..');
         await route.fulfill({ json: data });
       });
       const page = await context.newPage();
+      const popups = [];
+      page.on('dialog', async dialog => { popups.push(dialog.type()); await dialog.dismiss(); });
       page.on('pageerror', error => console.error(error.message));
       await page.goto(`http://127.0.0.1:${server.address().port}/admin-schedule.html`);
       await page.getByRole('button', { name: 'Verify', exact: true }).waitFor({ timeout: 5000 }).catch(async error => { console.error(await page.locator('body').innerText()); throw error; });
@@ -70,6 +79,19 @@ const root = path.resolve(__dirname, '..');
       assert.equal(reads, 3, 'Completion is displayed from the server response');
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
       await page.screenshot({ path: path.join(root, `outputs/appointment-actions-${width}.png`), fullPage: true });
+      booking = { ...booking, status: 'confirmed', attendanceStatus: '' };
+      await page.evaluate(() => refreshAppointments());
+      failCancel = true;
+      await page.getByRole('button', { name: 'Cancel appointment', exact: true }).click();
+      await page.getByText('Cancellation unavailable. Try again.', { exact: true }).waitFor();
+      assert.equal(booking.status, 'confirmed', 'Failed cancellation keeps the saved booking active');
+      assert.equal(await page.getByRole('button', { name: 'Cancel appointment', exact: true }).isEnabled(), true);
+      failCancel = false;
+      await page.getByRole('button', { name: 'Cancel appointment', exact: true }).click();
+      await page.locator('.appointment-record .status-pill').filter({ hasText: 'Cancelled' }).waitFor();
+      assert.equal(cancellations.length, 2, 'Each cancellation click submits exactly once');
+      assert.equal(cancellations[1].reason, 'Cancelled by staff');
+      assert.deepEqual(popups, [], 'Appointment actions must not open browser popups');
       await context.close();
     }
     console.log('Verify/Finish server-confirmed updates, stale-poll protection, equal button dimensions and responsive layout passed at 1440/390px; no SMS.');

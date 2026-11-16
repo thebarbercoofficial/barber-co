@@ -91,7 +91,6 @@ function draw() {
     if (review) {
       const item = myAppointments.find(entry => String(entry.id) === review.dataset.customerReview);
       if (review.disabled || !item || item.rescheduleRequest?.initiatedBy !== 'staff') return;
-      if (!window.confirm(review.dataset.decision === 'approve' ? `Accept ${item.rescheduleRequest.date} at ${BarberCo.timeLabel(item.rescheduleRequest.time)} (Philippine time)? This replaces your original schedule.` : 'Reject this proposal and keep your original schedule?')) return;
       review.disabled = true;
       try { await api(`/appointments/${item.id}/reschedule-review`, { method: 'PATCH', body: JSON.stringify({ decision: review.dataset.decision, requestedAt: item.rescheduleRequest.requestedAt }) }); await refreshBookings(); toast('Reschedule response recorded.'); }
       catch (error) { toast(error.message); review.disabled = false; }
@@ -104,7 +103,6 @@ function draw() {
     if (button.disabled) return;
     const id = cancel ? cancel.dataset.cancelBooking : reschedule.dataset.reschedule;
     if (cancel) {
-      if (!window.confirm('Cancel this booking? No refund will be issued, including any booking fee. This cannot be undone.')) return;
       button.disabled = true;
       try { await api(`/appointments/${id}/cancel`, { method: 'PATCH', body: JSON.stringify({ acceptNoRefund: true }) }); toast('Booking cancelled. No refund will be issued.'); await refreshBookings(); }
       catch (error) { toast(error.message); button.disabled = false; }
@@ -139,13 +137,11 @@ function draw() {
       submitEvent.preventDefault();
       const save = submitEvent.submitter;
       if (save.disabled) return;
-      const values = Object.fromEntries(new FormData(form));
       const current = myAppointments.find(entry => String(entry._id || entry.id) === id);
       if (!current || current.rescheduleRequest?.status === 'pending' || !['pending', 'confirmed'].includes(current.status)) {
         form.querySelector('[data-schedule-error]').textContent = 'This booking has changed. Close this dialog and review the latest booking status.';
         return;
       }
-      if (!window.confirm(`Send a reschedule request from ${item.date} at ${BarberCo.timeLabel(item.time)} to ${values.date} at ${BarberCo.timeLabel(values.time)} (Asia/Manila)?\n${form.querySelector('[data-request-deadline]').textContent}\nStaff approval is required. If unresolved by this deadline, the booking is automatically cancelled. No refund will be issued, including any booking fee. Continue?`)) return;
       save.disabled = true;
       try { await api(`/appointments/${id}/reschedule`, { method: 'PATCH', body: JSON.stringify(Object.fromEntries(new FormData(form))) }); modal.close(); toast('Reschedule requested. Waiting for staff approval; your current schedule is unchanged.'); await refreshBookings(); }
       catch (error) { form.querySelector('[data-schedule-error]').textContent = error.message; save.disabled = false; }

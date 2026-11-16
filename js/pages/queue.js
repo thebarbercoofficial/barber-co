@@ -143,7 +143,6 @@ async function render() {
   document.querySelector('[data-ticket-panel]').addEventListener('click', async event => {
     const button = event.target.closest('[data-cancel-ticket]');
     if (!button || cancelBusy || !cancelToken || cancelTicketId !== button.dataset.cancelTicket) return;
-    if (!window.confirm('Cancel your place in the walk-in queue? You will lose your current position.')) return;
     cancelBusy = true;
     button.disabled = true;
     button.textContent = 'Cancelling...';

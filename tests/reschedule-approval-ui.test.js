@@ -58,6 +58,7 @@ async function main() {
         const page = await context.newPage();
         const errors = [];
         page.on('pageerror', error => errors.push(error.message));
+        page.on('dialog', async dialog => { errors.push(`Unexpected browser popup: ${dialog.type()}`); await dialog.dismiss(); });
         await page.goto(`${base}/${role === 'admin' ? 'admin-schedule' : 'user-profile'}.html`);
         const bookingPanel = page.locator(role === 'admin' ? '[data-appointment-panel]' : '[data-my-bookings]');
         await bookingPanel.getByText('Group of 3:', { exact: true }).waitFor();
@@ -104,12 +105,9 @@ async function main() {
           await page.locator('dialog [name="date"]').fill('2099-12-22');
           await page.locator('dialog [name="time"]').selectOption('14:30');
           await page.locator('dialog [name="reason"]').fill('Staff schedule changed.');
-          page.once('dialog', dialog => dialog.dismiss());
-          await page.getByRole('button', { name: 'Send reschedule request' }).click();
-          assert.equal(writes.length, 2);
-          page.once('dialog', dialog => dialog.accept());
           await page.getByRole('button', { name: 'Send reschedule request' }).click();
           await page.waitForFunction(() => !document.querySelector('dialog'));
+          assert.equal(writes.length, 3, 'One submit sends exactly one staff proposal, without browser confirmation');
           assert.equal(writes.at(-1).body.reason, 'Staff schedule changed.');
           assert.equal(booking.date, initial.date);
           assert.equal(await page.locator('[data-reschedule-review]').count(), 0);
@@ -126,20 +124,14 @@ async function main() {
           assert.equal(await page.locator(`dialog [name="time"] option[value="${initial.time}"]`).evaluate(option => option.disabled), true, 'customer cannot select unchanged schedule');
           await page.locator('dialog [name="date"]').fill(request.date);
           await page.locator('dialog [name="time"]').selectOption(request.time);
-          page.once('dialog', async dialog => {
-            assert.match(dialog.message(), /Review deadline:[\s\S]*No refund/);
-            await dialog.dismiss();
-          });
-          await page.getByRole('button', { name: 'Send reschedule request' }).click();
-          assert.equal(writes.length, 0);
-          page.once('dialog', dialog => dialog.accept());
+          assert.match(await page.locator('dialog').innerText(), /Review deadline:[\s\S]*No refund/);
           await page.getByRole('button', { name: 'Send reschedule request' }).click();
           await page.waitForFunction(() => document.querySelector('[data-reschedule]')?.disabled);
+          assert.equal(writes.length, 1, 'One submit sends exactly one customer request, without browser confirmation');
           assert.equal(booking.date, initial.date);
           assert.equal(await page.locator('[data-cancel-booking]').isEnabled(), true);
           assert.match(await page.locator('[data-my-bookings]').innerText(), /not accepted yet[\s\S]*Review deadline/);
           assert.equal(await page.locator('[data-my-bookings] .status-pill').innerText(), 'Reschedule awaiting staff approval');
-          page.once('dialog', dialog => dialog.accept());
           await page.locator('[data-cancel-booking]').click();
           await page.waitForFunction(() => !document.querySelector('[data-cancel-booking]'));
           assert.equal(booking.status, 'cancelled');
@@ -147,14 +139,12 @@ async function main() {
           booking = { ...initial, rescheduleRequest: { ...request, initiatedBy: 'staff' } };
           await page.reload();
           await page.getByRole('button', { name: 'Keep original schedule', exact: true }).waitFor();
-          page.once('dialog', dialog => dialog.accept());
           await page.getByRole('button', { name: 'Keep original schedule', exact: true }).click();
           await page.waitForFunction(() => !document.querySelector('[data-customer-review]'));
           assert.equal(booking.date, initial.date);
           assert.equal(booking.rescheduleRequest.status, 'rejected');
           booking = { ...initial, rescheduleRequest: { ...request, initiatedBy: 'staff' } };
           await page.reload();
-          page.once('dialog', dialog => dialog.accept());
           await page.getByRole('button', { name: 'Accept new schedule', exact: true }).click();
           await page.waitForFunction(() => !document.querySelector('[data-customer-review]'));
           assert.equal(booking.date, request.date);
@@ -165,7 +155,7 @@ async function main() {
         await context.close();
       }
     }
-    console.log('Reschedule approval UI: desktop/mobile group display, escaped member names, staff member search, customer requests, confirmations, pending cancellation, staff approve/reject, stale errors and version payloads passed.');
+    console.log('Reschedule approval UI: desktop/mobile requests, one-click cancellation and proposal responses without browser popups, staff approve/reject, stale errors and version payloads passed.');
   } finally {
     await browser?.close();
     await new Promise(resolve => server.close(resolve));

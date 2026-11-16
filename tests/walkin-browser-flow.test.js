@@ -49,6 +49,7 @@ async function main() {
         context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
       }
       const customer = await customerContext.newPage();
+      customer.on('dialog', async dialog => { errors.push(`Unexpected customer browser popup: ${dialog.type()}`); await dialog.dismiss(); });
       const logbook = await staffContext.newPage();
       const tv = await staffContext.newPage();
       await customer.goto(`${base}/queue.html`);
@@ -75,10 +76,20 @@ async function main() {
       assert.equal(await customer.getByRole('button', { name: 'Cancel my place', exact: true }).isVisible(), true, 'The QR customer can cancel their own waiting ticket');
       const ticketOnlyCancel = await customer.evaluate(async id => (await fetch(`/api/queue/ticket/${id}/cancel`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, firstId);
       assert.equal(ticketOnlyCancel, 403, 'A public ticket URL alone cannot cancel the ticket');
-      customer.once('dialog', dialog => dialog.accept());
+      let cancelAttempts = 0;
+      await customer.route('**/api/queue/ticket/*/cancel', route => {
+        cancelAttempts++;
+        if (cancelAttempts === 1) return route.fulfill({ status: 503, json: { error: 'Cancellation temporarily unavailable. Try again.' } });
+        return route.continue();
+      });
+      await customer.getByRole('button', { name: 'Cancel my place', exact: true }).click();
+      await customer.getByText('Cancellation temporarily unavailable. Try again.', { exact: true }).first().waitFor();
+      assert.equal(database.records.queue[0].status, 'waiting', 'Failed cancellation must not claim success');
+      assert.equal(await customer.getByRole('button', { name: 'Cancel my place', exact: true }).isEnabled(), true);
       await customer.getByRole('button', { name: 'Cancel my place', exact: true }).click();
       await customer.waitForFunction(() => document.querySelector('[data-ticket-panel]')?.innerText.includes('Cancelled'));
       assert.equal(database.records.queue[0].status, 'cancelled');
+      assert.equal(cancelAttempts, 2, 'Each click submits once, with no browser confirmation');
       assert.equal(await customer.getByRole('button', { name: 'Cancel my place', exact: true }).count(), 0);
       const secondQrResponse = await fetch(`${base}/api/admin/queue/qr`, { headers: { Authorization: `Bearer ${token}` } });
       const secondQr = await secondQrResponse.json();

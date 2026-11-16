@@ -290,7 +290,7 @@ async function render() {
     const archive = event.target.closest('[data-archive-appointment]');
     if (archive) {
       const item = appointments.find(entry => entry.id === archive.dataset.archiveAppointment);
-      if (archive.disabled || !item || !window.confirm(item.archived ? 'Restore this appointment to the list?' : 'Archive this appointment? Booking and payment history stay intact. You can restore it from Archived.')) return;
+      if (archive.disabled || !item) return;
       archive.disabled = true;
       try { await saveAppointment(`/admin/appointments/${item.id}/archive`, { archived: !item.archived }, { id: item.id, archived: !item.archived }); }
       catch (error) { toast(error.message); archive.disabled = false; }
@@ -314,14 +314,13 @@ async function render() {
       reasonInput.placeholder = 'Explain why the appointment needs to change';
       reasonLabel.append(reasonInput);
       modal.querySelector('[data-reschedule-error]').before(reasonLabel);
+      reasonLabel.insertAdjacentHTML('afterend', '<p>Customer approval is required. The original schedule stays unchanged until accepted.</p>');
       modal.querySelector('[type="submit"]').textContent = 'Send reschedule request';
       modal.querySelector('[data-close]').onclick = () => modal.close();
       modal.addEventListener('close', () => modal.remove());
       modal.querySelector('form').onsubmit = async (submit) => {
         submit.preventDefault();
         if (submit.submitter.disabled) return;
-        const values = Object.fromEntries(new FormData(submit.target));
-        if (!window.confirm(`Propose moving ${item.customer} from ${item.date} at ${BarberCo.timeLabel(item.time)} to ${values.date} at ${BarberCo.timeLabel(values.time)} (Asia/Manila)?\nReason: ${values.reason}\nCustomer approval is required. The original schedule stays unchanged until accepted.`)) return;
         submit.submitter.disabled = true;
         try { await saveAppointment(`/admin/appointments/${item.id}/reschedule`, Object.fromEntries(new FormData(submit.target))); modal.close(); toast('Request sent. Waiting for customer approval.'); }
         catch (error) { modal.querySelector('[data-reschedule-error]').textContent = error.message; submit.submitter.disabled = false; }
@@ -369,8 +368,9 @@ async function render() {
     }
     if (!['cancelled', 'disapproved'].includes(status) && pendingReschedule(appointments.find(item => String(item.id) === id) || {})) return;
     let reason = '';
-    if (['cancelled', 'disapproved'].includes(status)) {
-      const message = window.prompt(status === 'disapproved' ? 'Disapprove this booking request? Enter the reason. Any submitted payment needs manual review; no automatic refund is sent.' : 'Cancel this accepted appointment? Enter the reason to share with the customer.');
+    if (status === 'cancelled') reason = 'Cancelled by staff';
+    if (status === 'disapproved') {
+      const message = window.prompt('Enter the reason for disapproving this booking. Any submitted payment needs manual review; no automatic refund is sent.');
       if (message === null) return;
       reason = message.trim().slice(0, 500);
       if (!reason) return toast('Enter a cancellation reason for the customer.');

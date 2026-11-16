@@ -249,6 +249,15 @@ const BarberCo = (() => {
   }
 
   function initHeader(activePage) {
+    if (document.body.classList.contains('staff-page')) {
+      document.querySelectorAll('a[href]').forEach(link => {
+        const url = new URL(link.getAttribute('href'), location.href);
+        if (url.origin === location.origin && /\/admin-[a-z-]+\.html$/.test(url.pathname)) {
+          url.searchParams.set('release', 'admin-clean-20261117');
+          link.href = url.href;
+        }
+      });
+    }
     const staff = Boolean(document.querySelector('.app-shell'));
     document.body.classList.toggle('staff-page', staff);
     const header = document.querySelector("[data-header]");

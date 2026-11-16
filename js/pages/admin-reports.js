@@ -7,7 +7,7 @@ if (!BarberCo.canAccess("admin")) {
 
 async function render() {
   document.querySelector('#app').innerHTML = `${nav('admin')}<section class="app-shell">${adminSidebar('reports')}<div class="workspace"><div class="workspace-heading"><h1>Reports</h1></div><p role="status" aria-live="polite">Loading reports...</p></div></section>`;
-  const loadReports = () => api('/admin/analytics', { signal: AbortSignal.timeout(60000) });
+  const loadReports = () => api('/admin/analytics');
   let analytics;
   let connectionError = '';
   try {

@@ -145,6 +145,12 @@
 @media screen {
   .staff-page .workspace-rail { display: none; }
 }
+@media screen and (max-width: 1439px) {
+  .staff-page .workspace-rail { display: block; position: fixed; right: 12px; bottom: 12px; z-index: 85; background: #211d1a; border: 1px solid #8f6a3c; padding: 8px 12px; }
+  .workspace-rail-heading, .workspace-rail-section h3, .workspace-rail-section > :not(a[href="admin-schedule.html"]) { display: none; }
+  .workspace-rail-section { margin: 0; padding: 0; }
+  .workspace-rail-link[href="admin-schedule.html"] { display: flex; gap: 8px; align-items: center; color: #edc68c; text-decoration: none; }
+}
 @media screen and (min-width: 1440px) {
   .staff-page .sidebar a[href="admin-schedule.html"] { display: none; }
   .staff-page .workspace { width: calc(100% - var(--staff-sidebar) - 286px); margin-right: 286px; }

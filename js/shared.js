@@ -98,7 +98,6 @@ const BarberCo = (() => {
   }
 
   const pendingReads = new Map();
-  const recentReads = new Map();
 
   if (!window.staffModule && /\/admin-[a-z-]+\.html$/.test(location.pathname)) {
     const app = document.querySelector('#app');
@@ -136,10 +135,8 @@ const BarberCo = (() => {
     const method = String(options.method || 'GET').toUpperCase();
     const shareRead = method === 'GET' && Object.keys(options).length === 0;
     const key = `${authToken()}:${path}`;
-    if (method !== 'GET') { pendingReads.clear(); recentReads.clear(); }
+    if (method !== 'GET') pendingReads.clear();
     if (!shareRead) return requestApi(path, options);
-    const cached = recentReads.get(key);
-    if (cached && Date.now() - cached.at < 5000) return structuredClone(cached.data);
     let pending = pendingReads.get(key);
     if (!pending) {
       pending = requestApi(path, options);
@@ -147,7 +144,6 @@ const BarberCo = (() => {
     }
     try {
       const data = await pending;
-      if (path.startsWith('/admin/')) recentReads.set(key, { at: Date.now(), data });
       return structuredClone(data);
     } finally {
       if (pendingReads.get(key) === pending) pendingReads.delete(key);
@@ -438,7 +434,7 @@ const BarberCo = (() => {
     const icons = { dashboard: 'LayoutDashboard', logbook: 'ListOrdered', contacts: 'Mail', users: 'Users', profile: 'Settings2', services: 'Scissors', barbers: 'ContactRound', reports: 'ChartNoAxesCombined', schedule: 'CalendarDays', public: 'ExternalLink' };
     const operations = links.filter(([, key]) => ['dashboard', 'logbook', 'schedule', 'contacts'].includes(key));
     const management = links.filter(([, key]) => !['dashboard', 'logbook', 'schedule', 'contacts', 'public'].includes(key));
-    const group = (title, items) => items.length ? `<div class="sidebar-group"><p>${title}</p>${items.map(([href, key, label]) => `<a class="${active === key ? 'active' : ''}" href="${href}" title="${safeText(label)}" aria-label="${safeText(label)}" ${active === key ? 'aria-current="page"' : ''}>${icon(icons[key])}<span>${label}</span></a>`).join('')}</div>` : '';
+    const group = (title, items) => items.length ? `<div class="sidebar-group"><p>${title}</p>${items.filter(([, key]) => key !== 'schedule').map(([href, key, label]) => `<a class="${active === key ? 'active' : ''}" href="${href}" title="${safeText(label)}" aria-label="${safeText(label)}" ${active === key ? 'aria-current="page"' : ''}>${icon(icons[key])}<span>${label}</span></a>`).join('')}</div>` : '';
     const railLinks = (items) => items.map(([href, key, label]) => `<a class="workspace-rail-link ${active === key ? 'is-active' : ''}" href="${href}" ${active === key ? 'aria-current="page"' : ''}><span>${icon(icons[key])}<span><strong>${safeText(label)}</strong></span></span>${icon('ArrowUpRight')}</a>`).join('');
     const railGroup = (title, items) => items.length ? `<section class="workspace-rail-section"><h3>${title}</h3>${railLinks(items)}</section>` : '';
     const attention = active === 'dashboard' ? `<section class="workspace-rail-section"><h3>Appointments</h3>

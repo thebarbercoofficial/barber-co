@@ -324,3 +324,45 @@ body.staff-page .site-header.staff-header { background: var(--oak-deep); border-
 .dashboard-loading-indicator { width: 19px; height: 19px; flex: none; border: 2px solid #5a4b38; border-top-color: var(--gold); border-radius: 50%; animation: dashboard-spin .8s linear infinite; }
 @keyframes dashboard-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .dashboard-loading-indicator { animation: none; border-color: var(--gold); } }
+
+/* Each admin page flows vertically; the request rail remains independent. */
+@media screen {
+  .staff-page .workspace { font-size: 16px; line-height: 1.55; }
+  .staff-page .workspace h1 { font-size: 30px; }
+  .staff-page .panel-heading h3 { font-size: 21px; }
+  .staff-page .workspace label { font-size: 15px; }
+  .staff-page .workspace input:not([type="checkbox"]):not([type="range"]),
+  .staff-page .workspace select { min-height: 46px; font-size: 16px; }
+  .staff-page .workspace .button { min-height: 44px; font-size: 15px; }
+  .staff-page .workspace .management-layout,
+  .staff-page .workspace .frontdesk-layout,
+  .staff-page .workspace .reports-layout,
+  .staff-page .workspace .settings-layout,
+  .staff-page .workspace .settings-form,
+  .staff-page .workspace > .grid-2,
+  .studio-dashboard .dashboard-layout { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .studio-dashboard .dashboard-layout > div:last-child { border-left: 0; padding-left: 0; }
+  .staff-page .reports-layout > .report-services { grid-column: auto; }
+  .staff-page .management-layout > form.panel { position: static; max-width: none; }
+  .staff-page .workspace .chart-frame { height: 520px; }
+  .studio-dashboard .dashboard-layout .panel { padding-block: 28px; }
+  .studio-dashboard .compact-row { min-height: 90px; font-size: 17px; }
+  .studio-dashboard .compact-row small { font-size: 15px; }
+  .studio-dashboard .dashboard-roster { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .staff-page .workspace .record-list, .staff-page .workspace .queue-list,
+  .staff-page .reports-layout .barber-performance-table { max-height: none; overflow-y: visible; }
+  .staff-page .workspace .data-table-scroll { max-height: none; overflow-x: auto; }
+  .staff-page .workspace .data-table-scroll th,
+  .staff-page .workspace .data-table-scroll td { font-size: 15px; padding: 16px; }
+  .staff-page .sidebar-group { flex: 0 0 auto; margin-bottom: 8px; }
+  .staff-page .sidebar-shop { padding-block: 12px; }
+  .staff-page .sidebar-group > p { margin-block: 8px; }
+}
+@media screen and (max-width: 680px) {
+  .staff-page .workspace .chart-frame { height: 340px; }
+  .staff-page .workspace h1 { font-size: 26px; }
+  .studio-dashboard .dashboard-roster { grid-template-columns: 1fr; }
+  .staff-page .workspace .management-layout,
+  .staff-page .workspace .frontdesk-layout,
+  .studio-dashboard .dashboard-layout { gap: 24px; }
+}

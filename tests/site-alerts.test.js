@@ -137,6 +137,21 @@ async function main() {
         assert.match(history, /appointment is cancelled/);
         assert.match(history, /approve or reject/);
       }
+      await page.locator('[data-alert-clear]').click();
+      assert.equal(await page.locator('.alert-entry').count(), 0, 'Clear removes read and unread notifications');
+      assert.equal(await page.locator('.alert-badge').isVisible(), false);
+      assert.equal(await page.locator('[data-alert-popup]').isVisible(), false);
+      await page.evaluate(() => BarberCoAlerts.refresh());
+      assert.equal(await page.locator('.alert-entry').count(), 0, 'Polling does not restore cleared notifications');
+      await page.reload();
+      await page.locator('[data-alert-bell]').click();
+      await page.evaluate(() => BarberCoAlerts.refresh());
+      assert.equal(await page.locator('.alert-entry').count(), 0, 'Clear persists after reload');
+      if (role === 'customer') notifications.push({ _id: 'after-clear', message: 'A new booking update', createdAt: new Date().toISOString() });
+      else contacts.push({ _id: 'after-clear', name: 'New visitor', createdAt: new Date().toISOString() });
+      await page.evaluate(() => BarberCoAlerts.refresh());
+      assert.equal(await page.locator('.alert-entry').count(), 1, 'New notifications still arrive after clearing');
+      await page.screenshot({ path: path.join(preview, `${role}-${width}-clear.png`), fullPage: false });
       assert.deepEqual(errors, []);
       await context.close();
       console.log(`In-site notifications, sound/mute, unread/read, deduplication, reload, escaped content and layout passed: ${role} ${width}px`);

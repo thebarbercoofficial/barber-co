@@ -376,7 +376,7 @@ const BarberCo = (() => {
       if (window.BarberCoAlerts) window.BarberCoAlerts.mount();
       else if (!document.querySelector('[data-alert-script]')) {
         const script = document.createElement('script');
-        script.src = 'js/site-alerts.js?v=admin-actions-fast-20261117';
+        script.src = 'js/site-alerts.js?v=clear-notifications-20261117';
         script.dataset.alertScript = '';
         document.head.append(script);
       }

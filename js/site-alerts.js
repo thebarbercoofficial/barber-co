@@ -30,11 +30,11 @@
     bell.innerHTML = `${icon('Bell')}<span class="alert-badge" ${count ? '' : 'hidden'}>${count > 99 ? '99+' : count}</span>`;
     const panel = document.querySelector('[data-alert-panel]');
     const focused = panel.contains(document.activeElement) ? document.activeElement : null;
-    const focusAction = focused && ['data-alert-sound', 'data-alert-read', 'data-alert-close', 'data-alert-item'].find(name => focused.hasAttribute(name));
+    const focusAction = focused && ['data-alert-sound', 'data-alert-clear', 'data-alert-read', 'data-alert-close', 'data-alert-item'].find(name => focused.hasAttribute(name));
     const focusValue = focusAction && focused.getAttribute(focusAction);
     const scroll = panel.querySelector('.alert-list')?.scrollTop || 0;
     panel.hidden = !open;
-    panel.innerHTML = `<div class="alert-panel-heading"><strong id="alert-heading">Notifications</strong><div>${soundButton()}<button type="button" class="alert-icon" data-alert-close aria-label="Close notifications" title="Close notifications">${icon('X')}</button></div></div><div class="alert-panel-tools"><button type="button" data-alert-read>Mark all read</button><span role="status">${safeText(connectionError)}</span></div><div class="alert-list">${items().length ? items().map(item => `<a class="alert-entry ${item.read ? '' : 'unread'}" href="${item.href}" data-alert-item="${safeText(item.key)}"><strong>${safeText(item.title)}</strong><span>${safeText(item.message)}</span><time>${safeText(date(item.at))} (PH)</time></a>`).join('') : '<p class="alert-empty">No notifications yet.</p>'}</div>`;
+    panel.innerHTML = `<div class="alert-panel-heading"><strong id="alert-heading">Notifications</strong><div>${soundButton()}<button type="button" class="alert-icon" style="width:auto;flex-basis:auto" data-alert-clear title="Clear all notifications">Clear</button><button type="button" class="alert-icon" data-alert-close aria-label="Close notifications" title="Close notifications">${icon('X')}</button></div></div><div class="alert-panel-tools"><button type="button" data-alert-read>Mark all read</button><span role="status">${safeText(connectionError)}</span></div><div class="alert-list">${items().length ? items().map(item => `<a class="alert-entry ${item.read ? '' : 'unread'}" href="${item.href}" data-alert-item="${safeText(item.key)}"><strong>${safeText(item.title)}</strong><span>${safeText(item.message)}</span><time>${safeText(date(item.at))} (PH)</time></a>`).join('') : '<p class="alert-empty">No notifications yet.</p>'}</div>`;
     panel.querySelector('.alert-list').scrollTop = scroll;
     if (open && focusAction) Array.from(panel.querySelectorAll(`[${focusAction}]`)).find(node => node.getAttribute(focusAction) === focusValue)?.focus({ preventScroll: true });
   }
@@ -167,6 +167,15 @@
     const close = Boolean(event.target.closest('[data-alert-close]'));
     if (event.target.closest('[data-alert-sound]')) { data.muted = !data.muted; persist(); void unlock(); render(); document.querySelector('[data-alert-sound]')?.focus(); }
     if (event.target.closest('[data-alert-read]')) { data.items = items().map(item => ({ ...item, read: true })); persist(); render(); document.querySelector('[data-alert-read]')?.focus(); }
+    if (event.target.closest('[data-alert-clear]')) {
+      // Keep fingerprints so polling cannot restore dismissed updates.
+      data = { ...data, ...read(), items: [] };
+      persist();
+      clearTimeout(popupTimer);
+      document.querySelector('[data-alert-popup]').hidden = true;
+      render();
+      document.querySelector('[data-alert-clear]')?.focus();
+    }
     const entry = event.target.closest('[data-alert-item]');
     if (entry) { data.items = items().map(item => item.key === entry.dataset.alertItem ? { ...item, read: true } : item); persist(); }
     if (event.target.closest('[data-alert-dismiss]')) document.querySelector('[data-alert-popup]').hidden = true;

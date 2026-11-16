@@ -440,13 +440,10 @@ const BarberCo = (() => {
     const attention = active === 'dashboard' ? `<section class="workspace-rail-section"><h3>Appointments</h3>
         <a class="workspace-rail-link" href="admin-schedule.html"><span>${icon('CalendarClock')}<span><strong>Bookings to review</strong><small>Awaiting staff approval</small></span></span><b data-rail-review>--</b></a>
         <div class="workspace-rail-link is-static"><span>${icon('Wallet')}<span><strong>Payment drafts</strong><small>No time held until approved</small></span></span><b data-rail-drafts>--</b></div>
-      </section><section class="workspace-rail-section"><h3>Walk-in queue</h3>
-        <a class="workspace-rail-link" href="admin-logbook.html"><span>${icon('ListOrdered')}<span><strong>Waiting</strong><small>Customers in line</small></span></span><b data-rail-waiting>--</b></a>
-        <div class="workspace-rail-link is-static"><span>${icon('Scissors')}<span><strong>Now serving</strong><small>Currently in the chair</small></span></span><b data-rail-serving>--</b></div>
       </section>` : '';
-    const rightRail = `<aside class="workspace-rail" data-workspace-rail aria-label="Workspace navigation">
-      <div class="workspace-rail-heading"><p>WORKSPACE</p><h2>${active === 'dashboard' ? 'Needs attention' : 'Jump to section'}</h2><small ${active === 'dashboard' ? 'data-rail-updated role="status"' : ''}>${active === 'dashboard' ? 'Connecting to live data...' : 'Quick access across the workspace'}</small></div>
-      ${attention}${railGroup('Daily operations', operations)}${railGroup('Shop management', management)}
+    const rightRail = `<aside class="workspace-rail" data-workspace-rail aria-label="Appointments navigation">
+      <div class="workspace-rail-heading"><p>RESERVATIONS</p><h2>Appointments</h2><small ${active === 'dashboard' ? 'data-rail-updated role="status"' : ''}>${active === 'dashboard' ? 'Connecting to live data...' : 'Bookings and payment review'}</small></div>
+      ${railGroup('Bookings', links.filter(([, key]) => key === 'schedule'))}${attention}
     </aside>`;
     return `<button class="sidebar-backdrop" type="button" data-sidebar-dismiss aria-label="Close staff navigation"></button><aside class="sidebar" id="staff-sidebar"><div class="sidebar-shop"><img src="images/logo.png" alt=""><div>Carmona shop<small>${currentRole() === 'moderator' ? 'Front desk' : 'Administration'}</small></div><span class="shop-indicator" title="Staff workspace"></span></div>${group('DAILY OPERATIONS', operations)}${group('SHOP MANAGEMENT', management)}<div class="sidebar-footer"><a href="index.html">${icon('ExternalLink')}<span>Public website</span></a><small>The Barber Co / Since 2022</small></div></aside>${rightRail}`;
   }

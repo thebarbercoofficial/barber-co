@@ -237,3 +237,33 @@
   .staff-page .staff-header .brand { white-space: normal; }
   .staff-page .workspace-heading > small { margin-left: 0; }
 }
+/* Keep status and commands in distinct tracks, including inside the two rails. */
+@media screen {
+  .staff-page .workspace .appointment-record {
+    grid-template-columns: 100px minmax(180px, 1fr) 150px 145px minmax(230px, auto);
+    align-items: start;
+    gap: 16px;
+  }
+  .staff-page .workspace .appointment-record > * { min-width: 0; }
+  .staff-page .workspace .appointment-record > .status-pill { white-space: normal; max-width: 100%; line-height: 1.5; justify-self: start; }
+  .staff-page .workspace .appointment-record > .button-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+  .staff-page .workspace .appointment-toolbar { display: flex; flex-direction: column; align-items: stretch; gap: 14px; }
+  .staff-page .workspace .appointment-toolbar .filter-tabs { display: flex; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; }
+  .staff-page .workspace .appointment-toolbar .filter-tabs button { flex-shrink: 0; white-space: nowrap; }
+}
+@media screen and (max-width: 1800px) {
+  .staff-page .workspace .appointment-record { grid-template-columns: 100px minmax(0, 1fr) 160px; }
+  .staff-page .workspace .appointment-record > .appointment-date { grid-column: 1; grid-row: 1; }
+  .staff-page .workspace .appointment-record > .row-main { grid-column: 2; grid-row: 1 / 3; }
+  .staff-page .workspace .appointment-record > div:nth-child(3) { grid-column: 3; grid-row: 1; }
+  .staff-page .workspace .appointment-record > .status-pill { grid-column: 3; grid-row: 2; }
+  .staff-page .workspace .appointment-record > .button-row { grid-column: 2 / 4; grid-row: 3; }
+}
+@media screen and (max-width: 680px) {
+  .staff-page .workspace .appointment-record { grid-template-columns: minmax(0, 1fr) minmax(110px, auto); gap: 12px; }
+  .staff-page .workspace .appointment-record > .appointment-date { grid-column: 1; grid-row: 1; }
+  .staff-page .workspace .appointment-record > .row-main { grid-column: 1 / -1; grid-row: 2; }
+  .staff-page .workspace .appointment-record > div:nth-child(3) { grid-column: 2; grid-row: 1; text-align: right; }
+  .staff-page .workspace .appointment-record > .status-pill { grid-column: 1 / -1; grid-row: 3; }
+  .staff-page .workspace .appointment-record > .button-row { grid-column: 1 / -1; grid-row: 4; justify-content: flex-start; }
+}

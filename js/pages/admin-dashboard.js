@@ -168,7 +168,7 @@ async function render() {
   const metricKeys = ['customers', 'bookings', 'revenue', 'waiting'];
   document.querySelectorAll('.metric-grid .metric').forEach((node, index) => { node.dataset.metric = metricKeys[index]; });
   if (results[1].status === 'fulfilled') updateBookingMetric(schedule.appointments);
-  document.querySelector('[data-metric="revenue"] small').textContent = 'All time / recorded paid / excludes tests';
+  document.querySelector('[data-metric="revenue"] small').textContent = 'All time / recorded payments';
   document.querySelector('[data-metric="customers"] small').textContent = 'Customer accounts / excludes staff';
   document.querySelector('[data-metric="waiting"] .metric-label').firstChild.textContent = 'Waiting customers';
   document.querySelector('[data-metric="waiting"] small').textContent = 'Waiting only / excludes now serving';
@@ -180,7 +180,7 @@ function updateBookingMetric(appointments) {
   const target = document.querySelector('[data-metric="bookings"]');
   const demos = appointments.filter((item) => item.demoPayment).length;
   target.querySelector('strong').textContent = appointments.length;
-  target.querySelector('small').textContent = `All appointments / ${demos} test bookings`;
+  target.querySelector('small').textContent = `Recorded appointments`;
 }
 let dashboardBusy = false;
 async function refreshDashboard() {

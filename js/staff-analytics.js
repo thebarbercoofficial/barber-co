@@ -111,7 +111,7 @@ const BarberAnalytics = (() => {
     const explainCounts = () => {
       const note = root.querySelector('[data-analytics-note]');
       note.hidden = false;
-      note.textContent = `Bookings and walk-ins use their entry date, not the scheduled appointment date. Revenue uses the recorded payment date. Counts include ${analytics.totals?.demoBookings || 0} test bookings (all time); test payments never count as revenue. Collections reflect payments recorded by staff, not automatic wallet reconciliation.${analytics.legacyPayments ? ` ${analytics.legacyPayments} older payments use their last recorded update date.` : ''}`;
+      note.textContent = `Bookings and walk-ins use their entry date, not the scheduled appointment date. Revenue uses the recorded payment date. Collections reflect payments recorded by staff, not automatic wallet reconciliation.${analytics.legacyPayments ? ` ${analytics.legacyPayments} older payments use their last recorded update date.` : ''}`;
     };
     const signature = (data) => JSON.stringify([data.daily, data.totals, data.legacyPayments]);
     let previous = signature(analytics);

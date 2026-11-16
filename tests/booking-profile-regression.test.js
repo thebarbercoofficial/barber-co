@@ -27,5 +27,14 @@ async function request(method, url, body = {}) {
   assert.equal(profile.appointments.length, 1);
   assert.equal(profile.appointments[0].id, response.appointment.id);
   assert.equal(profile.appointments[0].bookingPaymentMethod, 'onsite');
+  database.records.appointments.push({ _id: new ObjectId(), userId: user._id, demoPayment: true, status: 'pending' });
+  assert.equal((await request('GET', '/appointments/mine')).appointments.length, 1, 'Historical demo records must not appear on customer profiles');
+  user.role = 'admin';
+  database.records.appointments[0].notificationOutbox = { internal: { message: 'internal delivery payload' } };
+  const staff = await request('GET', '/admin/appointments');
+  assert.equal(staff.status, 200, JSON.stringify(staff));
+  assert.equal(staff.appointments.length, 1);
+  assert.equal(staff.appointments[0].notificationOutbox, undefined, 'List payload must exclude delivery internals');
+  assert.equal(staff.appointments[0].hasPaymentProof, false, 'Onsite bookings must not show nonexistent payment proof');
   console.log('PASS: onsite booking without receipt persists and appears in profile without cleanup/delivery dependencies; no SMS or email sent');
 })().catch(error => { console.error(error); process.exitCode = 1; });

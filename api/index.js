@@ -1186,14 +1186,14 @@ async function handler(req, res) {
 
   if (req.method === "GET" && path === "/appointments/mine") {
     const user = await requireUser(req, database);
-    const appointments = await database.collection("appointments").find({ userId: user._id }, { projection: { paymentProof: 0 } }).sort({ createdAt: -1 }).limit(50).toArray();
+    const appointments = await database.collection("appointments").find({ userId: user._id, demoPayment: { $ne: true } }, { projection: { paymentProof: 0, notificationOutbox: 0 } }).sort({ createdAt: -1 }).limit(50).toArray();
     const tickets = await database.collection('queue').find({ source: 'appointment', userId: user._id }).toArray();
     return send(res, 200, { appointments: appointments.map(item => normalizeDoc({ ...item, attendanceStatus: bookingGuards.attendance(item, tickets) })) });
   }
 
   if (req.method === 'GET' && path === '/admin/appointment-requests') {
     await requireRole(req, database, ['admin', 'moderator']);
-    const appointments = await database.collection('appointments').find({ archived: { $ne: true }, $or: [{ status: 'pending' }, { 'rescheduleRequest.status': 'pending' }] }, { projection: { customer: 1, serviceId: 1, barberId: 1, date: 1, time: 1, status: 1, rescheduleRequest: 1 } }).sort({ createdAt: -1 }).limit(50).toArray();
+    const appointments = await database.collection('appointments').find({ demoPayment: { $ne: true }, archived: { $ne: true }, $or: [{ status: 'pending' }, { 'rescheduleRequest.status': 'pending' }] }, { projection: { customer: 1, serviceId: 1, barberId: 1, date: 1, time: 1, status: 1, rescheduleRequest: 1 } }).sort({ createdAt: -1 }).limit(50).toArray();
     res.setHeader('Cache-Control', 'no-store');
     return send(res, 200, { appointments: appointments.map(normalizeDoc) });
   }
@@ -1202,15 +1202,15 @@ async function handler(req, res) {
     await requireRole(req, database, ["admin", "moderator"]);
     if (req.method === "GET") {
       const [appointments, holds, settings, tickets] = await Promise.all([
-        database.collection("appointments").find({}, { projection: { paymentProof: 0 } }).sort({ createdAt: -1 }).toArray(),
-        database.collection("appointmentHolds").find({ expiresAt: { $gt: new Date() } }).sort({ createdAt: -1 }).toArray(),
+        database.collection("appointments").find({ demoPayment: { $ne: true } }, { projection: { paymentProof: 0, notificationOutbox: 0 } }).sort({ createdAt: -1 }).toArray(),
+        database.collection("appointmentHolds").find({ demoPayment: { $ne: true }, expiresAt: { $gt: new Date() } }, { projection: { paymentProof: 0 } }).sort({ createdAt: -1 }).toArray(),
         database.collection("settings").findOne({ _id: "shop" }),
-        database.collection('queue').find({ source: 'appointment' }).toArray()
+        database.collection('queue').find({ source: 'appointment' }, { projection: { appointmentId: 1, status: 1 } }).toArray()
       ]);
       const owners = holds.length ? await database.collection("users").find({ _id: { $in: holds.map((hold) => hold.userId) } }, { projection: { name: 1 } }).toArray() : [];
       res.setHeader("Cache-Control", "no-store");
       return send(res, 200, {
-        appointments: appointments.map(item => ({ ...normalizeDoc(item), attendanceStatus: bookingGuards.attendance(item, tickets), hasPaymentProof: item.hasPaymentProof !== false })),
+        appointments: appointments.map(item => ({ ...normalizeDoc(item), attendanceStatus: bookingGuards.attendance(item, tickets), hasPaymentProof: item.bookingPaymentMethod !== 'onsite' && item.hasPaymentProof !== false })),
         reservations: holds.map((hold) => ({ ...normalizeDoc(hold), customer: hold.customer || owners.find((user) => String(user._id) === String(hold.userId))?.name || "Customer", status: "awaiting-payment" })),
         paymentMode: mergedSettings(settings || {}).paymentMode,
         paymentConfigured: paymentConfigured(mergedSettings(settings || {}))

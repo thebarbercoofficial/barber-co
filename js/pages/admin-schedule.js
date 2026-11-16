@@ -55,14 +55,12 @@ function matchesAppointmentFilter(item, filter) {
 
 async function loadAppointments(refreshCatalog = false) {
   try {
-    const [data] = await Promise.all([
-      api("/admin/appointments"),
-      refreshCatalog ? loadCatalog().catch(() => toast("Booking details are using the saved catalog.")) : Promise.resolve()
-    ]);
-    appointments = (data.appointments || []).map((item) => ({ ...item, paymentProof: item.paymentProof || (item.hasPaymentProof ? `#receipt-${item.mongoId || item.id}` : ''), id: item.mongoId || item.id, time: item.time || "Next available", status: item.status || "pending" }));
-    reservations = data.reservations || [];
+    if (refreshCatalog) loadCatalog().then(() => updatePanel(latestConnectionError, true)).catch(() => {});
+    const data = await api("/admin/appointments");
+    appointments = (data.appointments || []).filter(item => !item.demoPayment).map((item) => ({ ...item, paymentProof: item.paymentProof || (item.hasPaymentProof ? `#receipt-${item.mongoId || item.id}` : ''), id: item.mongoId || item.id, time: item.time || "Next available", status: item.status || "pending" }));
+    reservations = (data.reservations || []).filter(item => !item.demoPayment);
     paymentReady = data.paymentConfigured !== false;
-    demoMode = data.paymentMode === 'demo';
+    demoMode = false;
     return "";
   } catch (error) {
     if (error.status === 401 || error.status === 403) {

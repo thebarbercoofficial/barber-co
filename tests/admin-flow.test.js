@@ -30,6 +30,15 @@ const { chromium } = require('playwright');
       assert.equal(responsive.border, '1px', 'Form boundaries must be visible');
       assert.equal(responsive.overflow, false, `Page must not overflow at ${width}px`);
       assert(responsive.fields, 'Fields must stay inside the workspace');
+      await page.locator('.workspace').evaluate(node => {
+        node.innerHTML += '<div class="record-list"><article class="appointment-row appointment-record"><div class="appointment-date">2026-11-18</div><div class="row-main"><strong>Customer booking</strong><small>Classic haircut / Assigned barber</small></div><div><strong>PHP 300.00</strong><small>Booking total</small></div><span class="status-pill pending">Pending / needs review</span><span class="button-row"><button class="icon-button">R</button><button class="button primary">Verify / accept</button><button class="icon-button">X</button></span></article></div>';
+      });
+      const record = await page.locator('.appointment-record').evaluate(row => {
+        const boxes = [...row.children].map(el => el.getBoundingClientRect());
+        return { overlap: boxes.some((a, i) => boxes.slice(i + 1).some(b => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1)), overflow: row.scrollWidth > row.clientWidth + 1 };
+      });
+      assert.equal(record.overlap, false, `Appointment columns overlap at ${width}px`);
+      assert.equal(record.overflow, false, `Appointment record overflows at ${width}px`);
       await page.screenshot({ path: path.resolve(__dirname, `../outputs/admin-flow-${width}.png`), fullPage: true });
       await page.close();
     }

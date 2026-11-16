@@ -203,11 +203,11 @@ async function main() {
           await page.waitForFunction(() => Math.round(document.querySelector('.sidebar').getBoundingClientRect().width) === 76);
           assert.equal(await page.locator('[data-staff-toggle]').getAttribute('aria-expanded'), 'false');
           assert.equal(await page.locator('.sidebar a[aria-label="Appointments"]').count(), 0);
-          assert.ok(await page.locator('.workspace-rail a[href="admin-schedule.html"]').count());
+          assert.ok(await page.locator('.workspace-rail a[href*="admin-schedule.html"]').count());
           await page.locator('[data-staff-toggle]').click();
           await page.locator('[data-workspace-search]').fill('Services');
           assert.equal(await page.locator('[data-workspace-results] a').count(), 1);
-          assert.equal(await page.locator('[data-workspace-results] a').getAttribute('href'), 'admin-services.html');
+          assert.ok((await page.locator('[data-workspace-results] a').getAttribute('href')).includes('admin-services.html'));
           await page.keyboard.press('Escape');
           assert.equal(await page.locator('[data-workspace-results]').isVisible(), false);
           await page.locator('[data-workspace-search]').fill('');

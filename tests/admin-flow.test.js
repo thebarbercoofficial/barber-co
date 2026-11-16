@@ -31,8 +31,11 @@ const { chromium } = require('playwright');
       assert.equal(responsive.overflow, false, `Page must not overflow at ${width}px`);
       assert(responsive.fields, 'Fields must stay inside the workspace');
       await page.locator('.workspace').evaluate(node => {
+        node.innerHTML += `<div class="list-toolbar appointment-toolbar"><div class="filter-tabs">${Array.from({ length: 14 }, () => '<button>Booking status <span>12</span></button>').join('')}</div><label class="search-field"><input placeholder="Find a booking"></label></div>`;
         node.innerHTML += '<div class="record-list"><article class="appointment-row appointment-record"><div class="appointment-date">2026-11-18</div><div class="row-main"><strong>Customer booking</strong><small>Classic haircut / Assigned barber</small></div><div><strong>PHP 300.00</strong><small>Booking total</small></div><span class="status-pill pending">Pending / needs review</span><span class="button-row"><button class="icon-button">R</button><button class="button primary">Verify / accept</button><button class="icon-button">X</button></span></article></div>';
       });
+      assert(await page.locator('.appointment-toolbar').evaluate(el => el.getBoundingClientRect().height < 160), 'Toolbar must not inherit a tall search flex-basis');
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `Filters must scroll inside the page at ${width}px`);
       const record = await page.locator('.appointment-record').evaluate(row => {
         const boxes = [...row.children].map(el => el.getBoundingClientRect());
         return { overlap: boxes.some((a, i) => boxes.slice(i + 1).some(b => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1)), overflow: row.scrollWidth > row.clientWidth + 1 };

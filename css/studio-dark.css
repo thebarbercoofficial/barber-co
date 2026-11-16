@@ -1,5 +1,13 @@
 /* Staff workspace only. Public pages and printed reports keep their own theme. */
 @media screen {
+  .appointment-request-list { min-height: 0; overflow-y: auto; flex: 1; }
+  .appointment-request { padding: 16px 0; border-bottom: 1px solid #45403b; }
+  .appointment-request-person { display: flex; gap: 10px; align-items: center; }
+  .appointment-request-person > div { display: grid; gap: 5px; min-width: 0; }
+  .appointment-request-person small { color: #b7b1a9; line-height: 1.4; }
+  .appointment-request-avatar { display: grid; place-items: center; flex: 0 0 36px; height: 36px; border-radius: 50%; color: #edc68c; background: #40362a; }
+  .appointment-request p { font-size: 13px; margin: 12px 0; }
+  .appointment-request .text-action { display: flex; gap: 5px; align-items: center; margin-top: 12px; }
   body.staff-page {
     color-scheme: dark;
     --paper: #191817;

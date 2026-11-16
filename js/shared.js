@@ -249,6 +249,13 @@ const BarberCo = (() => {
   }
 
   function initHeader(activePage) {
+    mountAppointmentRequests();
+    const requestedCustomer = new URLSearchParams(location.search).get('customer');
+    const bookingSearch = document.querySelector('[data-appointment-search]');
+    if (requestedCustomer && bookingSearch) {
+      bookingSearch.value = requestedCustomer;
+      bookingSearch.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     if (document.body.classList.contains('staff-page')) {
       document.querySelectorAll('a[href]').forEach(link => {
         const url = new URL(link.getAttribute('href'), location.href);
@@ -452,9 +459,40 @@ const BarberCo = (() => {
       </section>` : '';
     const rightRail = `<aside class="workspace-rail" data-workspace-rail aria-label="Appointments navigation">
       <div class="workspace-rail-heading"><p>RESERVATIONS</p><h2>Appointments</h2><small ${active === 'dashboard' ? 'data-rail-updated role="status"' : ''}>${active === 'dashboard' ? 'Connecting to live data...' : 'Bookings and payment review'}</small></div>
-      ${railGroup('Bookings', links.filter(([, key]) => key === 'schedule'))}${attention}
+      <div class="appointment-request-list" data-appointment-requests role="region" aria-label="Appointment requests"><p role="status">Loading appointment requests...</p></div>
+      <a class="workspace-rail-link" href="admin-schedule.html">View all appointments ${icon('ArrowUpRight')}</a>
     </aside>`;
     return `<button class="sidebar-backdrop" type="button" data-sidebar-dismiss aria-label="Close staff navigation"></button><aside class="sidebar" id="staff-sidebar"><div class="sidebar-shop"><img src="images/logo.png" alt=""><div>Carmona shop<small>${currentRole() === 'moderator' ? 'Front desk' : 'Administration'}</small></div><span class="shop-indicator" title="Staff workspace"></span></div>${group('DAILY OPERATIONS', operations)}${group('SHOP MANAGEMENT', management)}<div class="sidebar-footer"><a href="index.html">${icon('ExternalLink')}<span>Public website</span></a><small>The Barber Co / Since 2022</small></div></aside>${rightRail}`;
+  }
+
+  let requestRailBusy = false;
+  let requestRailTimer;
+  function mountAppointmentRequests() {
+    const list = document.querySelector('[data-appointment-requests]');
+    if (!list || !canAccess('moderator')) return;
+    const refresh = async () => {
+      if (requestRailBusy || document.hidden || !list.isConnected) return;
+      requestRailBusy = true;
+      try {
+        const data = await api('/admin/appointments');
+        if (!list.isConnected) return;
+        const requests = (data.appointments || []).filter(item => !item.archived && (item.status === 'pending' || item.rescheduleRequest?.status === 'pending'));
+        list.innerHTML = requests.map(item => {
+          const service = state.services.find(service => service.id === item.serviceId);
+          const barber = state.barbers.find(barber => barber.id === item.barberId);
+          const id = item.customer || '';
+          return `<article class="appointment-request"><div class="appointment-request-person"><span class="appointment-request-avatar">${safeText(initials(item.customer || 'Customer'))}</span><div><strong>${safeText(item.customer || 'Customer')}</strong><small>${safeText(service?.name || item.serviceName || 'Appointment')} / ${safeText(barber?.name || item.barberName || 'Assigned barber')}</small></div></div><p>${safeText(item.date)} at ${safeText(timeLabel(item.time))}</p><span class="status-pill pending">${item.rescheduleRequest?.status === 'pending' ? 'Reschedule review' : 'Needs review'}</span><a class="text-action" href="admin-schedule.html?release=admin-clean-20261117&customer=${encodeURIComponent(id)}">Review request ${icon('ArrowUpRight')}</a></article>`;
+        }).join('') || '<p class="muted">No appointment requests to review.</p>';
+      } catch (error) {
+        if (list.isConnected && !list.querySelector('.appointment-request')) {
+          list.innerHTML = '<p role="status">Appointment requests unavailable.</p><button type="button" class="button secondary small">Try again</button>';
+          list.querySelector('button').onclick = refresh;
+        }
+      } finally { requestRailBusy = false; }
+    };
+    clearInterval(requestRailTimer);
+    requestRailTimer = setInterval(refresh, 30000);
+    void refresh();
   }
 
   function safeText(value = '') {

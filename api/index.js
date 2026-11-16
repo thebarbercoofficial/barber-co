@@ -514,8 +514,9 @@ async function handler(req, res) {
   const requestUrl = new URL(req.url, "https://barber.local");
   const path = requestUrl.pathname.replace(/^\/api/, "") || "/";
   const body = ["POST", "PATCH", "DELETE"].includes(req.method) ? await readBody(req) : {};
-  if (req.method === 'GET' && ['/availability', '/appointments/mine', '/admin/appointments'].includes(path)) await sweepRescheduleRequests(database);
-  if (req.method === 'GET' && ['/availability', '/appointments/mine', '/admin/appointments', '/admin/queue', '/queue'].includes(path) || req.method === 'POST' && path === '/admin/queue/next' || req.method === 'PATCH' && path.startsWith('/admin/queue/')) await frontDesk.sweep(database);
+  // Admin lists use the scheduled cleanup worker; reads must not wait on notification delivery.
+  if (req.method === 'GET' && ['/availability', '/appointments/mine'].includes(path)) await sweepRescheduleRequests(database);
+  if (req.method === 'GET' && ['/availability', '/appointments/mine', '/queue'].includes(path) || req.method === 'POST' && path === '/admin/queue/next' || req.method === 'PATCH' && (path.startsWith('/admin/queue/') || /^\/queue\/ticket\/[a-f0-9]{24}\/cancel$/.test(path))) await frontDesk.sweep(database);
 
   if (req.method === "GET" && path === "/health") return send(res, 200, { ok: true });
   if (req.method === 'GET' && path === '/auth/capabilities') return send(res, 200, { email: security.emailReady(), sms: messaging.smsReady(), smsVerification: messaging.smsVerificationReady(), verificationRequired: !allowUnverified });

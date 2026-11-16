@@ -39,6 +39,10 @@ async function run() {
   vm.runInContext('const analyticsOriginalSweep = frontDesk.sweep; frontDesk.sweep = async () => { throw new Error("Analytics must not wait for attendance cleanup"); };', context);
   let response = await request('GET', '/api/admin/analytics');
   assert.equal(response.status, 200);
+  for (const route of ['/api/admin/appointments', '/api/admin/queue']) {
+    const list = await request('GET', route);
+    assert.equal(list.status, 200, `${route} must not wait for attendance cleanup`);
+  }
   vm.runInContext('frontDesk.sweep = analyticsOriginalSweep;', context);
   assert.equal(response.body.daily.length, 365);
   assert.equal(response.body.totals.revenue, 150);

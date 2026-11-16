@@ -1,4 +1,5 @@
 const BarberCo = (() => {
+  if (typeof document !== 'undefined' && document.body?.classList && !document.body.classList.contains('staff-page') && !document.body.classList.contains('queue-display-body')) document.body.classList.add('customer-page');
   const defaults = {
     selectedServiceId: "basic",
     selectedBarberId: "",
@@ -313,7 +314,7 @@ const BarberCo = (() => {
       if (window.BarberCoAlerts) window.BarberCoAlerts.mount();
       else if (!document.querySelector('[data-alert-script]')) {
         const script = document.createElement('script');
-        script.src = 'js/site-alerts.js?v=20261116';
+        script.src = 'js/site-alerts.js?v=side-bell-20261116';
         script.dataset.alertScript = '';
         document.head.append(script);
       }

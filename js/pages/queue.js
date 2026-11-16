@@ -11,6 +11,12 @@ function updateJoinState(active, message = '') {
   if (button) { button.disabled = active || joinBusy; button.textContent = active ? 'Your ticket is already in the queue' : 'Get queue number'; }
   const notice = document.querySelector('[data-walkin-error]');
   if (notice) notice.textContent = message;
+  const fields = document.querySelector('[data-walkin-fields]');
+  if (fields) fields.hidden = active;
+  const title = document.querySelector('[data-walkin-title]');
+  if (title) title.textContent = active ? 'Your walk-in ticket' : 'Join the line';
+  const existing = document.querySelector('[data-existing-ticket]');
+  if (existing) existing.hidden = !active;
 }
 
 function escapeHtml(value = "") {
@@ -60,25 +66,27 @@ async function render() {
 
   document.querySelector("#app").innerHTML = `
     ${nav("queue")}
-    <section class="section top">
+    <section class="section top queue-workspace">
       <div class="section-heading"><p class="eyebrow">Customer Queue</p><h2>Live queue</h2></div>
-      <div class="grid-2">
-        <form class="form-card" data-walkin>
-          <p class="eyebrow">Walk-in QR</p><h2>Join the line</h2>
-          <label>Name<input name="customer" required placeholder="Your name"></label>
+      <div class="grid-2 walkin-grid">
+        <form class="form-card" data-walkin autocomplete="off">
+          <p class="eyebrow">Walk-in</p><h2 data-walkin-title>Join the line</h2>
+          <p data-existing-ticket hidden>Your ticket is active. <a href="#walkin-ticket">View your queue status</a></p>
+          <div data-walkin-fields>
+          <label>Name<input name="customer" autocomplete="off" required placeholder="Your name"></label>
           <label>Service<select name="serviceId" required>${serviceOptions()}</select></label>
           <label><span data-walkin-email-label>Email for updates (optional)</span><input name="contactEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label>
           <p class="muted" data-walkin-email-help hidden></p>
           <label class="terms-consent"><span><input name="emailConsent" type="checkbox"><span>Email me when staff calls or cancels my ticket.</span></span></label>
+          </div>
           <button class="button primary full" type="submit">Get queue number</button>
           <p role="alert" data-walkin-error></p>
           <button class="button secondary full" type="button" data-enable-alerts>Enable alerts</button>
         </form>
-        <div class="panel" data-ticket-panel>
+        <div class="panel" id="walkin-ticket" data-ticket-panel>
           <p class="eyebrow">Your Status</p>
-          <h2>${ticketId ? "Checking your ticket." : "Scan-ready link"}</h2>
-          <p class="muted">${location.origin}${location.pathname}?walkin=1</p>
-          <img class="qr-code" alt="Walk-in queue QR code" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`${location.origin}${location.pathname}?walkin=1`)}">
+          <h2>${ticketId ? "Checking your ticket." : "No active ticket"}</h2>
+          <div class="walkin-qr"><img class="qr-code" alt="Walk-in queue QR code" src="images/walk-in-qr.png" width="180" height="180"><a href="queue.html?walkin=1">Shop walk-in link</a></div>
         </div>
       </div>
       <div class="now-next" data-live-summary><article><strong>Checking the live queue...</strong></article></div>

@@ -509,7 +509,7 @@ async function handler(req, res) {
   const path = requestUrl.pathname.replace(/^\/api/, "") || "/";
   const body = ["POST", "PATCH", "DELETE"].includes(req.method) ? await readBody(req) : {};
   if (req.method === 'GET' && ['/availability', '/appointments/mine', '/admin/appointments'].includes(path)) await sweepRescheduleRequests(database);
-  if (req.method === 'GET' && ['/availability', '/appointments/mine', '/admin/appointments', '/admin/queue', '/queue', '/admin/analytics'].includes(path) || req.method === 'POST' && path === '/admin/queue/next' || req.method === 'PATCH' && path.startsWith('/admin/queue/')) await frontDesk.sweep(database);
+  if (req.method === 'GET' && ['/availability', '/appointments/mine', '/admin/appointments', '/admin/queue', '/queue'].includes(path) || req.method === 'POST' && path === '/admin/queue/next' || req.method === 'PATCH' && path.startsWith('/admin/queue/')) await frontDesk.sweep(database);
 
   if (req.method === "GET" && path === "/health") return send(res, 200, { ok: true });
   if (req.method === 'GET' && path === '/auth/capabilities') return send(res, 200, { email: security.emailReady(), sms: messaging.smsReady(), smsVerification: messaging.smsVerificationReady(), verificationRequired: !allowUnverified });

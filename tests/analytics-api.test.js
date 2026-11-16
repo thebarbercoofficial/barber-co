@@ -36,8 +36,10 @@ async function run() {
   owner.role = 'customer';
   assert.equal((await request('GET', '/api/admin/analytics')).status, 403);
   owner.role = 'admin';
+  vm.runInContext('const analyticsOriginalSweep = frontDesk.sweep; frontDesk.sweep = async () => { throw new Error("Analytics must not wait for attendance cleanup"); };', context);
   let response = await request('GET', '/api/admin/analytics');
   assert.equal(response.status, 200);
+  vm.runInContext('frontDesk.sweep = analyticsOriginalSweep;', context);
   assert.equal(response.body.daily.length, 365);
   assert.equal(response.body.totals.revenue, 150);
   assert.equal(records.appointmentSlots.length, 0, 'Pending reservations do not hold capacity');

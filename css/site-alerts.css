@@ -4,7 +4,10 @@
 .alert-icon:focus-visible, .site-alert-panel a:focus-visible, .site-alert-panel button:focus-visible { outline: 3px solid #b98027; outline-offset: 2px; }
 .site-header > .alert-bell { margin-left: auto; margin-right: 12px; }
 .alert-bell { position: relative; }
-.alert-badge { position: absolute; top: -6px; right: -6px; min-width: 19px; height: 19px; padding: 0 4px; border-radius: 10px; background: #bd332d; color: white; font: 700 10px/19px Inter, sans-serif; }
+.customer-header-actions { display: flex; align-items: center; gap: 12px; margin-left: 16px; flex: 0 0 auto; }
+.site-header > .site-nav { margin-left: auto; }
+.site-header .alert-bell.has-unread { border-color: #d9433a; box-shadow: 0 0 0 2px rgba(217, 67, 58, .18); }
+.alert-badge { position: absolute; top: -7px; right: -7px; min-width: 22px; height: 22px; padding: 0 5px; border: 2px solid white; border-radius: 12px; background: #bd332d; color: white; font: 700 12px/18px Inter, sans-serif; }
 .site-alert-panel, .site-alert-popup { position: fixed; z-index: 3000; right: 16px; width: 370px; max-width: calc(100vw - 32px); background: white; color: #202721; border: 1px solid #cdd3ce; border-radius: 8px; box-shadow: 0 10px 35px #0003; font: 13px/1.5 Inter, sans-serif; letter-spacing: 0; overflow-wrap: anywhere; }
 .site-alert-panel { top: 80px; max-height: calc(100dvh - 100px); display: flex; flex-direction: column; }
 .alert-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; border-bottom: 1px solid #e1e5e2; }

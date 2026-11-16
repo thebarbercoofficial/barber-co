@@ -58,6 +58,8 @@ async function main() {
       const id = new URL(customer.url()).searchParams.get('ticket');
       await customer.getByRole('button', { name: 'Your ticket is already in the queue', exact: true }).waitFor();
       assert.equal(await customer.getByRole('button', { name: 'Your ticket is already in the queue', exact: true }).isDisabled(), true);
+      assert.equal(await customer.locator('[data-walkin-fields]').isVisible(), false, 'An active ticket must not show a blank join form');
+      assert.equal(await customer.getByRole('link', { name: 'View your queue status' }).isVisible(), true);
       await customer.reload();
       await customer.getByRole('button', { name: 'Your ticket is already in the queue', exact: true }).waitFor();
       assert.equal(database.records.queue.length, 1);
@@ -77,6 +79,8 @@ async function main() {
       await customer.waitForFunction(() => document.querySelector('[data-ticket-panel]')?.innerText.includes('Completed'));
       assert.equal(database.records.queue[0].paid, true);
       assert.equal(await customer.getByRole('button', { name: 'Get queue number', exact: true }).isEnabled(), true);
+      assert.equal(await customer.locator('[data-walkin-fields]').isVisible(), true);
+      assert.equal(await customer.locator('[name="customer"]').getAttribute('autocomplete'), 'off');
       // The initial price must reflect the selected catalog service, not a hardcoded PHP 150.
       assert.equal(await logbook.locator('[name="price"]').inputValue(), '225');
       await logbook.getByRole('textbox', { name: 'Customer call name', exact: true }).fill('QA Staff Entry');

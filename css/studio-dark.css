@@ -123,6 +123,15 @@
   .staff-page .contact-inbox-item header a { font-size: 14px; }
   .staff-page .inbox-composer textarea { min-height: 100px; font-size: 14px; }
 }
+@media screen {
+  .staff-page .report-breakdowns { padding: 16px; border: 1px solid var(--line); border-radius: 6px; }
+  .staff-page .report-services > .panel { padding: 16px; }
+  .staff-page .collections-ledger { margin-top: 20px; padding: 18px; border: 1px solid var(--line); border-radius: 6px; }
+  .staff-page .collections-ledger .panel-heading { flex-wrap: wrap; gap: 12px; }
+  .staff-page .report-bars .bar > span { gap: 16px; }
+  .staff-page .report-bars .bar > span > :last-child { flex: 0 0 auto; }
+}
+
 @media print {
   body.staff-page { color-scheme: light; --ink: #222; --muted: #666; --line: #ddd; }
 }

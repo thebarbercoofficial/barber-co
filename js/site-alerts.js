@@ -25,6 +25,8 @@
     if (!bell) return;
     bell.setAttribute('aria-label', `Notifications${count ? `, ${count} unread` : ''}`);
     bell.setAttribute('aria-expanded', String(open));
+    bell.classList.toggle('has-unread', count > 0);
+    bell.title = count ? `Notifications, ${count} unread` : 'Notifications';
     bell.innerHTML = `${icon('Bell')}<span class="alert-badge" ${count ? '' : 'hidden'}>${count > 99 ? '99+' : count}</span>`;
     const panel = document.querySelector('[data-alert-panel]');
     const focused = panel.contains(document.activeElement) ? document.activeElement : null;
@@ -46,7 +48,7 @@
     } catch { /* Visual notifications remain available when audio is blocked. */ }
   }
   function chime() {
-    if (data.muted || audio?.state !== 'running' || !document.hasFocus()) return;
+    if (data.muted || audio?.state !== 'running') return;
     try {
       [660, 880].forEach((frequency, index) => {
         const oscillator = audio.createOscillator();
@@ -135,7 +137,14 @@
     bell.setAttribute('aria-expanded', 'false');
     const actions = header.querySelector('.staff-header-actions');
     if (actions) actions.prepend(bell);
-    else header.insertBefore(bell, header.querySelector('[data-nav-toggle]'));
+    else {
+      const customerActions = document.createElement('div');
+      customerActions.className = 'customer-header-actions';
+      customerActions.append(bell);
+      const menu = header.querySelector('[data-nav-toggle]');
+      if (menu) customerActions.append(menu);
+      header.append(customerActions);
+    }
     document.querySelector('[data-alert-panel]')?.remove();
     document.querySelector('[data-alert-popup]')?.remove();
     document.body.insertAdjacentHTML('beforeend', '<section class="site-alert-panel" id="site-alert-panel" data-alert-panel aria-labelledby="alert-heading" hidden></section><aside class="site-alert-popup" data-alert-popup role="status" aria-live="polite" hidden></aside>');
@@ -150,7 +159,7 @@
     if (panel) { panel.style.top = `${bottom + 8}px`; panel.style.maxHeight = `calc(100dvh - ${bottom + 24}px)`; }
   }
   const css = document.createElement('link');
-  css.rel = 'stylesheet'; css.href = 'css/site-alerts.css?v=20261115'; document.head.append(css);
+  css.rel = 'stylesheet'; css.href = 'css/site-alerts.css?v=side-bell-20261116'; document.head.append(css);
   document.addEventListener('pointerdown', unlock, { passive: true });
   document.addEventListener('keydown', unlock);
   document.addEventListener('click', event => {

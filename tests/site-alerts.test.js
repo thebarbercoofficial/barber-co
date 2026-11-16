@@ -47,6 +47,14 @@ async function main() {
       const base = `http://127.0.0.1:${server.address().port}`;
       await page.goto(`${base}/${role === 'customer' ? 'index.html' : 'admin-schedule.html'}`);
       await page.locator('[data-alert-bell] svg').waitFor();
+      if (role === 'customer') {
+        assert.equal(await page.locator('.customer-header-actions [data-alert-bell]').count(), 1);
+        if (width === 1440) {
+          const bell = await page.locator('[data-alert-bell]').boundingBox();
+          const nav = await page.locator('.site-nav').boundingBox();
+          assert.ok(bell.x >= nav.x + nav.width, 'Bell belongs to the right side of navigation');
+        }
+      }
       await page.waitForFunction(expected => Object.values(JSON.parse(localStorage.getItem(Object.keys(localStorage).find(key => key.startsWith('barberCoAlerts:'))) || '{}').baselines || {}).length === expected, role === 'customer' ? 1 : 2);
       assert.equal(await page.locator('[data-alert-popup]').isVisible(), false, 'First load is quiet');
       await page.locator('[data-alert-bell]').click();
@@ -57,6 +65,7 @@ async function main() {
       await page.evaluate(() => BarberCoAlerts.refresh());
       await page.locator('[data-alert-popup]').waitFor({ state: 'visible' });
       assert.equal(await page.locator('.alert-badge').textContent(), '1');
+      assert.equal(await page.locator('[data-alert-bell]').evaluate(node => node.classList.contains('has-unread')), true);
       if (role === 'customer') {
         await page.locator('[data-alert-bell]').click();
         assert.match(await page.locator('[data-alert-panel]').innerText(), /appointment is confirmed/);
@@ -74,6 +83,7 @@ async function main() {
       assert.equal(await page.locator('[data-alert-sound]').getAttribute('aria-pressed'), 'false');
       await page.locator('[data-alert-read]').click();
       assert.equal(await page.locator('.alert-badge').isVisible(), false);
+      assert.equal(await page.locator('[data-alert-bell]').evaluate(node => node.classList.contains('has-unread')), false);
       await page.keyboard.press('Escape');
       assert.equal(await page.locator('[data-alert-panel]').isVisible(), false);
       bookings = [{ ...bookings[0], status: 'cancelled', staffNote: '<b>Invalid receipt</b>' }];

@@ -265,6 +265,17 @@ const BarberCo = (() => {
   }
 
   function initHeader(activePage) {
+    if (document.body.classList.contains('customer-page')) {
+      if (!document.querySelector('[data-customer-footer-style]')) {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'css/customer-footer.css?v=20261117';
+        link.dataset.customerFooterStyle = '';
+        document.head.append(link);
+      }
+      const app = document.querySelector('#app');
+      if (app && !app.querySelector('.customer-footer')) app.insertAdjacentHTML('beforeend', shopEndcap({}));
+    }
     mountAppointmentRequests();
     const requestedCustomer = new URLSearchParams(location.search).get('customer');
     const bookingSearch = document.querySelector('[data-appointment-search]');

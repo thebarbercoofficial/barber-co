@@ -1,0 +1,4 @@
+body.customer-page { min-height: 100vh; margin: 0; }
+body.customer-page #app { display: flex; flex-direction: column; min-height: 100vh; min-height: 100svh; }
+body.customer-page #app > * { flex-shrink: 0; }
+body.customer-page #app > .customer-footer { margin-top: auto; width: 100%; box-sizing: border-box; }

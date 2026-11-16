@@ -65,43 +65,87 @@ function onlineBookingRows(appointments = [], reservations = []) {
   return activity.slice(0, 6).map((item) => `<div class="compact-row"><div class="row-main"><strong>${safeText(item.customer)}</strong><small>${safeText(item.date)} / ${safeText(BarberCo.timeLabel(item.time))}</small>${compactGroupDetails(item)}${item.request ? `<small><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}</div><span class="status-pill ${item.status === 'pending' ? 'pending' : 'waiting'}">${item.activityStatus}</span><a class="button secondary small" href="admin-schedule.html">Review</a></div>`).join('') || `<div class="staff-empty compact">${icon('CalendarCheck')}<strong>No active online bookings</strong></div>`;
 }
 
+function dashboardAttentionRail() {
+  return `
+    <aside class="workspace-rail" data-workspace-rail aria-label="Live operations">
+      <div class="workspace-rail-heading"><p>WORKSPACE</p><h2>Needs attention</h2><small data-rail-updated role="status">Connecting to live data...</small></div>
+      <section class="workspace-rail-section"><h3>Appointments</h3>
+        <a class="workspace-rail-link" href="admin-schedule.html"><span>${icon('CalendarClock')}<span><strong>Bookings to review</strong><small>Awaiting staff approval</small></span></span><b data-rail-review>--</b></a>
+        <div class="workspace-rail-link is-static"><span>${icon('Wallet')}<span><strong>Payment drafts</strong><small>No time held until approved</small></span></span><b data-rail-drafts>--</b></div>
+      </section>
+      <section class="workspace-rail-section"><h3>Walk-in queue</h3>
+        <a class="workspace-rail-link" href="admin-logbook.html"><span>${icon('ListOrdered')}<span><strong>Waiting</strong><small>Customers in line</small></span></span><b data-rail-waiting>--</b></a>
+        <div class="workspace-rail-link is-static"><span>${icon('Scissors')}<span><strong>Now serving</strong><small>Currently in the chair</small></span></span><b data-rail-serving>--</b></div>
+      </section>
+      <section class="workspace-rail-section"><h3>Quick access</h3>
+        <a class="workspace-rail-shortcut" href="admin-contacts.html">${icon('Mail')} Contact inbox ${icon('ArrowUpRight')}</a>
+        <a class="workspace-rail-shortcut" href="admin-reports.html">${icon('ChartNoAxesCombined')} Reports ${icon('ArrowUpRight')}</a>
+      </section>
+    </aside>`;
+}
+
+function updateAttentionRail(queueResult, scheduleResult) {
+  const count = (selector, value) => {
+    const node = document.querySelector(selector);
+    if (node) node.textContent = Number.isFinite(value) ? String(value) : '--';
+  };
+  const queue = queueResult?.status === 'fulfilled' ? (queueResult.value.queue || []).filter((item) => ['waiting', 'serving'].includes(item.status)) : null;
+  const schedule = scheduleResult?.status === 'fulfilled' ? scheduleResult.value : null;
+  count('[data-rail-review]', schedule ? (schedule.appointments || []).filter((item) => item.status === 'pending').length : NaN);
+  count('[data-rail-drafts]', schedule ? (schedule.reservations || []).length : NaN);
+  count('[data-rail-waiting]', queue ? queue.filter((item) => item.status === 'waiting').length : NaN);
+  count('[data-rail-serving]', queue ? queue.filter((item) => item.status === 'serving').length : NaN);
+  const updated = document.querySelector('[data-rail-updated]');
+  if (updated) updated.textContent = (queueResult?.status === 'fulfilled' || scheduleResult?.status === 'fulfilled')
+    ? `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+    : 'Live data unavailable';
+}
+
 async function render() {
   const dateLabel = new Intl.DateTimeFormat('en-PH', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'Asia/Manila' }).format(new Date());
+  document.body.classList.add('dashboard-with-rail');
   document.querySelector('#app').innerHTML = `
-    <main class="workspace studio-dashboard dashboard-loading-shell" aria-busy="true">
-      <div class="workspace-heading"><div><p class="eyebrow">DAILY OPERATIONS</p><h1>Shop overview</h1><p class="muted">${dateLabel}</p></div><span class="sync-indicator">Connecting...</span></div>
-      <div class="grid-4 metric-grid" aria-hidden="true">
-        <article class="metric"><div class="metric-label">Customers</div><strong>--</strong><small class="muted">Loading live data</small></article>
-        <article class="metric"><div class="metric-label">Bookings</div><strong>--</strong><small class="muted">Loading live data</small></article>
-        <article class="metric"><div class="metric-label">Collected revenue</div><strong>--</strong><small class="muted">Loading live data</small></article>
-        <article class="metric"><div class="metric-label">Waiting customers</div><strong>--</strong><small class="muted">Loading live data</small></article>
-      </div>
-      <div class="dashboard-loading-state" data-dashboard-loading role="status"><span class="dashboard-loading-indicator" aria-hidden="true"></span><strong>Connecting to live shop data...</strong></div>
-    </main>`;
+    ${nav("admin")}
+    <section class="app-shell">
+      ${adminSidebar("dashboard")}
+      <main class="workspace studio-dashboard dashboard-loading-shell" aria-busy="true">
+        <div class="workspace-heading"><div><p class="eyebrow">DAILY OPERATIONS</p><h1>Shop overview</h1><p class="muted">${dateLabel}</p></div><span class="sync-indicator">Connecting...</span></div>
+        <div class="grid-4 metric-grid" aria-hidden="true">
+          <article class="metric"><div class="metric-label">Customers</div><strong>--</strong><small class="muted">Loading live data</small></article>
+          <article class="metric"><div class="metric-label">Bookings</div><strong>--</strong><small class="muted">Loading live data</small></article>
+          <article class="metric"><div class="metric-label">Collected revenue</div><strong>--</strong><small class="muted">Loading live data</small></article>
+          <article class="metric"><div class="metric-label">Waiting customers</div><strong>--</strong><small class="muted">Loading live data</small></article>
+        </div>
+        <div class="dashboard-loading-state" data-dashboard-loading role="status"><span class="dashboard-loading-indicator" aria-hidden="true"></span><strong>Connecting to live shop data...</strong></div>
+      </main>
+      ${dashboardAttentionRail()}
+    </section>`;
+  initHeader("admin");
   const summaries = Promise.allSettled([api('/admin/queue'), api('/admin/appointments')]);
-  void summaries.then((results) => publishWorkspaceSnapshot(results[0], results[1]));
+  void summaries.then((results) => {
+    updateAttentionRail(results[0], results[1]);
+    publishWorkspaceSnapshot(results[0], results[1]);
+  });
   const analytics = await getAnalytics();
   const results = await summaries;
   const queue = results[0].status === 'fulfilled' ? results[0].value.queue.filter((item) => ['waiting', 'serving'].includes(item.status)) : [];
   const schedule = results[1].status === 'fulfilled' ? results[1].value : { appointments: [], reservations: [] };
   const requests = schedule.appointments.filter((item) => item.status === 'pending');
   const reservations = schedule.reservations || [];
+  updateAttentionRail(results[0], results[1]);
   if (analytics.barbers) {
     state.barbers.splice(0, state.barbers.length, ...analytics.barbers);
     save();
   }
-  document.querySelector("#app").innerHTML = `
-    ${nav("admin")}
-    <section class="app-shell">
-      ${adminSidebar("dashboard")}
-      <div class="workspace">
+  const workspace = document.querySelector('.workspace');
+  workspace.classList.remove('dashboard-loading-shell');
+  workspace.setAttribute('aria-busy', 'false');
+  workspace.innerHTML = `
         <div class="workspace-heading"><div><p class="eyebrow">DAILY OPERATIONS</p><h1>Shop overview</h1><p class="muted">${dateLabel}</p></div><a class="button primary" href="admin-logbook.html">${icon('ListOrdered')} Open front desk</a></div>
         ${analytics.connectionError ? `<div class="connection-error" role="alert">${safeText(analytics.connectionError)}</div>` : ''}
         <div class="grid-4 metric-grid">${[['Users', 'Customers', analytics.totals.customers, 'Registered accounts'], ['CalendarDays', 'Bookings', analytics.totals.bookings, 'All appointments'], ['Wallet', 'Collected revenue', peso(analytics.totals.revenue), 'Recorded bookings + paid walk-ins'], ['ListOrdered', 'In the queue', analytics.totals.waiting, 'Waiting walk-ins']].map(([symbol, label, value, detail]) => `<article class="metric"><div class="metric-label">${label}${icon(symbol)}</div><strong>${analytics.connectionError ? '--' : value}</strong><small class="muted">${detail}</small></article>`).join('')}</div>
         ${BarberAnalytics.markup()}
         <div class="dashboard-layout"><div><section class="panel"><div class="panel-heading"><h3>At the front desk <span class="count-badge">${queue.length}</span></h3><a class="text-action" href="admin-logbook.html">View queue ${icon('ArrowUpRight')}</a></div>${queue.length ? queue.slice(0, 6).map((item) => `<div class="compact-row"><span class="ticket-number">#${String(item.queueNumber).padStart(2, '0')}</span><div class="row-main"><strong>${safeText(item.customer)}</strong><small>${safeText(item.cutName || 'Service to be assigned')}</small></div><span class="status-pill ${item.status}">${item.status === 'serving' ? 'Serving' : 'Waiting'}</span></div>`).join('') : `<div class="staff-empty">${icon('ListOrdered')}<strong>${results[0].status === 'rejected' ? 'Queue could not load' : 'The line is clear'}</strong><span>Add a walk-in at the front desk or open the shop QR.</span></div>`}<div class="panel-actions"><button class="button primary" type="button" data-call-next ${!queue.some((item) => item.status === 'waiting') || queue.some((item) => item.status === 'serving') ? 'disabled' : ''}>${icon('Megaphone')} Call next</button><a class="button secondary" href="printables/walk-in-qr.html" target="_blank" rel="noreferrer">${icon('QrCode')} Shop QR</a></div></section><section class="panel"><div class="panel-heading"><h3>Awaiting payment verification <span class="count-badge">${requests.length}</span></h3><a class="text-action" href="admin-schedule.html">Review ${icon('ArrowUpRight')}</a></div>${requests.length ? requests.slice(0, 4).map((item) => `<div class="compact-row"><div class="row-main"><strong>${safeText(item.customer)}</strong><small>${safeText(item.date)} / ${safeText(BarberCo.timeLabel(item.time))}</small>${item.request ? `<small><strong>Customer request:</strong> ${safeText(item.request)}</small>` : ''}</div><strong>${peso(item.total)}</strong><a class="button secondary small" href="admin-schedule.html">Review</a></div>`).join('') : `<div class="staff-empty compact">${icon('CalendarCheck')}<strong>${results[1].status === 'rejected' ? 'Requests could not load' : 'No pending requests'}</strong></div>`}</section></div><div><section class="panel"><div class="panel-heading"><h3>Team availability</h3><a class="text-action" href="admin-barbers.html" aria-label="Manage barbers">${icon('ArrowUpRight')}</a></div>${state.barbers.length ? state.barbers.map((barber) => `<div class="compact-row"><span class="staff-avatar">${BarberCo.initials(barber.name)}</span><div class="row-main"><strong>${safeText(barber.name)}</strong><small>${safeText(barber.role || 'Barber')}</small></div><span class="status-pill ${barber.status || 'active'}">${barber.status === 'on-leave' ? 'On leave' : barber.status === 'fired' ? 'Inactive' : 'Active'}</span></div>`).join('') : `<div class="staff-empty compact"><strong>No barbers added</strong><a href="admin-barbers.html">Add your team</a></div>`}</section><form class="panel" data-quick-service><div class="panel-heading"><h3>Add a service</h3>${icon('Scissors')}</div><label>Service name<input name="name" required placeholder="e.g. Basic haircut"></label><label>Price (PHP)<input type="number" min="0" name="price" required placeholder="150"></label><button class="button secondary full" type="submit">${icon('Plus')} Add service</button></form></div></div>
-      </div>
-    </section>
   `;
   const onlinePanel = document.querySelector('.dashboard-layout > div:first-child > section:nth-of-type(2)');
   onlinePanel.dataset.onlineActivity = '';
@@ -140,7 +184,6 @@ async function render() {
     toast(error.message || "Service could not be added.");
   }
   });
-  initHeader("admin");
   BarberAnalytics.mount(analytics);
   const metricKeys = ['customers', 'bookings', 'revenue', 'waiting'];
   document.querySelectorAll('.metric-grid .metric').forEach((node, index) => { node.dataset.metric = metricKeys[index]; });
@@ -197,6 +240,7 @@ async function refreshDashboard() {
       receivedUpdate = true;
     }
     const failures = [analyticsResult, lineResult, scheduleResult].filter((result) => result.status === 'rejected');
+    updateAttentionRail(lineResult, scheduleResult);
     publishWorkspaceSnapshot(lineResult, scheduleResult);
     if (failures.some((result) => [401, 403].includes(result.reason?.status))) {
       location.replace('login.html');

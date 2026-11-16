@@ -7,12 +7,12 @@ async function render() {
   document.querySelector("#app").innerHTML = `
     ${nav("services")}
     <section class="section top">
-      <div class="section-heading"><p class="eyebrow">Service Menu</p><h2>Choose your grooming package.</h2><p class="muted">Click a service to select it for booking.</p></div>
-      <div class="grid-5">
-        ${state.services.map((service) => `<article class="service-card ${state.selectedServiceId === service.id ? "selected" : ""}"><span class="service-icon">${service.icon}</span><h3>${service.name}</h3><p class="muted">${service.detail}</p><small class="muted">${service.duration}</small><strong class="price">${peso(service.price)}</strong><button class="button primary small" type="button" data-service="${service.id}">Book this</button></article>`).join("")}
+      <div class="section-heading"><p class="eyebrow">The Barber Co</p><h2>Services & pricing</h2></div>
+      <div class="service-menu">
+        ${state.services.map((service) => `<article class="service-card ${state.selectedServiceId === service.id ? "selected" : ""}"><h3>${service.name}</h3><strong class="price">${peso(service.price)}</strong><p class="muted service-description">${service.detail}</p><small class="muted service-duration">${service.duration}</small><button class="button primary small" type="button" data-service="${service.id}">Book this</button></article>`).join("")}
       </div>
-      ${shopEndcap({ eyebrow: "Inside the shop", title: "Pick your cut. We handle the rest.", copy: "Choose your service, reserve a slot, and arrive ready. Walk-ins can scan the shop QR and watch their place in line while the team keeps the chairs moving.", href: "booking.html", label: "Reserve a slot" })}
     </section>
+    ${shopEndcap({ href: "booking.html", label: "Reserve a slot" })}
   `;
 
   document.querySelectorAll("[data-service]").forEach((button) => {

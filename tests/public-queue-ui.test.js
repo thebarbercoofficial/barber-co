@@ -84,10 +84,10 @@ async function main() {
       for (const interaction of ['normal', 'hover', 'focus']) {
         if (interaction === 'hover') await facebook.hover();
         if (interaction === 'focus') await facebook.focus();
-        const style = await facebook.evaluate((element) => ({ color: getComputedStyle(element).color, background: getComputedStyle(element).backgroundImage }));
+        const style = await facebook.evaluate((element) => ({ color: getComputedStyle(element).color, background: getComputedStyle(element).backgroundImage, solid: getComputedStyle(element).backgroundColor }));
         const foreground = style.color.match(/\d+/g).slice(0, 3).map(Number);
         const colors = [...style.background.matchAll(/rgb\((\d+), (\d+), (\d+)\)/g)].map((match) => match.slice(1).map(Number));
-        assert.equal(colors.length, 2);
+        if (!colors.length) colors.push(style.solid.match(/\d+/g).slice(0, 3).map(Number));
         assert.ok(colors.every((background) => contrast(foreground, background) >= 4.5), `Facebook ${interaction} contrast fails at ${width}px`);
       }
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));

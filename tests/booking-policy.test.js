@@ -11,7 +11,7 @@ const http = require('node:http');
     const pathname = new URL(req.url, 'http://localhost').pathname;
     if (pathname.startsWith('/api/')) {
       res.setHeader('Content-Type', 'application/json');
-      if (pathname === '/api/settings') return res.end(JSON.stringify({ settings: { paymentMode: 'demo', bookingFee: 100, paymentRevision: 'test-revision', demoMethods: { gcash: { enabled: true, accountName: 'Test', accountNumber: 'DEMO' }, maya: { enabled: false } } } }));
+      if (pathname === '/api/settings') return res.end(JSON.stringify({ settings: { paymentMode: 'live', bookingFee: 100, paymentRevision: 'test-revision', gcash: { enabled: true, accountName: 'Isolated fixture', accountNumber: '09123456789' }, maya: { enabled: false } } }));
       if (pathname === '/api/appointments') {
         let body = '';
         req.on('data', chunk => { body += chunk; });
@@ -63,7 +63,7 @@ const http = require('node:http');
     const page = await browser.newPage();
     await page.addInitScript(() => {
       localStorage.setItem('barberCoToken', 'isolated-test-token');
-      localStorage.setItem('barberCoState', JSON.stringify({ user: { id: 'customer', email: 'customer@test.invalid', role: 'customer' }, booking: { date: '2100-03-04', time: '14:00', serviceId: 'basic' } }));
+      localStorage.setItem('barberCoState', JSON.stringify({ user: { id: 'customer', email: 'customer@test.invalid', role: 'customer' }, booking: { date: '2100-03-04', time: '14:00', serviceId: 'basic', holdId: 'isolated-checkout', holdExpiresAt: new Date(Date.now() + 600000).toISOString() } }));
     });
     await page.goto(`http://127.0.0.1:${server.address().port}/payment.html`);
     await page.locator('[data-payment-proof]').setInputFiles({ name: 'receipt.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=', 'base64') });

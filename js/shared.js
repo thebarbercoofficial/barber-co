@@ -403,15 +403,10 @@ const BarberCo = (() => {
 
   function shopEndcap({ eyebrow, title, copy, href = "booking.html", label = "Book a slot" }) {
     return `
-      <section class="section page-endcap">
-        <div class="endcap-image"><img src="images/shop-interior.png" alt="Inside The Barber Co barbershop"></div>
-        <div class="endcap-copy">
-          <p class="eyebrow">${eyebrow}</p>
-          <h2>${title}</h2>
-          <p>${copy}</p>
-          <a class="button primary" href="${href}">${label}</a>
-        </div>
-      </section>
+      <footer class="customer-footer">
+        <div><strong>The Barber Co</strong><p>1197 JM Loyola St, Carmona, Cavite</p></div>
+        <nav aria-label="Shop links"><a href="${href}">${label}</a><a href="barbers.html">Our barbers</a><a href="contact.html">Contact</a></nav>
+      </footer>
     `;
   }
 

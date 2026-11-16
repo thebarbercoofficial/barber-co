@@ -58,6 +58,7 @@ async function main() {
       for (const [name, selector] of Object.entries(pages)) {
         await page.goto(`${base}/${name}.html`);
         await page.locator(selector).first().waitFor();
+        await page.evaluate(() => document.fonts.ready);
         const check = await page.evaluate(() => ({
           overflow: document.documentElement.scrollWidth > innerWidth + 1,
           smallFields: [...document.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]),select,textarea')].filter(el => el.getBoundingClientRect().width && getComputedStyle(el).fontSize.replace('px', '') < 16).map(el => el.name),
@@ -65,6 +66,7 @@ async function main() {
         }));
         assert.equal(check.overflow, false, `${name} overflow at ${width}px`);
         assert.equal(check.customerTheme, true);
+        assert.equal(await page.locator('link[href*="css/customer.css"]').count(), 1, `${name}: customer design stylesheet missing`);
         assert.deepEqual(check.smallFields, [], `${name} small fields at ${width}px`);
         assert.deepEqual(errors, [], `${name} script errors at ${width}px`);
         if (name === 'barbers') {
@@ -73,7 +75,7 @@ async function main() {
           assert.equal(await page.locator('[data-barber="future"]').isEnabled(), true);
           assert.match(await page.locator('.barber-roster').innerText(), /Leave: Jan 1, 2100 - Jan 3, 2100/);
         }
-        if ([1440, 390].includes(width) && ['index', 'barbers', 'booking', 'queue', 'user-profile'].includes(name)) await page.screenshot({ path: path.join(output, `${name}-${width}.png`), fullPage: true });
+        if ([1440, 390].includes(width) && ['index', 'services', 'barbers', 'booking', 'queue', 'user-profile', 'login'].includes(name)) await page.screenshot({ path: path.join(output, `${name}-${width}.png`), fullPage: true });
       }
       await context.close();
       console.log(`Customer pages passed at ${width}px: 11 pages, readable fields, no overflow or script errors`);

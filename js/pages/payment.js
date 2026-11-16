@@ -14,7 +14,6 @@ const service = byId(state.services, booking.serviceId);
 let receiptFile = null;
 let checkoutTimer;
 let validationRunning = false;
-let servicePaymentMethod = 'online';
 let bookingPaymentMethod = 'online';
 async function validateSplitCheckout(settings) {
   const result = await api('/checkout/validate', { method: 'POST', body: JSON.stringify({ holdId: booking.holdId, paymentRevision: settings.paymentRevision, bookingPaymentMethod }) });
@@ -78,7 +77,6 @@ async function render() {
     mountRecovery();
     return;
   }
-  const demo = false;
   const paymentSettings = settings.paymentMode === 'demo' ? {} : settings;
   const methods = [
     { id: "GCash", ...(paymentSettings.gcash || {}) },
@@ -92,12 +90,19 @@ async function render() {
     document.querySelector('[data-checkout-error]').textContent = error.message;
     mountRecovery(); initHeader('booking'); return;
   }
+  drawCheckout(settings, methods);
+}
+
+function drawCheckout(settings, methods) {
+  clearInterval(checkoutTimer);
+  const demo = false;
+  const servicePaymentMethod = bookingPaymentMethod === 'onsite' ? 'cash' : 'online';
   if (methods.length && !methods.some((method) => method.id === state.paymentMethod)) state.paymentMethod = methods[0].id;
   const selectedMethod = methods.find((method) => method.id === state.paymentMethod) || methods[0];
   const bookingFee = Math.max(0, Number(booking.bookingFee ?? settings.bookingFee ?? 100));
   const total = Number(booking.total ?? (Number(service.price) + bookingFee));
-  const onlineAmount = bookingPaymentMethod === 'onsite' ? 0 : servicePaymentMethod === 'cash' ? bookingFee : total;
-  const cashDue = bookingPaymentMethod === 'onsite' ? total : servicePaymentMethod === 'cash' ? total - bookingFee : 0;
+  const onlineAmount = bookingPaymentMethod === 'onsite' ? 0 : total;
+  const cashDue = bookingPaymentMethod === 'onsite' ? total : 0;
   const duration = Number(booking.durationMinutes || Number(booking.unitDurationMinutes ?? booking.serviceDurationMinutes) || unitDuration(service.duration));
   const checkoutUntil = booking.holdExpiresAt ? new Date(booking.holdExpiresAt).toLocaleString() : null;
 
@@ -106,21 +111,17 @@ async function render() {
     <section class="section top"><div class="payment-layout ${bookingPaymentMethod === 'onsite' ? 'onsite-mode' : ''}">
       <div class="form-card"><p class="eyebrow">Booking payment</p><h2>Appointment request summary</h2><p class="field-help">Time is reserved only after staff approval. ${checkoutUntil ? `Checkout details expire ${escapeText(checkoutUntil)}; this does not reserve the time.` : ''}</p><div class="summary-list"><div><span>Service</span><strong>${service.name}</strong></div><div><span>Barber</span><strong>${byId(barbers, booking.barberId).name}</strong></div><div><span>Date and time</span><strong>${booking.date} ${BarberCo.timeLabel(booking.time)}</strong></div><div><span>Customer</span><strong>${escapeText(booking.customer || state.user.name)}</strong></div><div><span>Duration</span><strong>${duration} minutes</strong></div><div><span>Service price</span><strong>${peso(total - bookingFee)}</strong></div><div><span>Booking fee</span><strong>${peso(bookingFee)}</strong></div><div><span>Total</span><strong>${peso(total)}</strong></div><div><span>Pay online now</span><strong>${peso(onlineAmount)}</strong></div><div><span>Due at shop</span><strong>${peso(cashDue)}</strong></div></div>
         <fieldset class="payment-methods"><legend>How would you like to pay?</legend><label><input type="radio" name="booking-payment" value="online" ${bookingPaymentMethod === 'online' ? 'checked' : ''} ${methods.length ? '' : 'disabled'}> Pay online</label><label><input type="radio" name="booking-payment" value="onsite" ${bookingPaymentMethod === 'onsite' ? 'checked' : ''}> Pay at the shop</label></fieldset>
-        <div data-online-payment ${bookingPaymentMethod === 'onsite' ? 'hidden' : ''}><div class="payment-methods">${methods.map((method) => `<button class="method ${state.paymentMethod === method.id ? "active" : ""}" type="button" data-payment="${method.id}">${method.id}</button>`).join("")}</div><fieldset class="payment-methods"><legend>Service payment</legend><label><input type="radio" name="service-payment" value="online" ${servicePaymentMethod === 'online' ? 'checked' : ''}> Online</label><label><input type="radio" name="service-payment" value="cash" ${servicePaymentMethod === 'cash' ? 'checked' : ''}> Cash at shop</label></fieldset><p class="field-help">The reservation fee is paid online now. You can also pay the service balance in cash at the shop.</p><label class="upload-box payment-receipt-upload">Upload proof of payment<input type="file" accept="image/jpeg,image/png,image/webp" data-payment-proof required><small>JPG, PNG, or WebP. Maximum 2 MB.</small></label><p class="field-help">Online payment is subject to staff approval.</p></div>
-        <p class="field-help" data-onsite-payment ${bookingPaymentMethod === 'online' ? 'hidden' : ''}>Pay the full ${peso(total)} at the shop after your service. No online transfer or receipt is needed.</p>
+        ${bookingPaymentMethod === 'online' ? `<div data-online-payment><div class="payment-methods">${methods.map((method) => `<button class="method ${state.paymentMethod === method.id ? "active" : ""}" type="button" data-payment="${method.id}">${method.id}</button>`).join("")}</div><label class="upload-box payment-receipt-upload">Upload proof of payment<input type="file" accept="image/jpeg,image/png,image/webp" data-payment-proof required><small>JPG, PNG, or WebP. Maximum 2 MB.</small></label><p class="field-help">Online payment is subject to staff approval.</p></div>` : ''}
+        ${bookingPaymentMethod === 'onsite' ? `<p class="field-help" data-onsite-payment>Pay the full ${peso(total)} at the shop after your service. No online transfer or receipt is needed.</p>` : ''}
+        ${methods.length ? '' : '<p class="field-help">Online payment is currently unavailable.</p>'}
         <button class="button primary full" type="button" data-confirm-payment>${bookingPaymentMethod === 'onsite' ? 'Submit booking (pay at shop)' : 'Submit online payment for review'}</button></div>
-      <div class="panel" data-online-instructions ${bookingPaymentMethod === 'onsite' ? 'hidden' : ''}><p class="eyebrow">Pay with ${selectedMethod?.id || 'online payment'}</p><h2>Scan or transfer</h2><div class="summary-list"><div><span>Account name</span><strong>${selectedMethod?.accountName || "The Barber Co"}</strong></div><div><span>Number</span><strong>${selectedMethod?.accountNumber || "Not provided"}</strong></div><div><span>Transfer amount</span><strong>${peso(onlineAmount)}</strong></div></div>${selectedMethod?.qrImage ? `<img class="qr-preview" src="${selectedMethod.qrImage}" alt="The Barber Co ${selectedMethod.id} QR code">` : `<div class="empty-state">${methods.length ? 'Use the account number above.' : 'Online payment is not configured.'}</div>`}</div>
+      ${bookingPaymentMethod === 'online' ? `<div class="panel" data-online-instructions><p class="eyebrow">Pay with ${selectedMethod?.id || 'online payment'}</p><h2>Scan or transfer</h2><div class="summary-list"><div><span>Account name</span><strong>${selectedMethod?.accountName || "The Barber Co"}</strong></div><div><span>Number</span><strong>${selectedMethod?.accountNumber || "Not provided"}</strong></div><div><span>Transfer amount</span><strong>${peso(onlineAmount)}</strong></div></div>${selectedMethod?.qrImage ? `<img class="qr-preview" src="${selectedMethod.qrImage}" alt="The Barber Co ${selectedMethod.id} QR code">` : `<div class="empty-state">${methods.length ? 'Use the account number above.' : 'Online payment is not configured.'}</div>`}</div>` : ''}
     </div></section>`;
 
   document.querySelectorAll('[name="booking-payment"]').forEach(input => input.addEventListener('change', () => {
     bookingPaymentMethod = input.value;
     receiptFile = null;
-    render();
-  }));
-  document.querySelectorAll('[name="service-payment"]').forEach(input => input.addEventListener('change', () => {
-    servicePaymentMethod = input.value;
-    receiptFile = null;
-    render();
+    drawCheckout(settings, methods);
   }));
   if (booking.request) {
     const row = document.createElement('div');
@@ -138,16 +139,16 @@ async function render() {
   policyNotice.innerHTML = `${bookingPaymentMethod === 'onsite' ? 'Pay-at-shop bookings are not charged if you cancel or do not attend.' : 'Online payments and any booking fee already collected are non-refundable for customer cancellations and no-shows. If the shop rejects a pending paid request, staff must verify the transfer and arrange a manual refund.'} <a class="inline" href="#booking-terms" data-payment-terms>Read our booking terms and policy</a> before submitting.`;
   document.querySelector('.form-card .summary-list').after(policyNotice);
   policyNotice.querySelector('a').onclick = (event) => { event.preventDefault(); BookingPolicy.terms(); };
-  if (receiptFile) {
+  if (receiptFile && proofInput) {
     const transfer = new DataTransfer();
     transfer.items.add(receiptFile);
     proofInput.files = transfer.files;
   }
-  proofInput.addEventListener('change', () => { receiptFile = proofInput.files[0] || null; });
+  proofInput?.addEventListener('change', () => { receiptFile = proofInput.files[0] || null; });
   document.querySelectorAll("[data-payment]").forEach((button) => button.addEventListener("click", () => {
     state.paymentMethod = button.dataset.payment;
     save();
-    render();
+    drawCheckout(settings, methods);
   }));
   document.querySelector("[data-confirm-payment]").addEventListener("click", async () => {
     const button = document.querySelector("[data-confirm-payment]");

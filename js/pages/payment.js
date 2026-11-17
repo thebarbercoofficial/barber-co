@@ -159,7 +159,8 @@ function drawCheckout(settings, methods) {
     if (proofFile && proofFile.size > 2 * 1024 * 1024) return toast("Payment proof must be 2 MB or smaller.");
     if (proofFile && !['image/jpeg', 'image/png', 'image/webp'].includes(proofFile.type)) return toast("Payment proof must be a JPG, PNG, or WebP image.");
     button.disabled = true;
-    if (!await BookingPolicy.confirm(demo, bookingPaymentMethod === 'onsite')) { button.disabled = false; return; }
+    let smsConsent = false;
+    if (!await BookingPolicy.confirm(demo, bookingPaymentMethod === 'onsite', value => { smsConsent = value; })) { button.disabled = false; return; }
     button.textContent = "Submitting...";
     try {
       const latest = await loadSettings();
@@ -176,7 +177,7 @@ function drawCheckout(settings, methods) {
         reader.readAsDataURL(proofFile);
       });
       await validateSplitCheckout(settings);
-      const payload = await api("/appointments", { method: "POST", body: JSON.stringify({ ...booking, total, bookingFee, bookingPaymentMethod, servicePaymentMethod, durationMinutes: duration, nonRefundableAccepted: true, paymentMethod: bookingPaymentMethod === 'onsite' ? 'On-site' : state.paymentMethod, paymentProof, paymentMode: settings.paymentMode || 'live', paymentRevision: settings.paymentRevision }) });
+      const payload = await api("/appointments", { method: "POST", body: JSON.stringify({ ...booking, smsConsent, total, bookingFee, bookingPaymentMethod, servicePaymentMethod, durationMinutes: duration, nonRefundableAccepted: true, paymentMethod: bookingPaymentMethod === 'onsite' ? 'On-site' : state.paymentMethod, paymentProof, paymentMode: settings.paymentMode || 'live', paymentRevision: settings.paymentRevision }) });
       toast(`${payload.appointment.status === 'confirmed' ? 'Booking confirmed. Pay at the shop.' : 'Booking submitted for payment verification.'} Queue #${String(payload.appointment.queueNumber).padStart(2, "0")}.`);
       state.booking = null;
       save();

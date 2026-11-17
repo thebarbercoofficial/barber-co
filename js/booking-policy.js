@@ -15,12 +15,13 @@ window.BookingPolicy = (() => {
     dialog.showModal();
   }
 
-  function confirm(demo = false, onsite = false) {
+  function confirm(demo = false, onsite = false, onSmsPreference = () => {}) {
     return new Promise((resolve) => {
       const dialog = document.createElement('dialog');
       dialog.className = 'registration-policy-dialog';
       dialog.setAttribute('aria-labelledby', 'booking-confirm-title');
       dialog.innerHTML = `<header class="registration-policy-heading"><h2 id="booking-confirm-title">Confirm your booking</h2></header><form class="registration-policy-content" method="dialog"><p><strong>This booking is non-refundable.</strong> Cancelling does not refund the service payment or booking fee.</p><p><strong>Submission does not guarantee your time.</strong> Pending requests and payment drafts do not reserve capacity. Staff approval is first-wins; competing requests may be rejected even after payment. Each booking is for one customer and one service.</p>${demo ? '<p>This is a demo booking. No real money is charged.</p>' : ''}<p><a class="inline" href="#booking-terms" data-booking-terms aria-haspopup="dialog">Read our booking terms and policy</a></p><label class="terms-consent"><span><input type="checkbox" required data-accept-booking><span>I understand and accept the non-refundable booking terms.</span></span></label><div class="button-row"><button class="button secondary" type="button" data-back>Go back</button><button class="button primary" type="submit">Confirm and submit</button></div></form>`;
+      dialog.querySelector('.terms-consent').insertAdjacentHTML('afterend', '<label class="terms-consent"><span><input type="checkbox" data-booking-sms><span>Send me SMS updates for this booking, including approval and rescheduling.</span></span></label><p class="muted">Optional. Requires a verified mobile number. Network restrictions apply.</p>');
       if (onsite) {
         const paragraphs = dialog.querySelectorAll('form > p');
         paragraphs[0].textContent = 'Pay at the counter when your service is finished. No online payment is collected.';
@@ -33,7 +34,10 @@ window.BookingPolicy = (() => {
       dialog.querySelector('[data-back]').onclick = () => dialog.close();
       dialog.querySelector('form').onsubmit = (event) => {
         event.preventDefault();
-        if (event.target.reportValidity()) dialog.close('accepted');
+        if (event.target.reportValidity()) {
+          onSmsPreference(dialog.querySelector('[data-booking-sms]').checked);
+          dialog.close('accepted');
+        }
       };
       dialog.addEventListener('close', () => {
         const accepted = dialog.returnValue === 'accepted';

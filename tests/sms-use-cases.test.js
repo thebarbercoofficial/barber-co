@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const { memoryDb } = require('./helpers/memory-db');
 const { updateWithNotice, flush } = require('../lib/notification-outbox');
 const messaging = require('../lib/notifications');
+const { ObjectId } = require('mongodb');
 
 (async () => {
   const savedFetch = global.fetch;
@@ -42,7 +43,15 @@ const messaging = require('../lib/notifications');
       await messaging.retryPending(db);
       assert.equal(sent, before + (source === 'appointment' ? 1 : 0), `${source} queue SMS policy`);
     }
-    console.log('SMS booking lifecycle, reschedule, no-show, arrival, appointment queue, walk-in suppression and deduplication passed with mocked provider');
+    for (const consent of [true, false]) {
+      const appointmentId = new ObjectId();
+      const db = memoryDb({ users: [{ _id: 'u', phone: '09171234567', phoneVerifiedAt: new Date(), smsConsent: !consent }], appointments: [{ _id: appointmentId, userId: 'u', smsConsent: consent }] });
+      const before = sent;
+      await messaging.notify(db, 'u', 'Booking approved.', `appointment:${appointmentId}:confirmed`, { enqueueOnly: true });
+      await messaging.retryPending(db);
+      assert.equal(sent, before + Number(consent), 'Booking choice overrides account default');
+    }
+    console.log('SMS lifecycle and per-booking opt-in/opt-out passed with mocked provider');
   } finally {
     global.fetch = savedFetch;
     for (const key of keys) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; }

@@ -1179,7 +1179,7 @@ async function handler(req, res, prepared = {}) {
     const queueNumber = await nextQueueNumber(database);
     const bookingFee = Math.max(0, Number(settings.bookingFee) || 0);
     const appointment = { _id: new ObjectId(), serviceId: body.serviceId, barberId, date, time, request: String(body.request || "").slice(0, 1000), source: "online", bookingFee, total: Number(service.price) + bookingFee, paymentMethod, paymentProof, demoPayment, userId: user._id, customer: user.name, customerEmail: user.email, queueNumber, status: "pending", paid: false, createdAt: new Date() };
-    Object.assign(appointment, { nonRefundableAccepted: true, nonRefundableAcceptedAt: new Date(), policyVersion: nonRefundablePolicyVersion });
+    Object.assign(appointment, { smsConsent: body.smsConsent === true, nonRefundableAccepted: true, nonRefundableAcceptedAt: new Date(), policyVersion: nonRefundablePolicyVersion });
     Object.assign(appointment, quote);
     Object.assign(appointment, { bookingPaymentMethod, servicePaymentMethod: bookingPaymentMethod === 'onsite' ? 'cash' : servicePaymentMethod, onlineAmount: bookingPaymentMethod === 'onsite' ? 0 : servicePaymentMethod === 'cash' ? quote.bookingFee : quote.total, cashDue: bookingPaymentMethod === 'onsite' ? quote.total : servicePaymentMethod === 'cash' ? quote.total - quote.bookingFee : 0, bookingFeePaid: false, servicePaid: false });
     try {

@@ -32,7 +32,7 @@ document.querySelector("[data-register]").addEventListener("submit", async (even
     });
     if (payload.verificationRequired) {
       if (payload.channel === 'sms') showSmsVerification(email, phone, payload.message);
-      else showVerification(email);
+      else showVerification(email, phone);
       return;
     }
     setSession(payload);
@@ -103,14 +103,28 @@ function showSmsVerification(email, phone, message) {
     event.currentTarget.disabled = true;
     try {
       await api('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) });
-      showVerification(email);
+      showVerification(email, phone);
     } catch (error) { form.querySelector('[data-verification-message]').textContent = error.message; event.currentTarget.disabled = false; }
   };
 }
 
-function showVerification(email) {
+function showVerification(email, phone = '') {
   document.querySelector('[data-register]').innerHTML = `<h2>Verify your email</h2><p data-verification-message>Enter the six-digit code sent to your email.</p><label>Email<input type="email" name="verifyEmail" required></label><label>Email code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label><button class="button primary full" type="button" data-verify>Verify and continue</button><button class="button secondary full" type="button" data-resend>Resend code</button>`;
   document.querySelector('[name="verifyEmail"]').value = email;
+  const form = document.querySelector('[data-register]');
+  form.insertAdjacentHTML('beforeend', '<fieldset><legend>Or verify by SMS</legend><label>Mobile number<input type="tel" name="smsPhone" autocomplete="tel" placeholder="09XXXXXXXXX or +639XXXXXXXXX"></label><button class="button secondary full" type="button" data-use-sms>Use SMS instead</button><p class="muted">Use the number entered during registration. SMS availability depends on your network.</p></fieldset>');
+  form.querySelector('[name="smsPhone"]').value = phone;
+  form.querySelector('[data-use-sms]').onclick = async (event) => {
+    const button = event.currentTarget;
+    const mobile = form.querySelector('[name="smsPhone"]').value.trim();
+    const address = form.querySelector('[name="verifyEmail"]').value.trim();
+    if (!mobile) { form.querySelector('[data-verification-message]').textContent = 'Enter your registration mobile number.'; return; }
+    button.disabled = true;
+    try {
+      const payload = await api('/auth/registration-sms', { method: 'POST', body: JSON.stringify({ email: address, phone: mobile }) });
+      showSmsVerification(address, mobile, payload.message);
+    } catch (error) { form.querySelector('[data-verification-message]').textContent = error.message; button.disabled = false; }
+  };
   document.querySelector('[data-verify]').addEventListener('click', async (event) => {
     const button = event.currentTarget;
     button.disabled = true;

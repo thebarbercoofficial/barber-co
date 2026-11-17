@@ -1,0 +1,23 @@
+.staff-page .workspace [data-messaging-status] { min-width: 0; container-type: inline-size; }
+.staff-page .workspace .notification-delivery-table { width: 100%; max-height: 560px; overflow: auto; }
+.staff-page .workspace .notification-delivery-table table { width: 100%; min-width: 0; table-layout: fixed; white-space: normal; }
+.notification-delivery-table .notification-status-column { width: 120px; }
+.notification-delivery-table .notification-action-column { width: 180px; }
+.staff-page .workspace .notification-delivery-table th,
+.staff-page .workspace .notification-delivery-table td { padding: 12px 14px; height: auto; text-align: left; vertical-align: top; overflow-wrap: anywhere; white-space: normal; font-size: 14px; line-height: 1.5; }
+.staff-page .workspace .notification-delivery-table .button { width: 100%; min-height: 40px; padding: 8px 10px; font-size: 13px; }
+.notification-delivery-table:focus-visible { outline: 2px solid #c5913d; outline-offset: 3px; }
+@container (max-width: 640px) {
+  .notification-delivery-table colgroup,
+  .notification-delivery-table thead { display: none; }
+  .notification-delivery-table table,
+  .notification-delivery-table tbody { display: block; }
+  .notification-delivery-table tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-bottom: 1px solid var(--line); }
+  .staff-page .workspace .notification-delivery-table tbody th { grid-column: 1 / -1; padding-bottom: 8px; }
+  .staff-page .workspace .notification-delivery-table tbody th,
+  .staff-page .workspace .notification-delivery-table tbody td { display: block; min-width: 0; border-bottom: 0; }
+  .notification-delivery-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 4px; font-weight: 600; }
+  .notification-delivery-table td[data-label="Action"],
+  .notification-delivery-table .notification-history-empty { grid-column: 1 / -1; }
+  .notification-delivery-table td[data-label="Action"]::before { display: none; }
+}

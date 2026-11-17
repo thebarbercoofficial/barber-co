@@ -1194,6 +1194,11 @@ async function handler(req, res, prepared = {}) {
           key: `appointment:${appointment._id}:confirmed`, userId: user._id, skipSms: false,
           message: `Your Barber Co appointment on ${date} at ${time} is confirmed.${paymentNotice(appointment)}`
         } };
+      } else {
+        appointment.notificationOutbox = { submitted: {
+          key: `appointment:${appointment._id}:submitted`, userId: user._id, skipSms: false,
+          message: `Your Barber Co booking on ${date} at ${time} was received. Payment verification is pending.`
+        } };
       }
       await database.collection("appointments").insertOne(appointment);
     } catch (error) {

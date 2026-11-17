@@ -28,6 +28,8 @@ async function book(overrides = {}) {
   assert.equal(result.appointment.bookingFeePaid, false);
   assert.equal(result.appointment.cashDue, result.appointment.total);
   assert.ok(result.appointment.graceDeadline);
+  assert.match(database.records.appointments[0].notificationOutbox.confirmed.message, /is confirmed/);
+  assert.equal(database.records.appointments[0].notificationOutbox.confirmed.skipSms, false);
   assert.ok(database.records.appointmentSlots.length > 0);
   assert.ok(database.records.appointmentSlots.every(slot => !slot.expiresAt));
   assert.equal((await book()).status, 409, 'Confirmed cash booking blocks duplicate capacity');
@@ -38,6 +40,9 @@ async function book(overrides = {}) {
   const online = await book({ time: '16:00', bookingPaymentMethod: 'online', paymentMethod: 'GCash', paymentProof: 'data:image/png;base64,fixture' });
   assert.equal(online.status, 201, JSON.stringify(online));
   assert.equal(online.appointment.status, 'pending', 'Online receipts still require staff verification');
+  const submitted = database.records.appointments.find(item => String(item._id) === online.appointment.mongoId).notificationOutbox.submitted;
+  assert.match(submitted.message, /received\. Payment verification is pending/);
+  assert.equal(submitted.skipSms, false);
   assert.equal(database.records.appointmentSlots.some(slot => slot.appointmentId === online.appointment.mongoId), false);
   console.log('Onsite auto-confirm, unpaid cash balance, permanent capacity locks, conflict and leave rejection passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

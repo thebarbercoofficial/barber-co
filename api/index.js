@@ -1144,7 +1144,7 @@ async function handler(req, res, prepared = {}) {
     if (hold) requireSingleBooking(hold);
     const requestedBarberId = String(body.barberId || "");
     let barberId = requestedBarberId === "any" && hold ? hold.barberId : requestedBarberId;
-    if (barberId === 'any') {
+    if (barberId === 'any' || !barberId && bookingPaymentMethod === 'onsite') {
       const candidate = await reserveAnyBarber(database, '', date, time, durationMinutes);
       barberId = candidate.slug || String(candidate._id);
     }
@@ -1183,11 +1183,26 @@ async function handler(req, res, prepared = {}) {
     Object.assign(appointment, quote);
     Object.assign(appointment, { bookingPaymentMethod, servicePaymentMethod: bookingPaymentMethod === 'onsite' ? 'cash' : servicePaymentMethod, onlineAmount: bookingPaymentMethod === 'onsite' ? 0 : servicePaymentMethod === 'cash' ? quote.bookingFee : quote.total, cashDue: bookingPaymentMethod === 'onsite' ? quote.total : servicePaymentMethod === 'cash' ? quote.total - quote.bookingFee : 0, bookingFeePaid: false, servicePaid: false });
     try {
+      if (bookingPaymentMethod === 'onsite') {
+        await lockAppointmentSlots(database, String(appointment._id), date, String(selectedBarber._id), time, durationMinutes);
+        Object.assign(appointment, {
+          status: 'confirmed', barberId: selectedBarber.slug || String(selectedBarber._id),
+          gracePeriodMinutes: frontDesk.grace(settings),
+          graceDeadline: new Date(appointmentAt.getTime() + frontDesk.grace(settings) * 60000)
+        });
+        appointment.notificationOutbox = { confirmed: {
+          key: `appointment:${appointment._id}:confirmed`, userId: user._id, skipSms: false,
+          message: `Your Barber Co appointment on ${date} at ${time} is confirmed.${paymentNotice(appointment)}`
+        } };
+      }
       await database.collection("appointments").insertOne(appointment);
-      if (hold) await database.collection("appointmentHolds").deleteOne({ _id: hold._id });
     } catch (error) {
       await database.collection("appointmentSlots").deleteMany({ appointmentId: String(appointment._id) });
       throw error;
+    }
+    if (hold) {
+      try { await database.collection('appointmentHolds').deleteOne({ _id: hold._id }); }
+      catch (error) { console.error('Booked appointment hold cleanup failed', error.message); }
     }
     return send(res, 201, { appointment: normalizeDoc(appointment) });
   }

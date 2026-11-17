@@ -1,0 +1,43 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const { Readable } = require('node:stream');
+const { ObjectId } = require('mongodb');
+const jwt = require('jsonwebtoken');
+const owner = { _id: new ObjectId(), role: 'admin', name: 'Fixture', email: 'fixture@example.test' };
+const barber = { _id: new ObjectId(), slug: 'alex', status: 'active' };
+const database = require('./helpers/memory-db').memoryDb({ users: [owner], barbers: [barber], services: [{ _id: new ObjectId(), slug: 'basic', name: 'Basic', price: 150, duration: '30 min', active: true }], settings: [{ _id: 'shop', bookingFee: 100 }], appointments: [], appointmentSlots: [] });
+const localRequire = require('node:module').createRequire(path.resolve('api/index.js'));
+const context = { require: name => name === '../lib/receipt' ? { validateReceipt: async () => {} } : localRequire(name), module: { exports: {} }, process: { env: { JWT_SECRET: 'onsite-fixture' } }, URL, console, database };
+vm.runInNewContext(`${fs.readFileSync('api/index.js', 'utf8')}\ndb = async () => database;`, context);
+async function book(overrides = {}) {
+  const req = Readable.from([JSON.stringify({ customer: 'Fixture', serviceId: 'basic', barberId: 'alex', date: '2100-03-03', time: '14:00', nonRefundableAccepted: true, bookingPaymentMethod: 'onsite', ...overrides })]);
+  Object.assign(req, { method: 'POST', url: '/api/appointments', headers: { authorization: `Bearer ${jwt.sign({ sub: String(owner._id) }, 'onsite-fixture')}` } });
+  let data;
+  const res = { setHeader() {}, end(raw) { data = JSON.parse(raw); } };
+  await context.module.exports(req, res);
+  return { status: res.statusCode, ...data };
+}
+(async () => {
+  const result = await book();
+  assert.equal(result.status, 201, JSON.stringify(result));
+  assert.equal(result.appointment.status, 'confirmed');
+  assert.equal(result.appointment.paid, false);
+  assert.equal(result.appointment.servicePaid, false);
+  assert.equal(result.appointment.bookingFeePaid, false);
+  assert.equal(result.appointment.cashDue, result.appointment.total);
+  assert.ok(result.appointment.graceDeadline);
+  assert.ok(database.records.appointmentSlots.length > 0);
+  assert.ok(database.records.appointmentSlots.every(slot => !slot.expiresAt));
+  assert.equal((await book()).status, 409, 'Confirmed cash booking blocks duplicate capacity');
+  assert.equal((await book({ time: '15:00', barberId: 'any' })).status, 201);
+  barber.leaveFrom = '2100-03-04'; barber.leaveTo = '2100-03-04';
+  assert.equal((await book({ date: '2100-03-04' })).status, 409);
+  vm.runInContext('paymentConfigured = () => true;', context);
+  const online = await book({ time: '16:00', bookingPaymentMethod: 'online', paymentMethod: 'GCash', paymentProof: 'data:image/png;base64,fixture' });
+  assert.equal(online.status, 201, JSON.stringify(online));
+  assert.equal(online.appointment.status, 'pending', 'Online receipts still require staff verification');
+  assert.equal(database.records.appointmentSlots.some(slot => slot.appointmentId === online.appointment.mongoId), false);
+  console.log('Onsite auto-confirm, unpaid cash balance, permanent capacity locks, conflict and leave rejection passed');
+})().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1424,7 +1424,11 @@ async function handler(req, res, prepared = {}) {
     const service = await database.collection('services').findOne({ slug: serviceId, active: { $ne: false } });
     if (!service) return send(res, 400, { error: 'Choose an available service.' });
     const local = new Date(Date.now() + 8 * 3600000).toISOString();
-    return send(res, 200, { unavailableBarberIds: await unavailableBarbers(database, local.slice(0, 10), local.slice(11, 16), serviceDuration(service.duration) + 1) });
+    const [unavailableBarberIds, roster] = await Promise.all([
+      unavailableBarbers(database, local.slice(0, 10), local.slice(11, 16), serviceDuration(service.duration) + 1),
+      database.collection('barbers').find().toArray()
+    ]);
+    return send(res, 200, { unavailableBarberIds, onLeaveBarberIds: roster.filter(barber => onLeave(barber, local.slice(0, 10))).flatMap(barber => [barber.slug, String(barber._id)]).filter(Boolean) });
   }
 
   if (req.method === "POST" && path === "/queue/walkin") {
@@ -1509,11 +1513,24 @@ async function handler(req, res, prepared = {}) {
     if (req.method === "POST") {
       const customer = String(body.customer || "").trim().slice(0, 120);
       if (customer.length < 2) return send(res, 400, { error: "Enter the customer's name." });
+      let barberId = String(body.barberId || '');
+      if (barberId) {
+        const barber = await database.collection('barbers').findOne({ $or: [{ slug: barberId }, ...(ObjectId.isValid(barberId) ? [{ _id: new ObjectId(barberId) }] : [])] });
+        const local = new Date(Date.now() + 8 * 3600000).toISOString();
+        if (barber && onLeave(barber, local.slice(0, 10))) return send(res, 409, { error: 'That barber is on leave. Choose another barber.' });
+        if (!barber || barber.status !== 'active') return send(res, 409, { error: 'That barber is unavailable. Choose another barber.' });
+        const serviceId = String(body.serviceId || '');
+        const service = await database.collection('services').findOne({ $or: [{ slug: serviceId }, ...(ObjectId.isValid(serviceId) ? [{ _id: new ObjectId(serviceId) }] : [])], active: { $ne: false } });
+        if (!service) return send(res, 400, { error: 'Choose an available service.' });
+        const unavailable = await unavailableBarbers(database, local.slice(0, 10), local.slice(11, 16), serviceDuration(service?.duration) + 1);
+        if (unavailable.includes(barber.slug) || unavailable.includes(String(barber._id))) return send(res, 409, { error: 'That barber is unavailable or reserved for a booking. Choose another barber.' });
+        barberId = barber.slug || String(barber._id);
+      }
       const contact = { contactEmail: '', emailConsent: false };
       const queueNumber = await nextQueueNumber(database);
       const ticket = {
         _id: new ObjectId(), customer, phone: "", ...contact, serviceId: String(body.serviceId || ""),
-        barberId: String(body.barberId || ""), cutName: String(body.cutName || "To be assigned").slice(0, 120),
+        barberId, cutName: String(body.cutName || "To be assigned").slice(0, 120),
         price: Math.max(0, Number(body.price) || 0), waitMinutes: Math.max(0, Number(body.waitMinutes) || 0),
         notes: String(body.notes || "").slice(0, 500), source: "staff", queueNumber, status: "waiting", paid: false, createdAt: new Date()
       };
@@ -1637,7 +1654,7 @@ module.exports = async (req, res) => {
       await sweepRescheduleRequests(database, new Date(), mutation[1]);
       await frontDesk.sweep(database, new Date(), mutation[1]);
       await withAppointmentMutation(database, 'booking-capacity', () => withAppointmentMutation(database, mutation[1], () => handler(req, res, { database, body })));
-    } else if (req.method === 'POST' && (['/appointments', '/appointment-holds', '/queue/walkin', '/admin/queue/next'].includes(path) || /^\/admin\/queue\/[a-f0-9]{24}\/paid$/.test(path)) || req.method === 'PATCH' && (path.startsWith('/admin/queue/') || /^\/queue\/ticket\/[a-f0-9]{24}\/cancel$/.test(path)) || ['PATCH', 'DELETE'].includes(req.method) && path.startsWith('/admin/barbers/')) {
+    } else if (req.method === 'POST' && (['/appointments', '/appointment-holds', '/queue/walkin', '/admin/queue', '/admin/queue/next'].includes(path) || /^\/admin\/queue\/[a-f0-9]{24}\/paid$/.test(path)) || req.method === 'PATCH' && (path.startsWith('/admin/queue/') || /^\/queue\/ticket\/[a-f0-9]{24}\/cancel$/.test(path)) || ['PATCH', 'DELETE'].includes(req.method) && path.startsWith('/admin/barbers/')) {
       const body = await readBody(req);
       const database = await db();
       if (req.method === 'POST' && path === '/admin/queue/next' || req.method === 'PATCH' && path.startsWith('/admin/queue/') && body.status === 'serving') {

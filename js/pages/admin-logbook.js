@@ -8,6 +8,37 @@ if (!canAccess("moderator")) {
 let liveQueue = [];
 let refreshBusy = false;
 let rowSnapshot = '';
+let availabilityRequest = 0;
+
+async function refreshBarberOptions() {
+  const select = document.querySelector('[name="barberId"]');
+  if (!select) return false;
+  const request = ++availabilityRequest;
+  const previous = select.value;
+  select.disabled = true;
+  try {
+    const serviceId = document.querySelector('[name="serviceId"]').value;
+    const payload = await api(`/queue/barber-availability?serviceId=${encodeURIComponent(serviceId)}`);
+    if (request !== availabilityRequest) return false;
+    const unavailable = new Set(payload.unavailableBarberIds || []);
+    const onLeave = new Set(payload.onLeaveBarberIds || []);
+    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    select.replaceChildren(new Option('Assign later', ''));
+    barbers.filter(barber => barber.status !== 'fired').forEach(barber => {
+      const leave = onLeave.has(barber.id) || onLeave.has(barber.mongoId) || barber.status === 'on-leave' || (barber.leaveFrom && today >= barber.leaveFrom && today <= (barber.leaveTo || barber.leaveFrom));
+      const blocked = leave || barber.status !== 'active' || unavailable.has(barber.id) || unavailable.has(barber.mongoId);
+      const option = new Option(`${barber.name}${leave ? ' - on leave' : blocked ? ' - unavailable' : ''}`, barber.id);
+      option.disabled = Boolean(blocked);
+      select.add(option);
+      if (previous === barber.id && !blocked) select.value = previous;
+    });
+    select.disabled = false;
+    return true;
+  } catch (error) {
+    if (request === availabilityRequest) document.querySelector('[data-add-error]').textContent = error.message || 'Barber availability could not be loaded. Please try again.';
+    return false;
+  }
+}
 
 function escapeHtml(value = "") {
   return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -88,7 +119,7 @@ async function initialize() {
           <label>Customer call name<input name="customer" required maxlength="120" placeholder="Name or nickname to call out"></label>
           <label>Cut / service<select name="serviceId" required>${serviceOptions()}</select></label>
           <div class="form-row"><label>Price<input type="number" name="price" min="0" required value="150"></label><label>Estimated wait minutes<input type="number" name="waitMinutes" min="0" required value="30"></label></div>
-          <label>Barber<select name="barberId"><option value="">Assign later</option>${barbers.filter((barber) => !["fired", "on-leave"].includes(barber.status)).map((barber) => `<option value="${barber.id}">${barber.name}</option>`).join("")}</select></label>
+          <label>Barber<select name="barberId" disabled><option value="">Assign later</option></select></label>
           <label>Notes<input name="notes" placeholder="No phone, prefers scissors, paid cash, etc."></label>
           <button class="button primary full" type="submit">${icon('Plus')} Add to queue</button>
           <p role="alert" data-add-error></p>
@@ -99,6 +130,7 @@ async function initialize() {
 
   document.querySelector('[name="serviceId"]').addEventListener("change", (event) => {
     document.querySelector('[name="price"]').value = byId(state.services, event.target.value).price || 0;
+    refreshBarberOptions();
   });
   document.querySelector('[name="price"]').value = byId(state.services, document.querySelector('[name="serviceId"]').value).price || 0;
   document.querySelector('[data-queue-search]').addEventListener('input', updateQueueUI);
@@ -113,11 +145,14 @@ async function initialize() {
     const service = byId(state.services, data.get("serviceId"));
     button.disabled = true;
     try {
+      if (!await refreshBarberOptions()) throw new Error('Refresh barber availability before adding this customer.');
+      if (data.get('barberId') !== document.querySelector('[name="barberId"]').value) throw new Error('That barber is no longer available. Choose another barber.');
       const payload = await api("/admin/queue", { method: "POST", body: JSON.stringify({ customer: data.get("customer"), serviceId: data.get("serviceId"), cutName: service.name, price: Number(data.get("price")), waitMinutes: Number(data.get("waitMinutes")), barberId: data.get("barberId"), notes: data.get("notes") }) });
       toast(`Queue #${String(payload.ticket.queueNumber).padStart(2, "0")} added.`);
       event.target.reset();
       document.querySelector('[name="price"]').value = byId(state.services, document.querySelector('[name="serviceId"]').value).price || 0;
       await refreshQueue();
+      await refreshBarberOptions();
     } catch (error) { document.querySelector('[data-add-error]').textContent = error.message || 'Customer could not be added.'; toast(error.message || "Customer could not be added."); }
     finally { button.disabled = false; }
   });
@@ -175,6 +210,7 @@ async function initialize() {
   });
 
   initHeader("admin");
+  refreshBarberOptions();
   await refreshQueue();
 }
 
@@ -184,3 +220,7 @@ window.addEventListener('focus', () => refreshQueue({ quiet: true }));
 window.setInterval(() => {
   if (!document.hidden) refreshQueue({ quiet: true });
 }, 5000);
+window.addEventListener('focus', refreshBarberOptions);
+window.setInterval(() => {
+  if (!document.hidden && !document.querySelector('[data-logbook-form] button[type="submit"]')?.disabled) refreshBarberOptions();
+}, 15000);

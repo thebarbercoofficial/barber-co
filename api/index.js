@@ -1578,17 +1578,34 @@ async function handler(req, res, prepared = {}) {
     return send(res, 200, { ok: true });
   }
 
+  if (req.method === 'POST' && path === '/admin/collection-records/clear') {
+    const user = await requireRole(req, database, ['admin']);
+    if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length > 1000 || body.ids.some(id => typeof id !== 'string' || !/^[a-f0-9]{24}:(reservation-fee|service|legacy|payment|booking-total)$/.test(id))) {
+      return send(res, 400, { error: 'Select valid collection records (up to 1000 per request).' });
+    }
+    const ids = [...new Set(body.ids)];
+    const clearedAt = new Date();
+    // Report-only tombstones preserve original payments and all revenue calculations.
+    await database.collection('clearedCollectionRecords').bulkWrite(ids.map(id => ({ updateOne: {
+      filter: { _id: id }, update: { $setOnInsert: { clearedAt, clearedBy: user._id } }, upsert: true
+    } })));
+    return send(res, 200, { ok: true, ids });
+  }
+
   if (req.method === "GET" && path === "/admin/analytics") {
     await requireRole(req, database, ["admin"]);
     res.setHeader('Cache-Control', 'no-store');
-    const [appointments, queue, users, services, barbers] = await Promise.all([
+    const [appointments, queue, users, services, barbers, clearedRecords] = await Promise.all([
       database.collection("appointments").find({}, { projection: { paymentProof: 0 } }).toArray(),
       database.collection("queue").find().toArray(),
       database.collection("users").countDocuments({ role: "customer" }),
       database.collection("services").find().toArray(),
-      database.collection("barbers").find().toArray()
+      database.collection("barbers").find().toArray(),
+      database.collection('clearedCollectionRecords').find({}, { projection: { _id: 1 } }).toArray()
     ]);
     const analytics = buildAnalytics(appointments, queue.filter(item => item.source !== 'appointment'), users, services);
+    const clearedIds = new Set(clearedRecords.map(item => item._id));
+    analytics.collections.records = analytics.collections.records.filter(item => !clearedIds.has(item.id));
     analytics.totals.waiting = queue.filter(item => item.status === 'waiting').length;
     return send(res, 200, {
       ...analytics,

@@ -1,0 +1,15 @@
+.ledger-toolbar, .ledger-pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-block: 16px; }
+.ledger-toolbar [role="status"] { flex: 1; min-width: 160px; }
+.ledger-pagination { justify-content: flex-end; }
+.ledger-pagination > span:first-child { margin-right: auto; }
+.collections-ledger .ledger-select { width: 48px; min-width: 48px; text-align: center; }
+.collections-ledger input[type="checkbox"] { width: 20px; height: 20px; margin: 0; cursor: pointer; accent-color: #c5913d; }
+.collections-ledger .ledger-reference { display: block; margin-top: 6px; font-weight: 400; overflow-wrap: anywhere; }
+.collections-ledger th[scope="row"] { text-align: left; }
+.collections-ledger td:last-child { white-space: nowrap; }
+@media (max-width: 600px) {
+  .ledger-pagination { gap: 8px; }
+  .ledger-pagination > span { font-size: 12px; }
+  .ledger-pagination > span:first-child { flex-basis: 100%; }
+  .collections-ledger .data-table-scroll table { min-width: 650px; }
+}

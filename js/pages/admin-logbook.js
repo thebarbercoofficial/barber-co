@@ -1,3 +1,5 @@
+(async () => {
+await BarberCo.staffReady;
 const { state, barbers, nav, initHeader, adminSidebar, byId, peso, api, loadCatalog, serviceOptions, toast, canAccess, icon } = BarberCo;
 
 if (!canAccess("moderator")) {
@@ -224,3 +226,4 @@ window.addEventListener('focus', refreshBarberOptions);
 window.setInterval(() => {
   if (!document.hidden && !document.querySelector('[data-logbook-form] button[type="submit"]')?.disabled) refreshBarberOptions();
 }, 15000);
+})();

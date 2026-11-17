@@ -1,3 +1,5 @@
+(async () => {
+await BarberCo.staffReady;
 const { nav, adminSidebar, initHeader, api, canAccess, icon } = BarberCo;
 
 if (!canAccess('moderator')) {
@@ -140,3 +142,4 @@ async function refresh() {
 document.querySelector('[data-refresh]').addEventListener('click', refresh);
 initHeader('admin');
 refresh();
+})();

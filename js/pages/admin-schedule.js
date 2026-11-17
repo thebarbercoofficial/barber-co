@@ -1,3 +1,5 @@
+(async () => {
+await BarberCo.staffReady;
 const { state, barbers, nav, initHeader, adminSidebar, byId, peso, toast, api, loadCatalog, icon, safeText } = BarberCo;
 
 if (!BarberCo.canAccess("moderator")) {
@@ -383,3 +385,4 @@ render().then(() => {
     if (!document.hidden) refreshAppointments({ force: true });
   });
 });
+})();

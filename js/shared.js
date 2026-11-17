@@ -98,6 +98,8 @@ const BarberCo = (() => {
   }
 
   const pendingReads = new Map();
+  let resolveStaffReady;
+  const staffReady = new Promise(resolve => { resolveStaffReady = resolve; });
 
   if (!window.staffModule && /\/admin-[a-z-]+\.html$/.test(location.pathname)) {
     const app = document.querySelector('#app');
@@ -123,6 +125,7 @@ const BarberCo = (() => {
         return;
       }
       verified = true;
+      resolveStaffReady(true);
       startup.querySelector('[role="status"]').textContent = 'Loading page data...';
       reveal();
     }).catch((error) => {
@@ -145,7 +148,28 @@ const BarberCo = (() => {
       recovery.querySelector('button').addEventListener('click', () => { recovery.remove(); void verifyStaff(); });
     });
     void verifyStaff();
+  } else resolveStaffReady(true);
+
+  let sessionCheckBusy = false;
+  let sessionCheckedAt = 0;
+  async function refreshPermissions(force = false) {
+    if (!isAuthenticated() || document.hidden || sessionCheckBusy || force !== true && Date.now() - sessionCheckedAt < 5000) return;
+    sessionCheckBusy = true;
+    sessionCheckedAt = Date.now();
+    try {
+      const previous = currentRole();
+      const payload = await api('/me');
+      setSession(payload);
+      if (previous !== currentRole()) {
+        location.replace(currentRole() === 'admin' ? 'admin-dashboard.html' : currentRole() === 'moderator' ? 'admin-logbook.html' : 'index.html');
+      }
+    } catch (error) {
+      if (error.status === 401) { clearSession(); location.replace('login.html'); }
+    } finally { sessionCheckBusy = false; }
   }
+  window.addEventListener('focus', () => refreshPermissions(true));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshPermissions(true); });
+  window.setInterval(refreshPermissions, 60000);
 
   async function api(path, options = {}) {
     const method = String(options.method || 'GET').toUpperCase();
@@ -265,6 +289,7 @@ const BarberCo = (() => {
   }
 
   function initHeader(activePage) {
+    if (!/\/admin-[a-z-]+\.html$/.test(location.pathname)) void refreshPermissions();
     if (document.body.classList.contains('customer-page')) {
       if (!document.querySelector('[data-customer-footer-style]')) {
         const link = document.createElement('link');
@@ -560,7 +585,7 @@ const BarberCo = (() => {
     return `<option value="any" ${anySelected ? "selected" : ""}>Any available barber</option>${barbers.filter((barber) => barber.status !== "fired").map((barber) => `<option value="${barber.id}" ${barber.id === selectedId ? "selected" : ""} ${unavailable(barber) ? "disabled" : ""}>${safeText(barber.name)}${unavailable(barber) ? ` - ${onLeave(barber) ? "on leave" : "unavailable"}` : ""}</option>`).join("")}`;
   }
 
-  return { state, barbers, save, peso, timeLabel, byId, initials, avatar, toast, initHeader, nav, shopEndcap, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, loadSettings, setSession, clearSession, authToken, isAuthenticated, currentRole, canAccess, icon, safeText };
+  return { state, barbers, save, peso, timeLabel, byId, initials, avatar, toast, initHeader, nav, shopEndcap, adminSidebar, serviceOptions, barberOptions, api, loadCatalog, loadSettings, setSession, clearSession, authToken, isAuthenticated, currentRole, canAccess, icon, safeText, staffReady };
 })();
 
 // A reschedule must move to another future slot, using the shop's time zone.
